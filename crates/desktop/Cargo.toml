@@ -1,0 +1,12 @@
+[package]
+name = "pt-reseeder-desktop"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+pt-reseeder-server = { path = "../server" }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+
+[build-dependencies]
+tauri-build = "2"

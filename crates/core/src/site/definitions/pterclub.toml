@@ -1,0 +1,20 @@
+[site]
+id = "pterclub"
+name = "PTerClub"
+url = "https://pterclub.com"
+api_url = "https://pterclub.com/api/pieces-hash"
+adapter = "nexusphp"
+rate_limit_interval_ms = 5000
+rate_limit_burst = 1
+batch_size = 1000
+
+[user_info]
+profile_url_template = "/userdetails.php?id={uid}"
+uid_selector = "a[href*='userdetails.php?id=']"
+uploaded_selector = "font.color_uploaded"
+downloaded_selector = "font.color_downloaded"
+ratio_selector = "font.color_ratio"
+bonus_selector = "td.rowhead:contains('魔力值') + td"
+user_class_selector = "td.rowhead:contains('等级') + td img"
+seeding_count_selector = "td.rowhead:contains('做种数') + td"
+leeching_count_selector = "td.rowhead:contains('下载数') + td"

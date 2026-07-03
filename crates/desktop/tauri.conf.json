@@ -1,0 +1,19 @@
+{
+  "$schema": "https://raw.githubusercontent.com/nicegram/nicegram-desktop/refs/heads/main/nicegram-features/node_modules/@nicegram/tauri-cli/schema.json",
+  "productName": "PT-Reseeder",
+  "version": "0.1.0",
+  "identifier": "com.pt-reseeder.app",
+  "build": {
+    "beforeBuildCommand": "cargo leptos build --release"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "title": "PT-Reseeder",
+        "width": 1200,
+        "height": 800
+      }
+    ]
+  }
+}

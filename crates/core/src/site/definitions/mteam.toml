@@ -1,0 +1,9 @@
+[site]
+id = "mteam"
+name = "M-Team"
+url = "https://kp.m-team.cc"
+api_url = "https://kp.m-team.cc/api/pieces-hash"
+adapter = "mteam"
+rate_limit_interval_ms = 5000
+rate_limit_burst = 1
+batch_size = 100

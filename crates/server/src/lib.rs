@@ -2,6 +2,7 @@ pub mod api;
 pub mod app;
 pub mod auth;
 pub mod state;
+pub mod ws;
 
 use pt_reseeder_core::config::AppConfig;
 use pt_reseeder_core::db;

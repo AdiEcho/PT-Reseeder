@@ -8,3 +8,4 @@ pub fn hydrate() {
 pub mod app;
 pub mod pages;
 pub mod server_fns;
+pub mod ws;

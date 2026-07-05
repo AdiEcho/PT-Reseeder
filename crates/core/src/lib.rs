@@ -16,3 +16,6 @@ pub mod scheduler;
 
 // P7 module
 pub mod repost;
+
+// P8 module
+pub mod stats;

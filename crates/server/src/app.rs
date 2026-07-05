@@ -1,7 +1,8 @@
 use crate::api;
 use crate::auth::{csrf_check, require_auth};
 use crate::state::AppState;
-use axum::Router;
+use crate::ws;
+use axum::{routing::get, Router};
 
 pub fn build_router(state: AppState) -> Router {
     // Routes that require authentication
@@ -11,6 +12,7 @@ pub fn build_router(state: AppState) -> Router {
         .merge(api::tasks::router())
         .merge(api::folders::router())
         .merge(api::repost::router())
+        .merge(api::stats::router())
         .route_layer(axum::middleware::from_fn_with_state(
             state.clone(),
             require_auth,
@@ -27,5 +29,8 @@ pub fn build_router(state: AppState) -> Router {
         .layer(axum::middleware::from_fn(csrf_check));
 
     // TODO: Leptos SSR integration will be finalized when frontend crate is complete.
-    Router::new().nest("/api", api_routes).with_state(state)
+    Router::new()
+        .nest("/api", api_routes)
+        .route("/ws/dashboard", get(ws::ws_handler))
+        .with_state(state)
 }

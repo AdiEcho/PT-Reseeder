@@ -1,3 +1,4 @@
+use crate::pages::dashboard::DashboardPage;
 use crate::pages::login::LoginPage;
 use leptos::prelude::*;
 use leptos_router::components::*;
@@ -10,20 +11,10 @@ pub fn App() -> impl IntoView {
             <main>
                 <Routes fallback=|| "Page not found">
                     <Route path=path!("/login") view=LoginPage />
-                    <Route path=path!("/dashboard") view=DashboardPlaceholder />
+                    <Route path=path!("/dashboard") view=DashboardPage />
                     <Route path=path!("/") view=|| view! { <Redirect path="/dashboard" /> } />
                 </Routes>
             </main>
         </Router>
-    }
-}
-
-#[component]
-fn DashboardPlaceholder() -> impl IntoView {
-    view! {
-        <div>
-            <h1>"Dashboard"</h1>
-            <p>"Coming soon..."</p>
-        </div>
     }
 }

@@ -13,7 +13,13 @@ leptos_meta = { workspace = true }
 wasm-bindgen = "=0.2.100"
 console_error_panic_hook = "0.1"
 serde = { workspace = true }
+serde_json = { workspace = true }
+web-sys = { version = "0.3", features = ["WebSocket", "MessageEvent", "ErrorEvent", "CloseEvent", "BinaryType"] }
+js-sys = "0.3"
+
+pt-reseeder-core = { path = "../core", optional = true }
+sqlx = { workspace = true, optional = true }
 
 [features]
 hydrate = ["leptos/hydrate"]
-ssr = ["leptos/ssr", "leptos_router/ssr", "leptos_meta/ssr"]
+ssr = ["leptos/ssr", "leptos_router/ssr", "leptos_meta/ssr", "dep:pt-reseeder-core", "dep:sqlx"]

@@ -1,0 +1,87 @@
+use leptos::prelude::*;
+
+use crate::server_fns::{DashboardOverview, SiteReseedStats, UserInfoAggregate};
+
+/// A single real-time update pushed over the WebSocket.
+#[derive(Debug, Clone)]
+pub struct DashboardWsUpdate {
+    pub overview: Option<DashboardOverview>,
+    pub site_stats: Option<Vec<SiteReseedStats>>,
+    pub user_info: Option<UserInfoAggregate>,
+}
+
+/// Subscribe to `/ws/dashboard` for real-time dashboard updates.
+///
+/// On wasm32 (hydrated client), opens a WebSocket after hydration and
+/// deserialises every incoming `dashboard_update` event into the returned
+/// signal. On non-wasm (SSR) the signal is always `None`.
+pub fn use_dashboard_ws() -> ReadSignal<Option<DashboardWsUpdate>> {
+    let (ws_data, set_ws_data) = signal(None::<DashboardWsUpdate>);
+    // Suppress unused-variable warning on non-wasm (SSR) targets where the
+    // cfg(wasm32) block below is compiled out.
+    #[cfg(not(target_arch = "wasm32"))]
+    let _ = &set_ws_data;
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        use wasm_bindgen::prelude::*;
+        use wasm_bindgen::JsCast;
+        use web_sys::{MessageEvent, WebSocket};
+
+        Effect::new(move |_| {
+            let window = match web_sys::window() {
+                Some(w) => w,
+                None => return,
+            };
+            let location = window.location();
+            let protocol = location.protocol().unwrap_or_default();
+            let host = location.host().unwrap_or_default();
+            let ws_protocol = if protocol == "https:" { "wss:" } else { "ws:" };
+            let url = format!("{ws_protocol}//{host}/ws/dashboard");
+
+            let ws = match WebSocket::new(&url) {
+                Ok(ws) => ws,
+                Err(_) => return,
+            };
+
+            // --- onmessage ---------------------------------------------------
+            let on_message = Closure::<dyn FnMut(MessageEvent)>::new(move |e: MessageEvent| {
+                if let Ok(js_str) = e.data().dyn_into::<js_sys::JsString>() {
+                    let text: String = js_str.into();
+                    // The server sends: {"type":"dashboard_update","overview":{...},...}
+                    // Unknown fields are silently ignored by default serde behaviour.
+                    #[derive(serde::Deserialize)]
+                    struct RawWsEvent {
+                        overview: Option<DashboardOverview>,
+                        site_stats: Option<Vec<SiteReseedStats>>,
+                        user_info: Option<UserInfoAggregate>,
+                    }
+
+                    if let Ok(evt) = serde_json::from_str::<RawWsEvent>(&text) {
+                        set_ws_data.set(Some(DashboardWsUpdate {
+                            overview: evt.overview,
+                            site_stats: evt.site_stats,
+                            user_info: evt.user_info,
+                        }));
+                    }
+                }
+            });
+            ws.set_onmessage(Some(on_message.as_ref().unchecked_ref()));
+            on_message.forget(); // prevent GC -- closure lives as long as the WS
+
+            // Keep a handle so we can close it on cleanup.
+            let ws_handle = ws.clone();
+
+            on_cleanup(move || {
+                let _ = ws_handle.close();
+            });
+
+            // Prevent the WS object from being dropped (it is ref-counted on
+            // the JS side via the clone above, so this just prevents the Rust
+            // wrapper from calling `close` on drop).
+            std::mem::forget(ws);
+        });
+    }
+
+    ws_data
+}

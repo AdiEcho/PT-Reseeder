@@ -4,4 +4,5 @@ pub mod folders;
 pub mod health;
 pub mod repost;
 pub mod sites;
+pub mod stats;
 pub mod tasks;

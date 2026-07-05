@@ -1,19 +1,18 @@
 use axum::{
-    Router,
-    routing::{delete, get, post},
-    Json,
     extract::{Path, State},
     http::StatusCode,
+    routing::{delete, get, post},
+    Json, Router,
 };
 use serde::{Deserialize, Serialize};
 use tracing::{debug, error};
 
 use crate::state::AppState;
 use pt_reseeder_core::crypto::Vault;
-use pt_reseeder_core::db::models::{DownloaderRow, DownloaderPairRow};
+use pt_reseeder_core::db::models::{DownloaderPairRow, DownloaderRow};
 use pt_reseeder_core::downloader::qbittorrent::QBittorrentClient;
-use pt_reseeder_core::downloader::transmission::TransmissionClient;
 use pt_reseeder_core::downloader::traits::Downloader;
+use pt_reseeder_core::downloader::transmission::TransmissionClient;
 
 // --- Request / Response types ---
 
@@ -132,7 +131,8 @@ async fn build_downloader(
     row: &DownloaderRow,
     vault: &Vault,
 ) -> Result<Box<dyn Downloader>, (StatusCode, Json<ApiError>)> {
-    let username = if let (Some(enc), Some(nonce)) = (&row.encrypted_username, &row.username_nonce) {
+    let username = if let (Some(enc), Some(nonce)) = (&row.encrypted_username, &row.username_nonce)
+    {
         let nonce_arr: [u8; 12] = nonce.as_slice().try_into().map_err(|_| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -161,7 +161,8 @@ async fn build_downloader(
         None
     };
 
-    let password = if let (Some(enc), Some(nonce)) = (&row.encrypted_password, &row.password_nonce) {
+    let password = if let (Some(enc), Some(nonce)) = (&row.encrypted_password, &row.password_nonce)
+    {
         let nonce_arr: [u8; 12] = nonce.as_slice().try_into().map_err(|_| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -219,7 +220,9 @@ async fn build_downloader(
 }
 
 /// Get a read-locked vault reference, returning an error if the vault is not unlocked.
-async fn get_vault(state: &AppState) -> Result<tokio::sync::RwLockReadGuard<'_, Option<Vault>>, (StatusCode, Json<ApiError>)> {
+async fn get_vault(
+    state: &AppState,
+) -> Result<tokio::sync::RwLockReadGuard<'_, Option<Vault>>, (StatusCode, Json<ApiError>)> {
     let guard = state.inner.vault.read().await;
     if guard.is_none() {
         return Err((
@@ -244,7 +247,10 @@ async fn create_downloader(
         return Err((
             StatusCode::BAD_REQUEST,
             Json(ApiError {
-                error: format!("unsupported dl_type: {}, must be 'qbittorrent' or 'transmission'", req.dl_type),
+                error: format!(
+                    "unsupported dl_type: {}, must be 'qbittorrent' or 'transmission'",
+                    req.dl_type
+                ),
             }),
         ));
     }
@@ -305,15 +311,20 @@ async fn create_downloader(
         created_at: String::new(), // will be set by DB
     };
 
-    let id = state.inner.repo.create_downloader(&row).await.map_err(|e| {
-        error!("failed to create downloader: {}", e);
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ApiError {
-                error: format!("database error: {}", e),
-            }),
-        )
-    })?;
+    let id = state
+        .inner
+        .repo
+        .create_downloader(&row)
+        .await
+        .map_err(|e| {
+            error!("failed to create downloader: {}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ApiError {
+                    error: format!("database error: {}", e),
+                }),
+            )
+        })?;
 
     // Fetch back to get DB-generated fields
     let created = state
@@ -443,10 +454,16 @@ async fn update_downloader(
             })?;
             (Some(enc), Some(nonce.to_vec()))
         } else {
-            (existing.encrypted_username.clone(), existing.username_nonce.clone())
+            (
+                existing.encrypted_username.clone(),
+                existing.username_nonce.clone(),
+            )
         }
     } else {
-        (existing.encrypted_username.clone(), existing.username_nonce.clone())
+        (
+            existing.encrypted_username.clone(),
+            existing.username_nonce.clone(),
+        )
     };
 
     let (encrypted_password, password_nonce) = if req.password.is_some() {
@@ -463,10 +480,16 @@ async fn update_downloader(
             })?;
             (Some(enc), Some(nonce.to_vec()))
         } else {
-            (existing.encrypted_password.clone(), existing.password_nonce.clone())
+            (
+                existing.encrypted_password.clone(),
+                existing.password_nonce.clone(),
+            )
         }
     } else {
-        (existing.encrypted_password.clone(), existing.password_nonce.clone())
+        (
+            existing.encrypted_password.clone(),
+            existing.password_nonce.clone(),
+        )
     };
 
     let updated_row = DownloaderRow {
@@ -536,19 +559,14 @@ async fn delete_downloader(
             )
         })?;
 
-    state
-        .inner
-        .repo
-        .delete_downloader(id)
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ApiError {
-                    error: format!("database error: {}", e),
-                }),
-            )
-        })?;
+    state.inner.repo.delete_downloader(id).await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ApiError {
+                error: format!("database error: {}", e),
+            }),
+        )
+    })?;
 
     debug!(id = id, "downloader deleted");
     Ok(StatusCode::NO_CONTENT)
@@ -805,7 +823,10 @@ async fn delete_pair(
 
 pub fn router() -> Router<AppState> {
     Router::new()
-        .route("/downloaders", post(create_downloader).get(list_downloaders))
+        .route(
+            "/downloaders",
+            post(create_downloader).get(list_downloaders),
+        )
         .route(
             "/downloaders/{id}",
             get(get_downloader)

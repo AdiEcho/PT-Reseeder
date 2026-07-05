@@ -1,10 +1,11 @@
-use std::collections::HashMap;
-use std::sync::Arc;
 use super::models::SiteId;
 use super::rate_limiter::SiteRateLimiter;
 use super::traits::*;
+use std::collections::HashMap;
+use std::sync::Arc;
 
 /// Holds all capability views for a registered site adapter
+#[derive(Clone)]
 pub struct AdapterHandle {
     pub core: Arc<dyn SiteCore>,
     pub reseed: Option<Arc<dyn ReseedCapable>>,
@@ -15,6 +16,7 @@ pub struct AdapterHandle {
 }
 
 /// Registry of all active site adapters
+#[derive(Clone)]
 pub struct SiteRegistry {
     adapters: HashMap<SiteId, AdapterHandle>,
 }

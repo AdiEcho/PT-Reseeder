@@ -1,5 +1,5 @@
-use std::collections::BTreeMap;
 use crate::error::CoreError;
+use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum BencodeValue {
@@ -144,7 +144,9 @@ fn decode_bytes(data: &[u8], pos: usize) -> Result<(BencodeValue, usize), CoreEr
     let start = colon + 1;
     let end = start + len;
     if end > data.len() {
-        return Err(CoreError::Internal("Byte string exceeds data length".into()));
+        return Err(CoreError::Internal(
+            "Byte string exceeds data length".into(),
+        ));
     }
 
     Ok((BencodeValue::Bytes(data[start..end].to_vec()), end))

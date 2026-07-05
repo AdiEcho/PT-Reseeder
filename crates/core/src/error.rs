@@ -12,6 +12,10 @@ pub enum CoreError {
     Downloader(#[from] DownloaderError),
     #[error("engine error: {0}")]
     Engine(#[from] EngineError),
+    #[error("repost error: {0}")]
+    Repost(#[from] RepostError),
+    #[error("scheduler error: {0}")]
+    Scheduler(#[from] SchedulerError),
     #[error("config error: {0}")]
     Config(String),
     #[error("internal error: {0}")]
@@ -86,4 +90,36 @@ pub enum EngineError {
     AddFailed(String),
     #[error("operation cancelled")]
     Cancelled,
+}
+
+#[derive(Debug, Error)]
+pub enum RepostError {
+    #[error("extraction failed: {0}")]
+    ExtractionFailed(String),
+    #[error("adaptation failed: {0}")]
+    AdaptationFailed(String),
+    #[error("submission failed: {0}")]
+    SubmissionFailed(String),
+    #[error("invalid state transition: {0}")]
+    InvalidState(String),
+    #[error("entry not found: {0}")]
+    NotFound(String),
+    #[error("site not capable: {0}")]
+    SiteNotCapable(String),
+}
+
+#[derive(Debug, Error)]
+pub enum SchedulerError {
+    #[error("task not found: {0}")]
+    TaskNotFound(i64),
+    #[error("task already running: {0}")]
+    TaskAlreadyRunning(i64),
+    #[error("invalid cron expression: {0}")]
+    InvalidCron(String),
+    #[error("watcher error: {0}")]
+    WatcherError(String),
+    #[error("executor error: {0}")]
+    ExecutorError(String),
+    #[error("folder not found: {0}")]
+    FolderNotFound(i64),
 }

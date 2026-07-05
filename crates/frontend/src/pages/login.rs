@@ -1,5 +1,5 @@
-use leptos::prelude::*;
 use crate::server_fns::{login, register};
+use leptos::prelude::*;
 
 #[component]
 pub fn LoginPage() -> impl IntoView {

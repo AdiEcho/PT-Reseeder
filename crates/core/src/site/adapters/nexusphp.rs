@@ -12,6 +12,7 @@ use crate::error::{CoreError, SiteError};
 use crate::site::models::*;
 use crate::site::traits::*;
 
+#[derive(Clone)]
 pub struct NexusPhpAdapter {
     name: String,
     base_url: String,
@@ -90,7 +91,12 @@ fn extract_text(html: &Html, selector_str: &Option<String>) -> Option<String> {
     let sel_str = selector_str.as_deref()?;
     let selector = Selector::parse(sel_str).ok()?;
     let element = html.select(&selector).next()?;
-    let text: String = element.text().collect::<Vec<_>>().join("").trim().to_string();
+    let text: String = element
+        .text()
+        .collect::<Vec<_>>()
+        .join("")
+        .trim()
+        .to_string();
     if text.is_empty() {
         None
     } else {
@@ -285,10 +291,9 @@ impl ReseedCapable for NexusPhpAdapter {
             return Err(SiteError::HttpError(format!("HTTP {status} from pieces_hash API")).into());
         }
 
-        let parsed: PiecesHashResponse = resp
-            .json()
-            .await
-            .map_err(|e| SiteError::ParseError(format!("failed to parse pieces_hash response: {e}")))?;
+        let parsed: PiecesHashResponse = resp.json().await.map_err(|e| {
+            SiteError::ParseError(format!("failed to parse pieces_hash response: {e}"))
+        })?;
 
         debug!(
             site = %self.name,
@@ -477,57 +482,116 @@ impl RepostCapable for NexusPhpAdapter {
             .text()
             .await
             .map_err(|e| SiteError::HttpError(e.to_string()))?;
-        let html = Html::parse_document(&body);
 
-        // Name: try h1, then title tag
-        let name = extract_by_selector(&html, "h1")
-            .or_else(|| extract_by_selector(&html, "title"))
-            .unwrap_or_default();
+        let (
+            name,
+            small_descr,
+            descr,
+            imdb_url,
+            douban_url,
+            mediainfo,
+            images,
+            torrent_type,
+            region,
+            resolution,
+            video_codec,
+            audio_codec,
+            medium,
+        ) = {
+            let html = Html::parse_document(&body);
 
-        // Subtitle
-        let small_descr = extract_by_selector(&html, "span.subtitle")
-            .or_else(|| extract_by_selector(&html, "td.rowfollow:nth-child(2)"))
-            .unwrap_or_default();
-
-        // Description (BBCode): try textarea#descr, then div#kdescr
-        let descr = extract_by_selector(&html, "textarea#descr")
-            .or_else(|| extract_by_selector(&html, "#kdescr"))
-            .unwrap_or_default();
-
-        // IMDb URL
-        let imdb_url = extract_link_href(&html, r"imdb.com/title/");
-
-        // Douban URL
-        let douban_url = extract_link_href(&html, r"douban.com/subject/");
-
-        // Mediainfo: from pre or code block
-        let mediainfo = extract_by_selector(&html, "pre#mediainfo")
-            .or_else(|| extract_by_selector(&html, "div.mediainfo pre"))
-            .or_else(|| extract_by_selector(&html, "pre"));
-
-        // Images from description area
-        let images = extract_images(&html, "#kdescr img, .bbcodeimage");
-
-        // Category fields - extract from select elements or text cells
-        let torrent_type = extract_selected_option(&html, "select[name='type'] option[selected]")
-            .or_else(|| extract_by_selector(&html, "span#type"))
-            .unwrap_or_default();
-        let region = extract_selected_option(&html, "select[name='source_sel'] option[selected]")
-            .unwrap_or_default();
-        let resolution =
-            extract_selected_option(&html, "select[name='standard_sel'] option[selected]")
+            // Name: try h1, then title tag
+            let name = extract_by_selector(&html, "h1")
+                .or_else(|| extract_by_selector(&html, "title"))
                 .unwrap_or_default();
-        let video_codec =
-            extract_selected_option(&html, "select[name='codec_sel'] option[selected]")
+
+            // Subtitle
+            let small_descr = extract_by_selector(&html, "span.subtitle")
+                .or_else(|| extract_by_selector(&html, "td.rowfollow:nth-child(2)"))
                 .unwrap_or_default();
-        let audio_codec =
-            extract_selected_option(&html, "select[name='audiocodec_sel'] option[selected]")
+
+            // Description (BBCode): try textarea#descr, then div#kdescr
+            let descr = extract_by_selector(&html, "textarea#descr")
+                .or_else(|| extract_by_selector(&html, "#kdescr"))
                 .unwrap_or_default();
-        let medium =
-            extract_selected_option(&html, "select[name='medium_sel'] option[selected]")
-                .unwrap_or_default();
+
+            // IMDb URL
+            let imdb_url = extract_link_href(&html, r"imdb.com/title/");
+
+            // Douban URL
+            let douban_url = extract_link_href(&html, r"douban.com/subject/");
+
+            // Mediainfo: from pre or code block
+            let mediainfo = extract_by_selector(&html, "pre#mediainfo")
+                .or_else(|| extract_by_selector(&html, "div.mediainfo pre"))
+                .or_else(|| extract_by_selector(&html, "pre"));
+
+            // Images from description area
+            let images = extract_images(&html, "#kdescr img, .bbcodeimage");
+
+            // Category fields - extract from select elements or text cells
+            let torrent_type =
+                extract_selected_option(&html, "select[name='type'] option[selected]")
+                    .or_else(|| extract_by_selector(&html, "span#type"))
+                    .unwrap_or_default();
+            let region =
+                extract_selected_option(&html, "select[name='source_sel'] option[selected]")
+                    .unwrap_or_default();
+            let resolution =
+                extract_selected_option(&html, "select[name='standard_sel'] option[selected]")
+                    .unwrap_or_default();
+            let video_codec =
+                extract_selected_option(&html, "select[name='codec_sel'] option[selected]")
+                    .unwrap_or_default();
+            let audio_codec =
+                extract_selected_option(&html, "select[name='audiocodec_sel'] option[selected]")
+                    .unwrap_or_default();
+            let medium =
+                extract_selected_option(&html, "select[name='medium_sel'] option[selected]")
+                    .unwrap_or_default();
+
+            (
+                name,
+                small_descr,
+                descr,
+                imdb_url,
+                douban_url,
+                mediainfo,
+                images,
+                torrent_type,
+                region,
+                resolution,
+                video_codec,
+                audio_codec,
+                medium,
+            )
+        };
 
         debug!(site = %self.name, torrent_id, name = %name, "torrent detail extracted");
+
+        let torrent_file_data = match torrent_id.parse::<i64>() {
+            Ok(id) => {
+                let download_url = self.build_download_url(id);
+                match self.client.get(&download_url).send().await {
+                    Ok(resp) if resp.status().is_success() => match resp.bytes().await {
+                        Ok(bytes) => Some(bytes.to_vec()),
+                        Err(e) => {
+                            warn!(site = %self.name, torrent_id, "failed to read torrent file bytes: {e}");
+                            None
+                        }
+                    },
+                    Ok(resp) => {
+                        warn!(site = %self.name, torrent_id, status = %resp.status(), "failed to download torrent file");
+                        None
+                    }
+                    Err(e) => {
+                        warn!(site = %self.name, torrent_id, "failed to download torrent file: {e}");
+                        None
+                    }
+                }
+            }
+            Err(_) => None,
+        };
 
         Ok(RawTorrentInfo {
             name,
@@ -545,7 +609,7 @@ impl RepostCapable for NexusPhpAdapter {
             medium,
             source_site: self.name.clone(),
             source_url: url,
-            torrent_file_data: None,
+            torrent_file_data,
         })
     }
 
@@ -616,7 +680,8 @@ impl RepostCapable for NexusPhpAdapter {
             debug!(site = %self.name, url = %final_url, "torrent submitted successfully (redirect)");
             return Ok(final_url);
         }
-        if body.contains("种子已成功上传") || body.contains("Torrent uploaded successfully") {
+        if body.contains("种子已成功上传") || body.contains("Torrent uploaded successfully")
+        {
             debug!(site = %self.name, "torrent submitted successfully (message)");
             return Ok(final_url);
         }
@@ -669,10 +734,9 @@ impl SearchCapable for NexusPhpAdapter {
             .map_err(|e| SiteError::HttpError(e.to_string()))?;
         let html = Html::parse_document(&body);
 
-        let row_sel =
-            Selector::parse("table.torrents tr:not(:first-child)").map_err(|_| {
-                SiteError::ParseError("failed to parse torrent table row selector".into())
-            })?;
+        let row_sel = Selector::parse("table.torrents tr:not(:first-child)").map_err(|_| {
+            SiteError::ParseError("failed to parse torrent table row selector".into())
+        })?;
 
         let link_sel = Selector::parse("a[href*='details.php']")
             .map_err(|_| SiteError::ParseError("failed to parse details link selector".into()))?;

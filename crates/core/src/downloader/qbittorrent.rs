@@ -5,11 +5,11 @@ use std::time::Duration;
 use async_trait::async_trait;
 use reqwest::multipart;
 use serde::Deserialize;
-use tracing::{debug, warn, error};
+use tracing::{debug, error, warn};
 
-use crate::error::{CoreError, DownloaderError};
 use crate::downloader::models::*;
 use crate::downloader::traits::Downloader;
+use crate::error::{CoreError, DownloaderError};
 
 /// Internal deserialization struct for qBittorrent torrent info API responses.
 #[derive(Deserialize)]
@@ -77,24 +77,28 @@ impl QBittorrentClient {
     /// Get qBittorrent version string.
     pub async fn get_version(&self) -> Result<String, CoreError> {
         let url = format!("{}/api/v2/app/version", self.base_url());
-        let resp = self.client.get(&url).send().await.map_err(|e| {
-            CoreError::Downloader(DownloaderError::ConnectionFailed(e.to_string()))
-        })?;
-        let version = resp.text().await.map_err(|e| {
-            CoreError::Downloader(DownloaderError::ConnectionFailed(e.to_string()))
-        })?;
+        let resp =
+            self.client.get(&url).send().await.map_err(|e| {
+                CoreError::Downloader(DownloaderError::ConnectionFailed(e.to_string()))
+            })?;
+        let version = resp
+            .text()
+            .await
+            .map_err(|e| CoreError::Downloader(DownloaderError::ConnectionFailed(e.to_string())))?;
         Ok(version)
     }
 
     /// Get total number of torrents.
     pub async fn get_torrent_count(&self) -> Result<u64, CoreError> {
         let url = format!("{}/api/v2/torrents/info", self.base_url());
-        let resp = self.client.get(&url).send().await.map_err(|e| {
-            CoreError::Downloader(DownloaderError::ConnectionFailed(e.to_string()))
-        })?;
-        let torrents: Vec<QBTorrentInfo> = resp.json().await.map_err(|e| {
-            CoreError::Downloader(DownloaderError::ConnectionFailed(e.to_string()))
-        })?;
+        let resp =
+            self.client.get(&url).send().await.map_err(|e| {
+                CoreError::Downloader(DownloaderError::ConnectionFailed(e.to_string()))
+            })?;
+        let torrents: Vec<QBTorrentInfo> = resp
+            .json()
+            .await
+            .map_err(|e| CoreError::Downloader(DownloaderError::ConnectionFailed(e.to_string())))?;
         Ok(torrents.len() as u64)
     }
 
@@ -124,15 +128,17 @@ impl Downloader for QBittorrentClient {
             CoreError::Downloader(DownloaderError::ConnectionFailed(e.to_string()))
         })?;
 
-        let body = resp.text().await.map_err(|e| {
-            CoreError::Downloader(DownloaderError::ConnectionFailed(e.to_string()))
-        })?;
+        let body = resp
+            .text()
+            .await
+            .map_err(|e| CoreError::Downloader(DownloaderError::ConnectionFailed(e.to_string())))?;
 
         if body.trim() != "Ok." {
             warn!(host = %self.host, port = %self.port, "qBittorrent auth failed");
-            return Err(CoreError::Downloader(DownloaderError::AuthFailed(
-                format!("login failed for {}:{}", self.host, self.port),
-            )));
+            return Err(CoreError::Downloader(DownloaderError::AuthFailed(format!(
+                "login failed for {}:{}",
+                self.host, self.port
+            ))));
         }
 
         self.connected = true;
@@ -159,24 +165,28 @@ impl Downloader for QBittorrentClient {
             self.base_url(),
             info_hash
         );
-        let resp = self.client.get(&url).send().await.map_err(|e| {
-            CoreError::Downloader(DownloaderError::ConnectionFailed(e.to_string()))
-        })?;
-        let torrents: Vec<QBTorrentInfo> = resp.json().await.map_err(|e| {
-            CoreError::Downloader(DownloaderError::ConnectionFailed(e.to_string()))
-        })?;
+        let resp =
+            self.client.get(&url).send().await.map_err(|e| {
+                CoreError::Downloader(DownloaderError::ConnectionFailed(e.to_string()))
+            })?;
+        let torrents: Vec<QBTorrentInfo> = resp
+            .json()
+            .await
+            .map_err(|e| CoreError::Downloader(DownloaderError::ConnectionFailed(e.to_string())))?;
 
         Ok(torrents.into_iter().next().map(TorrentInfo::from))
     }
 
     async fn get_all_info_hashes(&self) -> Result<HashSet<String>, CoreError> {
         let url = format!("{}/api/v2/torrents/info", self.base_url());
-        let resp = self.client.get(&url).send().await.map_err(|e| {
-            CoreError::Downloader(DownloaderError::ConnectionFailed(e.to_string()))
-        })?;
-        let torrents: Vec<QBTorrentInfo> = resp.json().await.map_err(|e| {
-            CoreError::Downloader(DownloaderError::ConnectionFailed(e.to_string()))
-        })?;
+        let resp =
+            self.client.get(&url).send().await.map_err(|e| {
+                CoreError::Downloader(DownloaderError::ConnectionFailed(e.to_string()))
+            })?;
+        let torrents: Vec<QBTorrentInfo> = resp
+            .json()
+            .await
+            .map_err(|e| CoreError::Downloader(DownloaderError::ConnectionFailed(e.to_string())))?;
 
         Ok(torrents.into_iter().map(|t| t.hash).collect())
     }
@@ -187,11 +197,13 @@ impl Downloader for QBittorrentClient {
         let file_part = multipart::Part::bytes(opts.torrent_data)
             .file_name("torrent.torrent")
             .mime_str("application/x-bittorrent")
-            .map_err(|e| {
-                CoreError::Downloader(DownloaderError::AddFailed(e.to_string()))
-            })?;
+            .map_err(|e| CoreError::Downloader(DownloaderError::AddFailed(e.to_string())))?;
 
-        let skip_checking = if opts.skip_hash_check { "true" } else { "false" };
+        let skip_checking = if opts.skip_hash_check {
+            "true"
+        } else {
+            "false"
+        };
         let paused = if opts.paused { "true" } else { "false" };
 
         let mut form = multipart::Form::new()
@@ -204,24 +216,32 @@ impl Downloader for QBittorrentClient {
             form = form.text("tags", tag);
         }
 
-        let resp = self.client.post(&url).multipart(form).send().await.map_err(|e| {
-            error!("failed to add torrent: {}", e);
-            CoreError::Downloader(DownloaderError::AddFailed(e.to_string()))
-        })?;
+        let resp = self
+            .client
+            .post(&url)
+            .multipart(form)
+            .send()
+            .await
+            .map_err(|e| {
+                error!("failed to add torrent: {}", e);
+                CoreError::Downloader(DownloaderError::AddFailed(e.to_string()))
+            })?;
 
         let status = resp.status();
-        let body = resp.text().await.map_err(|e| {
-            CoreError::Downloader(DownloaderError::AddFailed(e.to_string()))
-        })?;
+        let body = resp
+            .text()
+            .await
+            .map_err(|e| CoreError::Downloader(DownloaderError::AddFailed(e.to_string())))?;
 
         if status.is_success() && body.trim() == "Ok." {
             debug!("torrent added successfully");
             Ok(true)
         } else {
             warn!(status = %status, body = %body, "add torrent returned unexpected response");
-            Err(CoreError::Downloader(DownloaderError::AddFailed(
-                format!("status={}, body={}", status, body),
-            )))
+            Err(CoreError::Downloader(DownloaderError::AddFailed(format!(
+                "status={}, body={}",
+                status, body
+            ))))
         }
     }
 
@@ -229,9 +249,12 @@ impl Downloader for QBittorrentClient {
         let url = format!("{}/api/v2/torrents/resume", self.base_url());
         let params = [("hashes", info_hash)];
 
-        self.client.post(&url).form(&params).send().await.map_err(|e| {
-            CoreError::Downloader(DownloaderError::ConnectionFailed(e.to_string()))
-        })?;
+        self.client
+            .post(&url)
+            .form(&params)
+            .send()
+            .await
+            .map_err(|e| CoreError::Downloader(DownloaderError::ConnectionFailed(e.to_string())))?;
 
         debug!(info_hash = %info_hash, "torrent resumed");
         Ok(true)
@@ -241,9 +264,12 @@ impl Downloader for QBittorrentClient {
         let url = format!("{}/api/v2/torrents/pause", self.base_url());
         let params = [("hashes", info_hash)];
 
-        self.client.post(&url).form(&params).send().await.map_err(|e| {
-            CoreError::Downloader(DownloaderError::ConnectionFailed(e.to_string()))
-        })?;
+        self.client
+            .post(&url)
+            .form(&params)
+            .send()
+            .await
+            .map_err(|e| CoreError::Downloader(DownloaderError::ConnectionFailed(e.to_string())))?;
 
         debug!(info_hash = %info_hash, "torrent paused");
         Ok(true)

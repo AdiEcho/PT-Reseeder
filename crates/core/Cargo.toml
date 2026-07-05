@@ -27,3 +27,7 @@ toml_lib = { package = "toml", version = "0.8" }
 futures = "0.3"
 regex-lite = "0.1"
 urlencoding = "2"
+tokio-cron-scheduler = "0.13"
+croner = "2.2"
+notify = "7"
+uuid = "1"

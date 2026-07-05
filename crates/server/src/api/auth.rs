@@ -1,9 +1,14 @@
-use axum::{Router, routing::{get, post}, Json, extract::State, http::StatusCode};
-use axum_extra::extract::cookie::CookieJar;
-use serde::{Deserialize, Serialize};
-use crate::state::AppState;
 use crate::auth;
+use crate::state::AppState;
+use axum::{
+    extract::State,
+    http::StatusCode,
+    routing::{get, post},
+    Json, Router,
+};
+use axum_extra::extract::cookie::CookieJar;
 use pt_reseeder_core::crypto::Vault;
+use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize)]
 pub struct AuthRequest {
@@ -33,14 +38,17 @@ async fn register(
     // but really we want "has any user been registered." We check if a user with this
     // username exists; if registration is first-come-first-serve, that's fine.
     // For a single-user app, we check if a user already exists at all.
-    let existing = repo.find_user_by_username(&req.username).await.map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(AuthError {
-                error: format!("database error: {}", e),
-            }),
-        )
-    })?;
+    let existing = repo
+        .find_user_by_username(&req.username)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(AuthError {
+                    error: format!("database error: {}", e),
+                }),
+            )
+        })?;
 
     if existing.is_some() {
         return Err((
@@ -85,6 +93,14 @@ async fn register(
         let mut vault_lock = state.inner.vault.write().await;
         *vault_lock = Some(vault);
     }
+    state.refresh_site_registry().await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(AuthError {
+                error: format!("failed to refresh site registry: {}", e),
+            }),
+        )
+    })?;
 
     // Create session
     let (raw_token, token_hash) = auth::generate_session_token();
@@ -168,6 +184,14 @@ async fn login(
         let mut vault_lock = state.inner.vault.write().await;
         *vault_lock = Some(vault);
     }
+    state.refresh_site_registry().await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(AuthError {
+                error: format!("failed to refresh site registry: {}", e),
+            }),
+        )
+    })?;
 
     // Create session token
     let (raw_token, token_hash) = auth::generate_session_token();
@@ -201,10 +225,7 @@ async fn login(
 }
 
 /// POST /api/auth/logout
-async fn logout(
-    State(state): State<AppState>,
-    jar: CookieJar,
-) -> Result<CookieJar, StatusCode> {
+async fn logout(State(state): State<AppState>, jar: CookieJar) -> Result<CookieJar, StatusCode> {
     // Extract session cookie
     if let Some(cookie) = jar.get(auth::SESSION_COOKIE_NAME) {
         if let Some(token_hash) = auth::hash_token(cookie.value()) {
@@ -220,10 +241,7 @@ async fn logout(
 }
 
 /// GET /api/auth/me
-async fn me(
-    State(state): State<AppState>,
-    jar: CookieJar,
-) -> Result<Json<UserInfo>, StatusCode> {
+async fn me(State(state): State<AppState>, jar: CookieJar) -> Result<Json<UserInfo>, StatusCode> {
     let cookie = jar
         .get(auth::SESSION_COOKIE_NAME)
         .ok_or(StatusCode::UNAUTHORIZED)?;
@@ -248,14 +266,13 @@ async fn me(
     // Look up the user to return their info
     // We need to find user by id. Repository doesn't have find_by_id, so we use
     // a query directly. For now, we store the username from the session's user_id.
-    let user = sqlx::query_as::<_, pt_reseeder_core::db::models::User>(
-        "SELECT * FROM users WHERE id = ?",
-    )
-    .bind(session.user_id)
-    .fetch_optional(&state.inner.db_pool)
-    .await
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-    .ok_or(StatusCode::UNAUTHORIZED)?;
+    let user =
+        sqlx::query_as::<_, pt_reseeder_core::db::models::User>("SELECT * FROM users WHERE id = ?")
+            .bind(session.user_id)
+            .fetch_optional(&state.inner.db_pool)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+            .ok_or(StatusCode::UNAUTHORIZED)?;
 
     Ok(Json(UserInfo {
         username: user.username,

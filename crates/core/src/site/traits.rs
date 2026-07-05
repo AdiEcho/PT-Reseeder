@@ -1,7 +1,7 @@
-use std::collections::HashSet;
-use async_trait::async_trait;
-use crate::error::CoreError;
 use super::models::{AdaptedTorrentInfo, RawTorrentInfo, TorrentSearchResult, UserStats};
+use crate::error::CoreError;
+use async_trait::async_trait;
+use std::collections::HashSet;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum SiteCapability {

@@ -38,10 +38,7 @@ impl Repository {
         Ok(result.last_insert_rowid())
     }
 
-    pub async fn find_user_by_username(
-        &self,
-        username: &str,
-    ) -> Result<Option<User>, CoreError> {
+    pub async fn find_user_by_username(&self, username: &str) -> Result<Option<User>, CoreError> {
         let user = sqlx::query_as::<_, User>("SELECT * FROM users WHERE username = ?")
             .bind(username)
             .fetch_optional(&self.pool)
@@ -90,15 +87,14 @@ impl Repository {
         token_hash: &[u8],
         expires_at: &str,
     ) -> Result<i64, CoreError> {
-        let result = sqlx::query(
-            "INSERT INTO sessions (user_id, token_hash, expires_at) VALUES (?, ?, ?)",
-        )
-        .bind(user_id)
-        .bind(token_hash)
-        .bind(expires_at)
-        .execute(&self.pool)
-        .await
-        .map_err(DbError::Sqlx)?;
+        let result =
+            sqlx::query("INSERT INTO sessions (user_id, token_hash, expires_at) VALUES (?, ?, ?)")
+                .bind(user_id)
+                .bind(token_hash)
+                .bind(expires_at)
+                .execute(&self.pool)
+                .await
+                .map_err(DbError::Sqlx)?;
         Ok(result.last_insert_rowid())
     }
 
@@ -106,13 +102,11 @@ impl Repository {
         &self,
         token_hash: &[u8],
     ) -> Result<Option<Session>, CoreError> {
-        let session = sqlx::query_as::<_, Session>(
-            "SELECT * FROM sessions WHERE token_hash = ?",
-        )
-        .bind(token_hash)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(DbError::Sqlx)?;
+        let session = sqlx::query_as::<_, Session>("SELECT * FROM sessions WHERE token_hash = ?")
+            .bind(token_hash)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(DbError::Sqlx)?;
         Ok(session)
     }
 
@@ -126,25 +120,21 @@ impl Repository {
     }
 
     pub async fn cleanup_expired_sessions(&self) -> Result<u64, CoreError> {
-        let result = sqlx::query(
-            "DELETE FROM sessions WHERE expires_at < datetime('now')",
-        )
-        .execute(&self.pool)
-        .await
-        .map_err(DbError::Sqlx)?;
+        let result = sqlx::query("DELETE FROM sessions WHERE expires_at < datetime('now')")
+            .execute(&self.pool)
+            .await
+            .map_err(DbError::Sqlx)?;
         Ok(result.rows_affected())
     }
 
     // --- App Config ---
 
     pub async fn get_config(&self, key: &str) -> Result<Option<String>, CoreError> {
-        let row = sqlx::query_as::<_, AppConfigEntry>(
-            "SELECT * FROM app_config WHERE key = ?",
-        )
-        .bind(key)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(DbError::Sqlx)?;
+        let row = sqlx::query_as::<_, AppConfigEntry>("SELECT * FROM app_config WHERE key = ?")
+            .bind(key)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(DbError::Sqlx)?;
         Ok(row.map(|r| r.value))
     }
 
@@ -354,23 +344,19 @@ impl Repository {
     }
 
     pub async fn get_downloader(&self, id: i64) -> Result<Option<DownloaderRow>, CoreError> {
-        let row = sqlx::query_as::<_, DownloaderRow>(
-            "SELECT * FROM downloaders WHERE id = ?",
-        )
-        .bind(id)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(DbError::Sqlx)?;
+        let row = sqlx::query_as::<_, DownloaderRow>("SELECT * FROM downloaders WHERE id = ?")
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(DbError::Sqlx)?;
         Ok(row)
     }
 
     pub async fn list_downloaders(&self) -> Result<Vec<DownloaderRow>, CoreError> {
-        let rows = sqlx::query_as::<_, DownloaderRow>(
-            "SELECT * FROM downloaders ORDER BY id",
-        )
-        .fetch_all(&self.pool)
-        .await
-        .map_err(DbError::Sqlx)?;
+        let rows = sqlx::query_as::<_, DownloaderRow>("SELECT * FROM downloaders ORDER BY id")
+            .fetch_all(&self.pool)
+            .await
+            .map_err(DbError::Sqlx)?;
         Ok(rows)
     }
 
@@ -436,13 +422,25 @@ impl Repository {
     }
 
     pub async fn list_downloader_pairs(&self) -> Result<Vec<DownloaderPairRow>, CoreError> {
-        let rows = sqlx::query_as::<_, DownloaderPairRow>(
-            "SELECT * FROM downloader_pairs ORDER BY id",
-        )
-        .fetch_all(&self.pool)
-        .await
-        .map_err(DbError::Sqlx)?;
+        let rows =
+            sqlx::query_as::<_, DownloaderPairRow>("SELECT * FROM downloader_pairs ORDER BY id")
+                .fetch_all(&self.pool)
+                .await
+                .map_err(DbError::Sqlx)?;
         Ok(rows)
+    }
+
+    pub async fn get_downloader_pair(
+        &self,
+        id: i64,
+    ) -> Result<Option<DownloaderPairRow>, CoreError> {
+        let row =
+            sqlx::query_as::<_, DownloaderPairRow>("SELECT * FROM downloader_pairs WHERE id = ?")
+                .bind(id)
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(DbError::Sqlx)?;
+        Ok(row)
     }
 
     pub async fn delete_downloader_pair(&self, id: i64) -> Result<(), CoreError> {
@@ -499,13 +497,12 @@ impl Repository {
         &self,
         info_hash: &str,
     ) -> Result<Option<PiecesCacheEntry>, CoreError> {
-        let row = sqlx::query_as::<_, PiecesCacheEntry>(
-            "SELECT * FROM pieces_cache WHERE info_hash = ?",
-        )
-        .bind(info_hash)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(DbError::Sqlx)?;
+        let row =
+            sqlx::query_as::<_, PiecesCacheEntry>("SELECT * FROM pieces_cache WHERE info_hash = ?")
+                .bind(info_hash)
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(DbError::Sqlx)?;
         Ok(row)
     }
 
@@ -562,15 +559,14 @@ impl Repository {
         scan_mode: &str,
         downloader_id: Option<i64>,
     ) -> Result<i64, CoreError> {
-        let result = sqlx::query(
-            "INSERT INTO folders (path, scan_mode, downloader_id) VALUES (?, ?, ?)",
-        )
-        .bind(path)
-        .bind(scan_mode)
-        .bind(downloader_id)
-        .execute(&self.pool)
-        .await
-        .map_err(DbError::Sqlx)?;
+        let result =
+            sqlx::query("INSERT INTO folders (path, scan_mode, downloader_id) VALUES (?, ?, ?)")
+                .bind(path)
+                .bind(scan_mode)
+                .bind(downloader_id)
+                .execute(&self.pool)
+                .await
+                .map_err(DbError::Sqlx)?;
         Ok(result.last_insert_rowid())
     }
 
@@ -582,6 +578,47 @@ impl Repository {
         Ok(rows)
     }
 
+    pub async fn get_folder(&self, id: i64) -> Result<Option<FolderRow>, CoreError> {
+        let row = sqlx::query_as::<_, FolderRow>("SELECT * FROM folders WHERE id = ?")
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(DbError::Sqlx)?;
+        Ok(row)
+    }
+
+    pub async fn update_folder(
+        &self,
+        id: i64,
+        path: &str,
+        scan_mode: &str,
+        downloader_id: Option<i64>,
+        enabled: bool,
+    ) -> Result<(), CoreError> {
+        sqlx::query(
+            "UPDATE folders SET path = ?, scan_mode = ?, downloader_id = ?, enabled = ? \
+             WHERE id = ?",
+        )
+        .bind(path)
+        .bind(scan_mode)
+        .bind(downloader_id)
+        .bind(enabled)
+        .bind(id)
+        .execute(&self.pool)
+        .await
+        .map_err(DbError::Sqlx)?;
+        Ok(())
+    }
+
+    pub async fn update_folder_scanned(&self, id: i64) -> Result<(), CoreError> {
+        sqlx::query("UPDATE folders SET last_scanned_at = datetime('now') WHERE id = ?")
+            .bind(id)
+            .execute(&self.pool)
+            .await
+            .map_err(DbError::Sqlx)?;
+        Ok(())
+    }
+
     pub async fn delete_folder(&self, id: i64) -> Result<(), CoreError> {
         sqlx::query("DELETE FROM folders WHERE id = ?")
             .bind(id)
@@ -589,6 +626,67 @@ impl Repository {
             .await
             .map_err(DbError::Sqlx)?;
         Ok(())
+    }
+
+    // --- Task-Folder Associations ---
+
+    pub async fn set_task_folders(
+        &self,
+        task_id: i64,
+        folder_ids: &[i64],
+    ) -> Result<(), CoreError> {
+        sqlx::query("DELETE FROM task_folders WHERE task_id = ?")
+            .bind(task_id)
+            .execute(&self.pool)
+            .await
+            .map_err(DbError::Sqlx)?;
+        for &folder_id in folder_ids {
+            sqlx::query("INSERT INTO task_folders (task_id, folder_id) VALUES (?, ?)")
+                .bind(task_id)
+                .bind(folder_id)
+                .execute(&self.pool)
+                .await
+                .map_err(DbError::Sqlx)?;
+        }
+        Ok(())
+    }
+
+    pub async fn get_task_folders(&self, task_id: i64) -> Result<Vec<i64>, CoreError> {
+        let rows: Vec<(i64,)> =
+            sqlx::query_as("SELECT folder_id FROM task_folders WHERE task_id = ?")
+                .bind(task_id)
+                .fetch_all(&self.pool)
+                .await
+                .map_err(DbError::Sqlx)?;
+        Ok(rows.into_iter().map(|r| r.0).collect())
+    }
+
+    // --- Task-Site Associations ---
+
+    pub async fn set_task_sites(&self, task_id: i64, site_ids: &[i64]) -> Result<(), CoreError> {
+        sqlx::query("DELETE FROM task_sites WHERE task_id = ?")
+            .bind(task_id)
+            .execute(&self.pool)
+            .await
+            .map_err(DbError::Sqlx)?;
+        for &site_id in site_ids {
+            sqlx::query("INSERT INTO task_sites (task_id, site_id) VALUES (?, ?)")
+                .bind(task_id)
+                .bind(site_id)
+                .execute(&self.pool)
+                .await
+                .map_err(DbError::Sqlx)?;
+        }
+        Ok(())
+    }
+
+    pub async fn get_task_sites(&self, task_id: i64) -> Result<Vec<i64>, CoreError> {
+        let rows: Vec<(i64,)> = sqlx::query_as("SELECT site_id FROM task_sites WHERE task_id = ?")
+            .bind(task_id)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(DbError::Sqlx)?;
+        Ok(rows.into_iter().map(|r| r.0).collect())
     }
 
     // --- Tasks ---
@@ -637,14 +735,38 @@ impl Repository {
     }
 
     pub async fn update_task_status(&self, id: i64, status: &str) -> Result<(), CoreError> {
-        sqlx::query(
-            "UPDATE tasks SET status = ?, updated_at = datetime('now') WHERE id = ?",
+        sqlx::query("UPDATE tasks SET status = ?, updated_at = datetime('now') WHERE id = ?")
+            .bind(status)
+            .bind(id)
+            .execute(&self.pool)
+            .await
+            .map_err(DbError::Sqlx)?;
+        Ok(())
+    }
+
+    pub async fn try_mark_task_running(&self, id: i64) -> Result<bool, CoreError> {
+        let result = sqlx::query(
+            "UPDATE tasks SET status = 'running', updated_at = datetime('now') \
+             WHERE id = ? AND status != 'running'",
         )
-        .bind(status)
         .bind(id)
         .execute(&self.pool)
         .await
         .map_err(DbError::Sqlx)?;
+        Ok(result.rows_affected() > 0)
+    }
+
+    pub async fn update_task_next_run_at(
+        &self,
+        id: i64,
+        next_run_at: Option<&str>,
+    ) -> Result<(), CoreError> {
+        sqlx::query("UPDATE tasks SET next_run_at = ?, updated_at = datetime('now') WHERE id = ?")
+            .bind(next_run_at)
+            .bind(id)
+            .execute(&self.pool)
+            .await
+            .map_err(DbError::Sqlx)?;
         Ok(())
     }
 
@@ -665,6 +787,37 @@ impl Repository {
         .execute(&self.pool)
         .await
         .map_err(DbError::Sqlx)?;
+        Ok(())
+    }
+
+    /// Update a task's core fields in-place (preserves task ID).
+    pub async fn update_task(
+        &self,
+        id: i64,
+        name: &str,
+        task_type: &str,
+        trigger_type: &str,
+        cron_expression: Option<&str>,
+        downloader_pair_id: Option<i64>,
+        config_json: Option<&str>,
+    ) -> Result<(), CoreError> {
+        sqlx::query(
+            r#"UPDATE tasks
+               SET name = ?1, task_type = ?2, trigger_type = ?3,
+                   cron_expression = ?4, downloader_pair_id = ?5,
+                   config_json = ?6, updated_at = datetime('now')
+               WHERE id = ?7"#,
+        )
+        .bind(name)
+        .bind(task_type)
+        .bind(trigger_type)
+        .bind(cron_expression)
+        .bind(downloader_pair_id)
+        .bind(config_json)
+        .bind(id)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| CoreError::Db(DbError::Sqlx(e)))?;
         Ok(())
     }
 
@@ -708,11 +861,7 @@ impl Repository {
         Ok(result.last_insert_rowid())
     }
 
-    pub async fn get_task_logs(
-        &self,
-        task_id: i64,
-        limit: i64,
-    ) -> Result<Vec<TaskLog>, CoreError> {
+    pub async fn get_task_logs(&self, task_id: i64, limit: i64) -> Result<Vec<TaskLog>, CoreError> {
         let rows = sqlx::query_as::<_, TaskLog>(
             "SELECT * FROM task_logs WHERE task_id = ? ORDER BY created_at DESC LIMIT ?",
         )
@@ -722,5 +871,94 @@ impl Repository {
         .await
         .map_err(DbError::Sqlx)?;
         Ok(rows)
+    }
+
+    // --- Repost Queue ---
+
+    pub async fn create_repost_entry(
+        &self,
+        source_site_id: i64,
+        source_torrent_id: &str,
+        target_site_id: i64,
+        raw_info_json: &str,
+    ) -> Result<i64, CoreError> {
+        let result = sqlx::query(
+            "INSERT INTO repost_queue \
+             (source_site_id, source_torrent_id, target_site_id, raw_info_json) \
+             VALUES (?, ?, ?, ?)",
+        )
+        .bind(source_site_id)
+        .bind(source_torrent_id)
+        .bind(target_site_id)
+        .bind(raw_info_json)
+        .execute(&self.pool)
+        .await
+        .map_err(DbError::Sqlx)?;
+        Ok(result.last_insert_rowid())
+    }
+
+    pub async fn get_repost_entry(&self, id: i64) -> Result<Option<RepostQueueEntry>, CoreError> {
+        let row = sqlx::query_as::<_, RepostQueueEntry>("SELECT * FROM repost_queue WHERE id = ?")
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(DbError::Sqlx)?;
+        Ok(row)
+    }
+
+    pub async fn list_repost_entries(
+        &self,
+        status_filter: Option<&str>,
+    ) -> Result<Vec<RepostQueueEntry>, CoreError> {
+        let rows = if let Some(status) = status_filter {
+            sqlx::query_as::<_, RepostQueueEntry>(
+                "SELECT * FROM repost_queue WHERE status = ? ORDER BY created_at DESC",
+            )
+            .bind(status)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(DbError::Sqlx)?
+        } else {
+            sqlx::query_as::<_, RepostQueueEntry>(
+                "SELECT * FROM repost_queue ORDER BY created_at DESC",
+            )
+            .fetch_all(&self.pool)
+            .await
+            .map_err(DbError::Sqlx)?
+        };
+        Ok(rows)
+    }
+
+    pub async fn update_repost_status(
+        &self,
+        id: i64,
+        status: &str,
+        review_notes: Option<&str>,
+        adapted_info_json: Option<&str>,
+        submitted_at: Option<&str>,
+    ) -> Result<(), CoreError> {
+        sqlx::query(
+            "UPDATE repost_queue SET \
+             status = ?, review_notes = ?, adapted_info_json = ?, submitted_at = ? \
+             WHERE id = ?",
+        )
+        .bind(status)
+        .bind(review_notes)
+        .bind(adapted_info_json)
+        .bind(submitted_at)
+        .bind(id)
+        .execute(&self.pool)
+        .await
+        .map_err(DbError::Sqlx)?;
+        Ok(())
+    }
+
+    pub async fn delete_repost_entry(&self, id: i64) -> Result<(), CoreError> {
+        sqlx::query("DELETE FROM repost_queue WHERE id = ?")
+            .bind(id)
+            .execute(&self.pool)
+            .await
+            .map_err(DbError::Sqlx)?;
+        Ok(())
     }
 }

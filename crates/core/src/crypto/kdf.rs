@@ -1,6 +1,6 @@
 use argon2::{
     password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
-    Argon2, Algorithm, Params, Version,
+    Algorithm, Argon2, Params, Version,
 };
 use rand::RngCore;
 
@@ -31,8 +31,7 @@ pub fn hash_password(password: &str) -> Result<String, CryptoError> {
 
 /// Verify a password against a PHC-format hash string.
 pub fn verify_password(password: &str, phc_hash: &str) -> Result<bool, CryptoError> {
-    let parsed = PasswordHash::new(phc_hash)
-        .map_err(|e| CryptoError::KdfFailed(e.to_string()))?;
+    let parsed = PasswordHash::new(phc_hash).map_err(|e| CryptoError::KdfFailed(e.to_string()))?;
     let argon2 = Argon2::default();
     Ok(argon2.verify_password(password.as_bytes(), &parsed).is_ok())
 }

@@ -181,12 +181,11 @@ async fn build_adapter(
         None
     };
 
-    let passkey =
-        if let (Some(enc), Some(nonce)) = (&site.encrypted_passkey, &site.passkey_nonce) {
-            Some(decrypt_credential(vault, enc, nonce)?)
-        } else {
-            None
-        };
+    let passkey = if let (Some(enc), Some(nonce)) = (&site.encrypted_passkey, &site.passkey_nonce) {
+        Some(decrypt_credential(vault, enc, nonce)?)
+    } else {
+        None
+    };
 
     // Try to load site definition for selectors
     let definitions = load_all_definitions(None);
@@ -389,6 +388,13 @@ async fn create_site(
             )
         })?;
 
+    state.refresh_site_registry().await.map_err(|e| {
+        api_err(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("failed to refresh site registry: {}", e),
+        )
+    })?;
+
     info!("created site '{}' (id={})", site.name, site.id);
     Ok((StatusCode::CREATED, Json(site_to_response(&site))))
 }
@@ -524,6 +530,13 @@ async fn update_site(
         })?
         .ok_or_else(|| api_err(StatusCode::NOT_FOUND, "site not found after update"))?;
 
+    state.refresh_site_registry().await.map_err(|e| {
+        api_err(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("failed to refresh site registry: {}", e),
+        )
+    })?;
+
     Ok(Json(site_to_response(&updated)))
 }
 
@@ -550,6 +563,13 @@ async fn delete_site(
         api_err(
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("failed to delete site: {}", e),
+        )
+    })?;
+
+    state.refresh_site_registry().await.map_err(|e| {
+        api_err(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("failed to refresh site registry: {}", e),
         )
     })?;
 

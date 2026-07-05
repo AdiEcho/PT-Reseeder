@@ -1,8 +1,8 @@
-use std::path::Path;
-use sha1::{Digest as Sha1Digest, Sha1};
-use crate::error::CoreError;
 use super::bencode;
 use super::models::{TorrentFile, TorrentMeta};
+use crate::error::CoreError;
+use sha1::{Digest as Sha1Digest, Sha1};
+use std::path::Path;
 
 fn hex_encode(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{:02x}", b)).collect()

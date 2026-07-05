@@ -1,6 +1,6 @@
-use axum::{Router, routing::get, Json, extract::State};
-use serde::Serialize;
 use crate::state::AppState;
+use axum::{extract::State, routing::get, Json, Router};
+use serde::Serialize;
 
 #[derive(Serialize)]
 pub struct HealthResponse {
@@ -13,10 +13,7 @@ pub struct HealthResponse {
 async fn health_check(State(state): State<AppState>) -> Json<HealthResponse> {
     let uptime = state.inner.start_time.elapsed().as_secs();
 
-    let db_status = match sqlx::query("SELECT 1")
-        .execute(&state.inner.db_pool)
-        .await
-    {
+    let db_status = match sqlx::query("SELECT 1").execute(&state.inner.db_pool).await {
         Ok(_) => "ok".to_string(),
         Err(e) => format!("error: {}", e),
     };

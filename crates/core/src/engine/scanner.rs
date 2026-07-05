@@ -86,15 +86,12 @@ pub async fn scan_folder(
         }
 
         // Collect announce URL (first from announce, then first of announce-list)
-        let announce_url = meta
-            .announce
-            .clone()
-            .or_else(|| {
-                meta.announce_list
-                    .first()
-                    .and_then(|tier| tier.first())
-                    .cloned()
-            });
+        let announce_url = meta.announce.clone().or_else(|| {
+            meta.announce_list
+                .first()
+                .and_then(|tier| tier.first())
+                .cloned()
+        });
 
         cache_batch.push(BulkPiecesCacheItem {
             pieces_hash: meta.pieces_hash.clone(),
@@ -164,11 +161,9 @@ fn collect_torrent_files(dir: &Path) -> Result<Vec<std::path::PathBuf>, CoreErro
     let mut result = Vec::new();
 
     if !dir.is_dir() {
-        return Err(EngineError::ScanFailed(format!(
-            "path is not a directory: {}",
-            dir.display()
-        ))
-        .into());
+        return Err(
+            EngineError::ScanFailed(format!("path is not a directory: {}", dir.display())).into(),
+        );
     }
 
     fn walk(dir: &Path, out: &mut Vec<std::path::PathBuf>) -> Result<(), CoreError> {
@@ -177,9 +172,8 @@ fn collect_torrent_files(dir: &Path) -> Result<Vec<std::path::PathBuf>, CoreErro
         })?;
 
         for entry in entries {
-            let entry = entry.map_err(|e| {
-                EngineError::ScanFailed(format!("dir entry error: {}", e))
-            })?;
+            let entry =
+                entry.map_err(|e| EngineError::ScanFailed(format!("dir entry error: {}", e)))?;
             let path = entry.path();
             if path.is_dir() {
                 walk(&path, out)?;

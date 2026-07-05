@@ -59,13 +59,8 @@ pub async fn search_pack_components(
             continue;
         }
 
-        let results = jackett::search(
-            jackett_config,
-            http_client,
-            &comp.name,
-            Some(comp.size),
-        )
-        .await?;
+        let results =
+            jackett::search(jackett_config, http_client, &comp.name, Some(comp.size)).await?;
 
         for result in results {
             // Verify file list overlap if possible
@@ -111,9 +106,7 @@ fn extract_components(meta: &TorrentMeta) -> Vec<PackComponent> {
     for f in &meta.files {
         if f.path.len() >= 2 {
             let top_dir = &f.path[0];
-            let entry = component_map
-                .entry(top_dir.clone())
-                .or_insert((0, 0));
+            let entry = component_map.entry(top_dir.clone()).or_insert((0, 0));
             entry.0 += f.length;
             entry.1 += 1;
         }

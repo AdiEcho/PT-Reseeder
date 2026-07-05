@@ -1,3 +1,4 @@
+use crate::state::AppState;
 use axum::{
     extract::State,
     http::{Method, Request, StatusCode},
@@ -5,8 +6,7 @@ use axum::{
     response::Response,
 };
 use axum_extra::extract::cookie::{Cookie, CookieJar, SameSite};
-use sha2::{Sha256, Digest};
-use crate::state::AppState;
+use sha2::{Digest, Sha256};
 
 pub const SESSION_COOKIE_NAME: &str = "pt_reseeder_session";
 
@@ -97,8 +97,7 @@ pub async fn csrf_check(
     let method = request.method().clone();
     let path = request.uri().path().to_string();
 
-    if path.starts_with("/api/")
-        && !matches!(method, Method::GET | Method::HEAD | Method::OPTIONS)
+    if path.starts_with("/api/") && !matches!(method, Method::GET | Method::HEAD | Method::OPTIONS)
     {
         if request.headers().get("X-PT-Reseeder").map(|v| v == "1") != Some(true) {
             return Err(StatusCode::FORBIDDEN);

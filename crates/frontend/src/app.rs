@@ -1,7 +1,7 @@
+use crate::pages::login::LoginPage;
 use leptos::prelude::*;
 use leptos_router::components::*;
 use leptos_router::path;
-use crate::pages::login::LoginPage;
 
 #[component]
 pub fn App() -> impl IntoView {

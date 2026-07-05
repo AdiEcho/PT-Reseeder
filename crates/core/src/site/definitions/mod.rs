@@ -46,14 +46,21 @@ pub fn load_user_definitions(data_dir: &Path) -> HashMap<String, SiteDefinition>
     let sites_dir = data_dir.join("sites");
 
     if !sites_dir.exists() {
-        debug!("User sites directory does not exist: {}", sites_dir.display());
+        debug!(
+            "User sites directory does not exist: {}",
+            sites_dir.display()
+        );
         return definitions;
     }
 
     let entries = match std::fs::read_dir(&sites_dir) {
         Ok(entries) => entries,
         Err(e) => {
-            warn!("Failed to read user sites directory {}: {}", sites_dir.display(), e);
+            warn!(
+                "Failed to read user sites directory {}: {}",
+                sites_dir.display(),
+                e
+            );
             return definitions;
         }
     };
@@ -75,14 +82,22 @@ pub fn load_user_definitions(data_dir: &Path) -> HashMap<String, SiteDefinition>
         let content = match std::fs::read_to_string(&path) {
             Ok(c) => c,
             Err(e) => {
-                warn!("Failed to read site definition file {}: {}", path.display(), e);
+                warn!(
+                    "Failed to read site definition file {}: {}",
+                    path.display(),
+                    e
+                );
                 continue;
             }
         };
 
         match toml_lib::from_str::<SiteDefinition>(&content) {
             Ok(def) => {
-                debug!("Loaded user site definition: {} from {}", def.site.id, path.display());
+                debug!(
+                    "Loaded user site definition: {} from {}",
+                    def.site.id,
+                    path.display()
+                );
                 definitions.insert(def.site.id.clone(), def);
             }
             Err(e) => {

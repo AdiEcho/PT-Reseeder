@@ -10,3 +10,9 @@ pub mod torrent;
 
 // P5 module
 pub mod engine;
+
+// P6 module
+pub mod scheduler;
+
+// P7 module
+pub mod repost;

@@ -17,10 +17,7 @@ use crate::site::models::SiteId;
 
 /// Filter 1: Check if any cached torrent with this pieces_hash already has
 /// an announce URL belonging to the target site.
-pub fn filter_by_tracker(
-    cached_announce_urls: &HashSet<String>,
-    site_base_url: &str,
-) -> bool {
+pub fn filter_by_tracker(cached_announce_urls: &HashSet<String>, site_base_url: &str) -> bool {
     // Extract domain from site_base_url for matching
     let site_domain = extract_domain(site_base_url);
     for url in cached_announce_urls {
@@ -44,10 +41,7 @@ pub async fn filter_by_history(
 }
 
 /// Filter 3: Check if the destination downloader already has this info_hash.
-pub fn filter_by_existing_hash(
-    dest_hashes: &HashSet<String>,
-    info_hash: &str,
-) -> bool {
+pub fn filter_by_existing_hash(dest_hashes: &HashSet<String>, info_hash: &str) -> bool {
     dest_hashes.contains(info_hash)
 }
 

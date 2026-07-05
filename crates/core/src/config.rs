@@ -1,6 +1,6 @@
+use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use std::path::PathBuf;
-use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {

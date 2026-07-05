@@ -1,7 +1,7 @@
+use super::models::{AddTorrentOpts, TorrentInfo};
+use crate::error::CoreError;
 use async_trait::async_trait;
 use std::collections::HashSet;
-use crate::error::CoreError;
-use super::models::{AddTorrentOpts, TorrentInfo};
 
 #[async_trait]
 pub trait Downloader: Send + Sync {

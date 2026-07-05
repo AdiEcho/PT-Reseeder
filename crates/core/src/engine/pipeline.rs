@@ -74,7 +74,13 @@ impl ReseedEngine {
         &self,
         config: ReseedConfig,
         dest_client: Arc<dyn Downloader>,
-    ) -> Result<(watch::Receiver<ReseedProgress>, tokio::task::JoinHandle<Result<ReseedStatsSnapshot, CoreError>>), CoreError> {
+    ) -> Result<
+        (
+            watch::Receiver<ReseedProgress>,
+            tokio::task::JoinHandle<Result<ReseedStatsSnapshot, CoreError>>,
+        ),
+        CoreError,
+    > {
         let stats = Arc::new(ReseedStats::new());
         let start = Instant::now();
 
@@ -185,15 +191,8 @@ async fn run_pipeline(
             return Err(EngineError::Cancelled.into());
         }
 
-        let scan = scanner::scan_folder(
-            folder,
-            repo,
-            db_writer,
-            dest_client,
-            stats,
-            cancel,
-        )
-        .await?;
+        let scan =
+            scanner::scan_folder(folder, repo, db_writer, dest_client, stats, cancel).await?;
 
         // Merge
         merged_scan.torrents.extend(scan.torrents);
@@ -222,10 +221,7 @@ async fn run_pipeline(
 
     // ── Phase 2: Match ─────────────────────────────────────────────────
     update_progress(progress_tx, "matching", stats, start);
-    tracing::info!(
-        sites = config.target_site_ids.len(),
-        "phase 2: match"
-    );
+    tracing::info!(sites = config.target_site_ids.len(), "phase 2: match");
 
     if cancel.is_cancelled() {
         return Err(EngineError::Cancelled.into());
@@ -261,10 +257,7 @@ async fn run_pipeline(
 
     // ── Phase 3: Add ───────────────────────────────────────────────────
     update_progress(progress_tx, "adding", stats, start);
-    tracing::info!(
-        to_add = matched_torrents.len(),
-        "phase 3: add"
-    );
+    tracing::info!(to_add = matched_torrents.len(), "phase 3: add");
 
     let http_client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))

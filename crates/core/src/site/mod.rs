@@ -1,7 +1,7 @@
-pub mod traits;
-pub mod registry;
-pub mod rate_limiter;
-pub mod models;
 pub mod adapters;
-pub mod probe;
 pub mod definitions;
+pub mod models;
+pub mod probe;
+pub mod rate_limiter;
+pub mod registry;
+pub mod traits;

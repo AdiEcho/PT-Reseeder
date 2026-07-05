@@ -5,8 +5,8 @@ use aes_gcm::{
 use rand::RngCore;
 use zeroize::Zeroizing;
 
-use crate::error::CryptoError;
 use super::kdf;
+use crate::error::CryptoError;
 
 /// Data returned when creating a new vault (user registration).
 #[derive(Debug)]
@@ -31,6 +31,14 @@ pub struct Vault {
     dek: Zeroizing<[u8; 32]>,
 }
 
+impl Clone for Vault {
+    fn clone(&self) -> Self {
+        Self {
+            dek: Zeroizing::new(*self.dek),
+        }
+    }
+}
+
 impl std::fmt::Debug for Vault {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Vault").field("dek", &"[REDACTED]").finish()
@@ -50,8 +58,7 @@ impl Vault {
         let kek = kdf::derive_kek(password.as_bytes(), &kdf_salt)?;
 
         // Wrap DEK with AES-256-GCM(KEK, DEK)
-        let cipher = Aes256Gcm::new_from_slice(&kek)
-            .map_err(|_| CryptoError::InvalidKey)?;
+        let cipher = Aes256Gcm::new_from_slice(&kek).map_err(|_| CryptoError::InvalidKey)?;
         let mut nonce_bytes = [0u8; 12];
         rand::thread_rng().fill_bytes(&mut nonce_bytes);
         let nonce = Nonce::from_slice(&nonce_bytes);
@@ -91,8 +98,7 @@ impl Vault {
 
         // Derive KEK and unwrap DEK
         let kek = kdf::derive_kek(password.as_bytes(), kdf_salt)?;
-        let cipher = Aes256Gcm::new_from_slice(&kek)
-            .map_err(|_| CryptoError::InvalidKey)?;
+        let cipher = Aes256Gcm::new_from_slice(&kek).map_err(|_| CryptoError::InvalidKey)?;
 
         let nonce_arr: [u8; 12] = dek_nonce
             .try_into()
@@ -115,8 +121,8 @@ impl Vault {
     /// Encrypt plaintext with AES-256-GCM using the vault DEK.
     /// Returns (ciphertext, nonce).
     pub fn encrypt(&self, plaintext: &[u8]) -> Result<(Vec<u8>, [u8; 12]), CryptoError> {
-        let cipher = Aes256Gcm::new_from_slice(self.dek.as_ref())
-            .map_err(|_| CryptoError::InvalidKey)?;
+        let cipher =
+            Aes256Gcm::new_from_slice(self.dek.as_ref()).map_err(|_| CryptoError::InvalidKey)?;
         let mut nonce_bytes = [0u8; 12];
         rand::thread_rng().fill_bytes(&mut nonce_bytes);
         let nonce = Nonce::from_slice(&nonce_bytes);
@@ -130,8 +136,8 @@ impl Vault {
 
     /// Decrypt ciphertext with AES-256-GCM using the vault DEK.
     pub fn decrypt(&self, ciphertext: &[u8], nonce: &[u8; 12]) -> Result<Vec<u8>, CryptoError> {
-        let cipher = Aes256Gcm::new_from_slice(self.dek.as_ref())
-            .map_err(|_| CryptoError::InvalidKey)?;
+        let cipher =
+            Aes256Gcm::new_from_slice(self.dek.as_ref()).map_err(|_| CryptoError::InvalidKey)?;
         let n = Nonce::from_slice(nonce);
 
         cipher
@@ -150,15 +156,20 @@ impl Vault {
         password_hash: &str,
     ) -> Result<RewrapData, CryptoError> {
         // Unlock with old password to get the DEK
-        let vault = Self::unlock(old_password, kdf_salt, wrapped_dek, dek_nonce, password_hash)?;
+        let vault = Self::unlock(
+            old_password,
+            kdf_salt,
+            wrapped_dek,
+            dek_nonce,
+            password_hash,
+        )?;
 
         // Generate new KDF salt and derive new KEK
         let new_kdf_salt = kdf::generate_salt();
         let new_kek = kdf::derive_kek(new_password.as_bytes(), &new_kdf_salt)?;
 
         // Wrap DEK with new KEK
-        let cipher = Aes256Gcm::new_from_slice(&new_kek)
-            .map_err(|_| CryptoError::InvalidKey)?;
+        let cipher = Aes256Gcm::new_from_slice(&new_kek).map_err(|_| CryptoError::InvalidKey)?;
         let mut new_nonce_bytes = [0u8; 12];
         rand::thread_rng().fill_bytes(&mut new_nonce_bytes);
         let nonce = Nonce::from_slice(&new_nonce_bytes);

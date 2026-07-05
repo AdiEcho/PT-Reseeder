@@ -84,10 +84,7 @@ impl DbWriterHandle {
 struct DbWriter;
 
 impl DbWriter {
-    fn spawn(
-        database_url: &str,
-        batch_size: usize,
-    ) -> Result<DbWriterHandle, CoreError> {
+    fn spawn(database_url: &str, batch_size: usize) -> Result<DbWriterHandle, CoreError> {
         let (tx, rx) = mpsc::channel::<WriteOp>(1024);
         let url = database_url.to_string();
         let bs = batch_size;
@@ -324,9 +321,6 @@ impl DbWriter {
 }
 
 /// Spawn a DbWriter background task and return its handle.
-pub fn spawn_writer(
-    database_url: &str,
-    batch_size: usize,
-) -> Result<DbWriterHandle, CoreError> {
+pub fn spawn_writer(database_url: &str, batch_size: usize) -> Result<DbWriterHandle, CoreError> {
     DbWriter::spawn(database_url, batch_size)
 }

@@ -4,11 +4,11 @@ use std::time::Duration;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
-use tracing::{debug, warn, error};
+use tracing::{debug, error, warn};
 
-use crate::error::{CoreError, DownloaderError};
 use crate::downloader::models::*;
 use crate::downloader::traits::Downloader;
+use crate::error::{CoreError, DownloaderError};
 
 /// Base64 encoding (standard alphabet, with padding).
 fn base64_encode(data: &[u8]) -> String {
@@ -170,10 +170,7 @@ impl TransmissionClient {
         self.parse_rpc_response(resp).await
     }
 
-    async fn send_rpc_request(
-        &self,
-        body: &RpcRequest,
-    ) -> Result<reqwest::Response, CoreError> {
+    async fn send_rpc_request(&self, body: &RpcRequest) -> Result<reqwest::Response, CoreError> {
         let url = self.rpc_url();
         let mut req = self.client.post(&url).json(body);
 
@@ -202,9 +199,10 @@ impl TransmissionClient {
     ) -> Result<serde_json::Value, CoreError> {
         let status = resp.status();
         if status == reqwest::StatusCode::UNAUTHORIZED {
-            return Err(CoreError::Downloader(DownloaderError::AuthFailed(
-                format!("authentication failed for {}:{}", self.host, self.port),
-            )));
+            return Err(CoreError::Downloader(DownloaderError::AuthFailed(format!(
+                "authentication failed for {}:{}",
+                self.host, self.port
+            ))));
         }
         if !status.is_success() {
             return Err(CoreError::Downloader(DownloaderError::ConnectionFailed(
@@ -212,9 +210,10 @@ impl TransmissionClient {
             )));
         }
 
-        let rpc_resp: RpcResponse = resp.json().await.map_err(|e| {
-            CoreError::Downloader(DownloaderError::ConnectionFailed(e.to_string()))
-        })?;
+        let rpc_resp: RpcResponse = resp
+            .json()
+            .await
+            .map_err(|e| CoreError::Downloader(DownloaderError::ConnectionFailed(e.to_string())))?;
 
         if rpc_resp.result != "success" {
             return Err(CoreError::Downloader(DownloaderError::ConnectionFailed(
@@ -283,9 +282,7 @@ impl Downloader for TransmissionClient {
                 .cloned()
                 .unwrap_or(serde_json::Value::Array(vec![])),
         )
-        .map_err(|e| {
-            CoreError::Downloader(DownloaderError::ConnectionFailed(e.to_string()))
-        })?;
+        .map_err(|e| CoreError::Downloader(DownloaderError::ConnectionFailed(e.to_string())))?;
 
         Ok(torrents.into_iter().next().map(TorrentInfo::from))
     }
@@ -308,9 +305,7 @@ impl Downloader for TransmissionClient {
                 .cloned()
                 .unwrap_or(serde_json::Value::Array(vec![])),
         )
-        .map_err(|e| {
-            CoreError::Downloader(DownloaderError::ConnectionFailed(e.to_string()))
-        })?;
+        .map_err(|e| CoreError::Downloader(DownloaderError::ConnectionFailed(e.to_string())))?;
 
         Ok(torrents.into_iter().map(|t| t.hash_string).collect())
     }
@@ -338,9 +333,10 @@ impl Downloader for TransmissionClient {
                     Ok(true)
                 } else {
                     warn!(response = %resp, "unexpected torrent-add response");
-                    Err(CoreError::Downloader(DownloaderError::AddFailed(
-                        format!("unexpected response: {}", resp),
-                    )))
+                    Err(CoreError::Downloader(DownloaderError::AddFailed(format!(
+                        "unexpected response: {}",
+                        resp
+                    ))))
                 }
             }
             Err(e) => {
@@ -355,9 +351,9 @@ impl Downloader for TransmissionClient {
             "ids": [info_hash]
         });
 
-        self.rpc_call("torrent-start", args).await.map_err(|e| {
-            CoreError::Downloader(DownloaderError::ConnectionFailed(e.to_string()))
-        })?;
+        self.rpc_call("torrent-start", args)
+            .await
+            .map_err(|e| CoreError::Downloader(DownloaderError::ConnectionFailed(e.to_string())))?;
 
         debug!(info_hash = %info_hash, "torrent resumed in Transmission");
         Ok(true)
@@ -368,9 +364,9 @@ impl Downloader for TransmissionClient {
             "ids": [info_hash]
         });
 
-        self.rpc_call("torrent-stop", args).await.map_err(|e| {
-            CoreError::Downloader(DownloaderError::ConnectionFailed(e.to_string()))
-        })?;
+        self.rpc_call("torrent-stop", args)
+            .await
+            .map_err(|e| CoreError::Downloader(DownloaderError::ConnectionFailed(e.to_string())))?;
 
         debug!(info_hash = %info_hash, "torrent paused in Transmission");
         Ok(true)

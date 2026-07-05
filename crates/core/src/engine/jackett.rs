@@ -34,7 +34,10 @@ pub async fn search(
     query: &str,
     size_hint: Option<u64>,
 ) -> Result<Vec<JackettResult>, CoreError> {
-    let url = format!("{}/api/v2.0/indexers/all/results", config.url.trim_end_matches('/'));
+    let url = format!(
+        "{}/api/v2.0/indexers/all/results",
+        config.url.trim_end_matches('/')
+    );
 
     let params = vec![
         ("apikey", config.api_key.clone()),
@@ -51,11 +54,7 @@ pub async fn search(
 
     let status = resp.status();
     if !status.is_success() {
-        return Err(EngineError::MatchFailed(format!(
-            "jackett HTTP {}: {}",
-            status, url
-        ))
-        .into());
+        return Err(EngineError::MatchFailed(format!("jackett HTTP {}: {}", status, url)).into());
     }
 
     let body: serde_json::Value = resp
@@ -115,10 +114,7 @@ fn parse_jackett_item(item: &serde_json::Value) -> Option<JackettResult> {
             .get("InfoHash")
             .and_then(|v| v.as_str())
             .map(String::from),
-        seeders: item
-            .get("Seeders")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0) as u32,
+        seeders: item.get("Seeders").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
         category: item
             .get("Category")
             .and_then(|v| v.as_array())

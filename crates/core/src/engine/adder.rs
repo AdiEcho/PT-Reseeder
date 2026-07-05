@@ -155,10 +155,7 @@ pub async fn add_torrent(
 }
 
 /// Download a .torrent file from a URL.
-async fn download_torrent(
-    client: &reqwest::Client,
-    url: &str,
-) -> Result<Vec<u8>, CoreError> {
+async fn download_torrent(client: &reqwest::Client, url: &str) -> Result<Vec<u8>, CoreError> {
     let resp = client
         .get(url)
         .send()
@@ -167,11 +164,9 @@ async fn download_torrent(
 
     let status = resp.status();
     if !status.is_success() {
-        return Err(EngineError::AddFailed(format!(
-            "download torrent HTTP {}: {}",
-            status, url
-        ))
-        .into());
+        return Err(
+            EngineError::AddFailed(format!("download torrent HTTP {}: {}", status, url)).into(),
+        );
     }
 
     let bytes = resp

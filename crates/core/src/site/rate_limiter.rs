@@ -1,11 +1,11 @@
-use std::num::NonZeroU32;
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
-use std::time::{Duration, Instant};
+use crate::error::{CoreError, SiteError};
 use governor::clock::DefaultClock;
 use governor::state::{InMemoryState, NotKeyed};
 use governor::{Quota, RateLimiter as GovernorLimiter};
+use std::num::NonZeroU32;
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
-use crate::error::{CoreError, SiteError};
 
 type GovernorRL = GovernorLimiter<NotKeyed, InMemoryState, DefaultClock>;
 
@@ -55,7 +55,8 @@ impl SiteRateLimiter {
         // Double the interval, cap at 60s
         let current = self.current_interval_ms.load(Ordering::SeqCst);
         let new_interval = (current * 2).min(60_000);
-        self.current_interval_ms.store(new_interval, Ordering::SeqCst);
+        self.current_interval_ms
+            .store(new_interval, Ordering::SeqCst);
 
         // Circuit breaker: 5 consecutive errors -> disabled for 30 minutes
         if errors >= 5 {

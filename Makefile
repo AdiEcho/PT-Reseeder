@@ -59,6 +59,7 @@ build: build-server
 build-server:
 	command -v cargo-leptos >/dev/null || { echo "cargo-leptos is required. Install with: cargo install cargo-leptos"; exit 1; }
 	$(CARGO) leptos build $(CARGO_PROFILE_FLAGS)
+	cp crates/frontend/index.html "$(SITE_DIR)/index.html"
 
 build-desktop: build-server
 	command -v cargo-tauri >/dev/null || { echo "cargo-tauri is required. Install with: cargo install tauri-cli --version '^2'"; exit 1; }

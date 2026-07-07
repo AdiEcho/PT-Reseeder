@@ -6,5 +6,10 @@
   "build": {},
   "app": {
     "withGlobalTauri": true
+  },
+  "bundle": {
+    "resources": {
+      "../../target/site/": "site/"
+    }
   }
 }

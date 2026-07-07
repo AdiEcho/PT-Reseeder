@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PT-Reseeder</title>
+    <link rel="stylesheet" href="/pkg/pt-reseeder.css" />
+  </head>
+  <body>
+    <script type="module">
+      import init, { hydrate } from "/pkg/pt-reseeder.js";
+
+      await init();
+      hydrate();
+    </script>
+  </body>
+</html>

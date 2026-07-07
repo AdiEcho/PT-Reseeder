@@ -11,15 +11,40 @@ leptos = { workspace = true }
 leptos_router = { workspace = true }
 leptos_meta = { workspace = true }
 wasm-bindgen = "=0.2.100"
+wasm-bindgen-futures = "0.4"
 console_error_panic_hook = "0.1"
 serde = { workspace = true }
 serde_json = { workspace = true }
-web-sys = { version = "0.3", features = ["WebSocket", "MessageEvent", "ErrorEvent", "CloseEvent", "BinaryType"] }
+web-sys = { version = "0.3", features = ["WebSocket", "MessageEvent", "ErrorEvent", "CloseEvent", "BinaryType", "Window", "Location", "Request", "RequestInit", "RequestMode", "RequestCredentials", "Headers", "Response"] }
 js-sys = "0.3"
 
 pt-reseeder-core = { path = "../core", optional = true }
 sqlx = { workspace = true, optional = true }
+chrono = { workspace = true, optional = true }
+leptos_axum = { workspace = true, optional = true }
+axum = { workspace = true, optional = true }
+axum-extra = { workspace = true, optional = true }
+rand = { version = "0.8", optional = true }
+sha2 = { version = "0.10", optional = true }
+hex = { version = "0.4", optional = true }
+time = { version = "0.3", optional = true }
+tokio = { workspace = true, optional = true }
 
 [features]
 hydrate = ["leptos/hydrate"]
-ssr = ["leptos/ssr", "leptos_router/ssr", "leptos_meta/ssr", "dep:pt-reseeder-core", "dep:sqlx"]
+ssr = [
+    "leptos/ssr",
+    "leptos_router/ssr",
+    "leptos_meta/ssr",
+    "dep:pt-reseeder-core",
+    "dep:sqlx",
+    "dep:chrono",
+    "dep:leptos_axum",
+    "dep:axum",
+    "dep:axum-extra",
+    "dep:rand",
+    "dep:sha2",
+    "dep:hex",
+    "dep:time",
+    "dep:tokio",
+]

@@ -81,6 +81,33 @@ impl NexusPhpAdapter {
     pub fn batch_size(&self) -> usize {
         self.batch_size
     }
+
+    async fn resolve_user_id(&self) -> Result<String, CoreError> {
+        if let Some(user_id) = self.user_id.as_ref().filter(|id| !id.trim().is_empty()) {
+            return Ok(user_id.clone());
+        }
+
+        let resp = self
+            .client
+            .get(&self.base_url)
+            .send()
+            .await
+            .map_err(|e| SiteError::HttpError(e.to_string()))?;
+        if !resp.status().is_success() {
+            return Err(SiteError::HttpError(format!(
+                "HTTP {} resolving user id",
+                resp.status()
+            ))
+            .into());
+        }
+        let body = resp
+            .text()
+            .await
+            .map_err(|e| SiteError::HttpError(e.to_string()))?;
+        let html = Html::parse_document(&body);
+        extract_user_id(&html, &self.selectors)
+            .ok_or_else(|| SiteError::AuthFailed("failed to resolve user_id from cookie session".into()).into())
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -102,6 +129,46 @@ fn extract_text(html: &Html, selector_str: &Option<String>) -> Option<String> {
     } else {
         Some(text)
     }
+}
+
+fn extract_user_id_from_href(value: &str) -> Option<String> {
+    let marker = "userdetails.php?id=";
+    let start = value.find(marker)? + marker.len();
+    let id: String = value[start..]
+        .chars()
+        .take_while(|ch| ch.is_ascii_digit())
+        .collect();
+    (!id.is_empty()).then_some(id)
+}
+
+fn extract_user_id(html: &Html, selectors: &UserInfoSelectors) -> Option<String> {
+    if let Some(selector_str) = selectors.uid_selector.as_deref() {
+        if let Ok(selector) = Selector::parse(selector_str) {
+            for element in html.select(&selector) {
+                if let Some(href) = element.value().attr("href") {
+                    if let Some(id) = extract_user_id_from_href(href) {
+                        return Some(id);
+                    }
+                }
+                let text = element.text().collect::<Vec<_>>().join("");
+                let id: String = text.chars().filter(|ch| ch.is_ascii_digit()).collect();
+                if !id.is_empty() {
+                    return Some(id);
+                }
+            }
+        }
+    }
+
+    if let Ok(selector) = Selector::parse("a[href*='userdetails.php?id=']") {
+        for element in html.select(&selector) {
+            if let Some(href) = element.value().attr("href") {
+                if let Some(id) = extract_user_id_from_href(href) {
+                    return Some(id);
+                }
+            }
+        }
+    }
+    None
 }
 
 fn parse_size_to_bytes(text: &str) -> Option<i64> {
@@ -315,6 +382,10 @@ impl ReseedCapable for NexusPhpAdapter {
         }
         url
     }
+
+    fn batch_size(&self) -> usize {
+        self.batch_size.max(1)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -327,10 +398,7 @@ impl UserInfoCapable for NexusPhpAdapter {
         if self.cookie.is_none() {
             return Err(SiteError::AuthFailed("no cookie configured".into()).into());
         }
-        let user_id = self
-            .user_id
-            .as_deref()
-            .ok_or_else(|| SiteError::AuthFailed("no user_id configured".into()))?;
+        let user_id = self.resolve_user_id().await?;
 
         let url = format!("{}/userdetails.php?id={}", self.base_url, user_id);
         debug!(site = %self.name, "fetching user info (cookie=[REDACTED])");
@@ -393,10 +461,7 @@ impl UserInfoCapable for NexusPhpAdapter {
         if self.cookie.is_none() {
             return Err(SiteError::AuthFailed("no cookie configured".into()).into());
         }
-        let user_id = self
-            .user_id
-            .as_deref()
-            .ok_or_else(|| SiteError::AuthFailed("no user_id configured".into()))?;
+        let user_id = self.resolve_user_id().await?;
 
         let url = format!("{}/userdetails.php?id={}", self.base_url, user_id);
         debug!(site = %self.name, "fetching passkey (cookie=[REDACTED])");

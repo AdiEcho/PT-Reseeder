@@ -141,19 +141,26 @@ pub async fn scan_folder(
     })
 }
 
-/// Scan from a downloader's torrent_dir: read .torrent files from the directory
-/// where the downloader stores them.
+/// Scan from a downloader.
+///
+/// The current `Downloader` trait exposes torrent hashes and summary metadata,
+/// but not the original `.torrent` bytes or piece hashes required by the reseed
+/// matcher. Returning an explicit error prevents silently treating `torrent_dir`
+/// as a local folder and producing misleading scan results.
 pub async fn scan_downloader(
     _client: &dyn Downloader,
-    torrent_dir: &Path,
-    repo: &Repository,
-    db_writer: &DbWriterHandle,
-    dest_client: &dyn Downloader,
-    stats: &super::stats::ReseedStats,
-    cancel: &CancellationToken,
+    _torrent_dir: &Path,
+    _repo: &Repository,
+    _db_writer: &DbWriterHandle,
+    _dest_client: &dyn Downloader,
+    _stats: &super::stats::ReseedStats,
+    _cancel: &CancellationToken,
 ) -> Result<ScanResult, CoreError> {
-    // Downloaders store .torrent files in torrent_dir; scan it just like a folder
-    scan_folder(torrent_dir, repo, db_writer, dest_client, stats, cancel).await
+    Err(EngineError::ScanFailed(
+        "downloader scan mode is unsupported: downloader APIs do not expose .torrent data/pieces_hash yet"
+            .to_string(),
+    )
+    .into())
 }
 
 /// Collect all .torrent file paths recursively from a directory.

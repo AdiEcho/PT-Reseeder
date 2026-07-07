@@ -30,7 +30,7 @@ pub struct AppStateInner {
     pub db_pool: SqlitePool,
     pub db_writer: DbWriterHandle,
     pub repo: Repository,
-    pub vault: RwLock<Option<Vault>>,
+    pub vault: Arc<RwLock<Option<Vault>>>,
     pub config: AppConfig,
     pub cancel_token: CancellationToken,
     pub start_time: std::time::Instant,
@@ -53,7 +53,7 @@ impl AppState {
                 db_pool,
                 db_writer,
                 repo,
-                vault: RwLock::new(None),
+                vault: Arc::new(RwLock::new(None)),
                 config,
                 cancel_token,
                 start_time: std::time::Instant::now(),
@@ -94,7 +94,7 @@ impl AppState {
         let sites = self.inner.repo.list_sites().await?;
         let mut registry = SiteRegistry::new();
         for site in sites.into_iter().filter(|site| site.enabled) {
-            if let Some(handle) = build_adapter_handle(&site, vault)? {
+            if let Some(handle) = build_adapter_handle(&site, vault, &self.inner.config)? {
                 registry.register(SiteId::from(site.id), handle);
             }
         }
@@ -227,8 +227,8 @@ fn decrypt_credential(vault: &Vault, encrypted: &[u8], nonce: &[u8]) -> Result<S
         .map_err(|e| CoreError::Internal(format!("credential is not valid UTF-8: {}", e)))
 }
 
-fn selectors_for(site: &SiteRow) -> UserInfoSelectors {
-    let definitions = load_all_definitions(None);
+fn selectors_for(site: &SiteRow, data_dir: &std::path::Path) -> UserInfoSelectors {
+    let definitions = load_all_definitions(Some(data_dir));
     let site_key = site.name.to_ascii_lowercase();
     definitions
         .get(&site_key)
@@ -253,7 +253,11 @@ fn selectors_for(site: &SiteRow) -> UserInfoSelectors {
         })
 }
 
-fn build_adapter_handle(site: &SiteRow, vault: &Vault) -> Result<Option<AdapterHandle>, CoreError> {
+fn build_adapter_handle(
+    site: &SiteRow,
+    vault: &Vault,
+    config: &AppConfig,
+) -> Result<Option<AdapterHandle>, CoreError> {
     if site.adapter_type != "nexusphp" {
         return Ok(None);
     }
@@ -269,6 +273,18 @@ fn build_adapter_handle(site: &SiteRow, vault: &Vault) -> Result<Option<AdapterH
         None
     };
 
+    let definitions = load_all_definitions(Some(&config.data_dir));
+    let site_key = site.name.to_ascii_lowercase();
+    let batch_size = definitions
+        .get(&site_key)
+        .or_else(|| {
+            definitions
+                .values()
+                .find(|def| def.site.name.eq_ignore_ascii_case(&site.name))
+        })
+        .and_then(|def| def.site.batch_size)
+        .unwrap_or(1000);
+
     let adapter = Arc::new(NexusPhpAdapter::new(
         site.name.clone(),
         site.url.clone(),
@@ -276,8 +292,8 @@ fn build_adapter_handle(site: &SiteRow, vault: &Vault) -> Result<Option<AdapterH
         cookie,
         passkey,
         None,
-        selectors_for(site),
-        1000,
+        selectors_for(site, &config.data_dir),
+        batch_size,
     ));
     let core: Arc<dyn SiteCore> = adapter.clone();
     let reseed: Arc<dyn ReseedCapable> = adapter.clone();

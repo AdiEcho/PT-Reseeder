@@ -1,2 +1,9 @@
 pub mod dashboard;
+pub mod downloaders;
+pub mod folders;
 pub mod login;
+pub mod repost;
+pub mod settings;
+pub mod site_detail;
+pub mod sites;
+pub mod tasks;

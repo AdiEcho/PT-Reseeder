@@ -174,6 +174,7 @@ async fn acquire_vault(
 async fn build_adapter(
     site: &SiteRow,
     vault: &Vault,
+    data_dir: &std::path::Path,
 ) -> Result<NexusPhpAdapter, (StatusCode, Json<ApiError>)> {
     let cookie = if let (Some(enc), Some(nonce)) = (&site.encrypted_cookie, &site.cookie_nonce) {
         Some(decrypt_credential(vault, enc, nonce)?)
@@ -188,7 +189,7 @@ async fn build_adapter(
     };
 
     // Try to load site definition for selectors
-    let definitions = load_all_definitions(None);
+    let definitions = load_all_definitions(Some(data_dir));
     let selectors = definitions
         .get(&site.name)
         .and_then(|def| def.user_info.clone())
@@ -226,7 +227,7 @@ async fn run_probe(
     site: &SiteRow,
     vault: &Vault,
 ) -> Result<(), (StatusCode, Json<ApiError>)> {
-    let adapter = build_adapter(site, vault).await?;
+    let adapter = build_adapter(site, vault, &state.inner.config.data_dir).await?;
     let adapter_arc: Arc<dyn UserInfoCapable> = Arc::new(adapter);
 
     let probe_result = probe_site(None, Some(&adapter_arc)).await;
@@ -673,7 +674,7 @@ async fn refresh_stats(
         })?
         .ok_or_else(|| api_err(StatusCode::NOT_FOUND, "site not found"))?;
 
-    let adapter = build_adapter(&site, vault).await?;
+    let adapter = build_adapter(&site, vault, &state.inner.config.data_dir).await?;
 
     let user_stats = adapter.fetch_user_info().await.map_err(|e| {
         api_err(

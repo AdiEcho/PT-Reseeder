@@ -66,6 +66,12 @@ pub async fn match_all_sites(
     }
 
     let all_pieces_hashes: Vec<String> = scan.pieces_groups.keys().cloned().collect();
+    let present_info_hashes: HashSet<String> = scan
+        .dest_hashes
+        .iter()
+        .cloned()
+        .chain(scan.torrents.keys().cloned())
+        .collect();
 
     tracing::info!(
         sites = target_site_ids.len(),
@@ -101,10 +107,7 @@ pub async fn match_all_sites(
         let rate_limiter = Arc::clone(&handle.rate_limiter);
         let base_url = handle.core.base_url().to_string();
 
-        // Determine batch_size from the site definition or default 1000
-        // We don't have direct access to SiteDefinition here, so we use 1000
-        // The adapter itself may carry batch_size; for now default to 1000
-        let initial_batch_size = 1000usize;
+        let initial_batch_size = reseed.batch_size().max(1);
 
         let hashes = all_pieces_hashes.clone();
         let repo = repo.clone();
@@ -128,7 +131,7 @@ pub async fn match_all_sites(
             if tracker_filtered.contains(ph) {
                 continue;
             }
-            if filter::filter_by_history(&repo, ph, site_id).await? {
+            if filter::filter_by_history(&repo, ph, site_id, &present_info_hashes).await? {
                 history_filtered.insert(ph.clone());
                 stats.skipped_history.fetch_add(1, Ordering::Relaxed);
             }
@@ -208,30 +211,29 @@ async fn match_single_site(
     let mut batch_state = SiteBatchState::new(initial_batch_size);
     let mut all_matches = Vec::new();
 
-    let chunks: Vec<Vec<String>> = hashes
-        .chunks(batch_state.batch_size)
-        .map(|c| c.to_vec())
-        .collect();
+    let mut cursor = 0usize;
 
-    let total_chunks = chunks.len();
-
-    for (i, chunk) in chunks.into_iter().enumerate() {
+    while cursor < hashes.len() {
         if cancel.is_cancelled() {
             return Err(EngineError::Cancelled.into());
         }
+
+        let end = (cursor + batch_state.batch_size).min(hashes.len());
+        let chunk = &hashes[cursor..end];
 
         // Rate limit
         rate_limiter.acquire().await?;
 
         tracing::debug!(
             site_id = site_id.0,
-            chunk = i + 1,
-            total = total_chunks,
+            start = cursor,
+            end,
+            total = hashes.len(),
             batch_size = chunk.len(),
             "querying pieces_hash batch"
         );
 
-        match reseed.query_pieces_hash(&chunk).await {
+        match reseed.query_pieces_hash(chunk).await {
             Ok(matches) => {
                 rate_limiter.record_success();
 
@@ -240,13 +242,14 @@ async fn match_single_site(
                     all_matches.push(MatchedTorrent {
                         pieces_hash,
                         site_id,
-                        torrent_id,
+                        torrent_id: Some(torrent_id),
                         download_url,
                         save_path: default_save_path.to_string(),
                         skip_hash_check,
                         tag: tag.map(String::from),
                     });
                 }
+                cursor = end;
             }
             Err(e) => {
                 let is_batch_too_large = matches!(
@@ -255,77 +258,31 @@ async fn match_single_site(
                     if msg.contains("413") || msg.contains("400")
                 );
 
-                if is_batch_too_large {
-                    // Adaptive degradation: halve batch_size and retry this chunk
+                if is_batch_too_large && batch_state.batch_size > batch_state.min_batch_size {
                     batch_state.halve();
                     tracing::warn!(
                         site_id = site_id.0,
                         new_batch_size = batch_state.batch_size,
-                        "batch too large, reducing batch_size and retrying"
+                        "batch too large, reducing batch_size and retrying from current cursor"
                     );
-
-                    // Re-chunk and retry the current chunk with smaller batches
-                    let sub_chunks: Vec<Vec<String>> = chunk
-                        .chunks(batch_state.batch_size)
-                        .map(|c| c.to_vec())
-                        .collect();
-
-                    for sub_chunk in sub_chunks {
-                        if cancel.is_cancelled() {
-                            return Err(EngineError::Cancelled.into());
-                        }
-                        rate_limiter.acquire().await?;
-
-                        match reseed.query_pieces_hash(&sub_chunk).await {
-                            Ok(matches) => {
-                                rate_limiter.record_success();
-                                for (pieces_hash, torrent_id) in matches {
-                                    let download_url = reseed.build_download_url(torrent_id);
-                                    all_matches.push(MatchedTorrent {
-                                        pieces_hash,
-                                        site_id,
-                                        torrent_id,
-                                        download_url,
-                                        save_path: default_save_path.to_string(),
-                                        skip_hash_check,
-                                        tag: tag.map(String::from),
-                                    });
-                                }
-                            }
-                            Err(retry_err) => {
-                                let tripped = rate_limiter.record_error().await;
-                                tracing::error!(
-                                    site_id = site_id.0,
-                                    error = %retry_err,
-                                    circuit_tripped = tripped,
-                                    "retry also failed"
-                                );
-                                if tripped {
-                                    tracing::warn!(
-                                        site_id = site_id.0,
-                                        "circuit breaker tripped, aborting site"
-                                    );
-                                    return Ok(all_matches);
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    let tripped = rate_limiter.record_error().await;
-                    tracing::error!(
-                        site_id = site_id.0,
-                        error = %e,
-                        circuit_tripped = tripped,
-                        "pieces_hash query failed"
-                    );
-                    if tripped {
-                        tracing::warn!(
-                            site_id = site_id.0,
-                            "circuit breaker tripped, aborting site"
-                        );
-                        return Ok(all_matches);
-                    }
+                    continue;
                 }
+
+                let tripped = rate_limiter.record_error().await;
+                tracing::error!(
+                    site_id = site_id.0,
+                    error = %e,
+                    circuit_tripped = tripped,
+                    "pieces_hash query failed"
+                );
+                if tripped {
+                    tracing::warn!(
+                        site_id = site_id.0,
+                        "circuit breaker tripped, aborting site"
+                    );
+                    return Ok(all_matches);
+                }
+                cursor = end;
             }
         }
     }

@@ -17,7 +17,7 @@ use super::stats::ReseedStats;
 pub struct MatchedTorrent {
     pub pieces_hash: String,
     pub site_id: SiteId,
-    pub torrent_id: i64,
+    pub torrent_id: Option<i64>,
     pub download_url: String,
     /// save_path from the source torrent in the downloader.
     pub save_path: String,
@@ -33,7 +33,8 @@ pub async fn add_torrent(
     matched: &MatchedTorrent,
     http_client: &reqwest::Client,
     dest_client: &dyn Downloader,
-    dest_hashes: &HashSet<String>,
+    dest_hashes: &mut HashSet<String>,
+    auto_start: bool,
     db_writer: &DbWriterHandle,
     stats: &ReseedStats,
 ) -> Result<bool, CoreError> {
@@ -53,7 +54,7 @@ pub async fn add_torrent(
             db_writer,
             &matched.pieces_hash,
             matched.site_id,
-            Some(matched.torrent_id),
+            matched.torrent_id,
             Some(&meta.info_hash),
             "failed",
             Some("pieces_hash mismatch after download"),
@@ -73,7 +74,7 @@ pub async fn add_torrent(
             db_writer,
             &matched.pieces_hash,
             matched.site_id,
-            Some(matched.torrent_id),
+            matched.torrent_id,
             Some(&meta.info_hash),
             "skipped",
             Some("already in destination downloader"),
@@ -88,7 +89,7 @@ pub async fn add_torrent(
         torrent_data,
         save_path: matched.save_path.clone(),
         skip_hash_check: matched.skip_hash_check,
-        paused: false,
+        paused: !auto_start,
         tag: matched.tag.clone(),
     };
 
@@ -98,20 +99,30 @@ pub async fn add_torrent(
                 pieces_hash = %matched.pieces_hash,
                 info_hash = %meta.info_hash,
                 site_id = matched.site_id.0,
-                torrent_id = matched.torrent_id,
+                torrent_id = ?matched.torrent_id,
                 "torrent added successfully"
             );
             record_history(
                 db_writer,
                 &matched.pieces_hash,
                 matched.site_id,
-                Some(matched.torrent_id),
+                matched.torrent_id,
                 Some(&meta.info_hash),
                 "success",
                 None,
             )
             .await?;
             stats.added.fetch_add(1, Ordering::Relaxed);
+            dest_hashes.insert(meta.info_hash.clone());
+            if auto_start {
+                if let Err(e) = dest_client.resume_torrent(&meta.info_hash).await {
+                    tracing::warn!(
+                        info_hash = %meta.info_hash,
+                        error = %e,
+                        "torrent added but explicit resume failed"
+                    );
+                }
+            }
             Ok(true)
         }
         Ok(false) => {
@@ -123,7 +134,7 @@ pub async fn add_torrent(
                 db_writer,
                 &matched.pieces_hash,
                 matched.site_id,
-                Some(matched.torrent_id),
+                matched.torrent_id,
                 Some(&meta.info_hash),
                 "skipped",
                 Some("downloader rejected (likely duplicate)"),
@@ -142,7 +153,7 @@ pub async fn add_torrent(
                 db_writer,
                 &matched.pieces_hash,
                 matched.site_id,
-                Some(matched.torrent_id),
+                matched.torrent_id,
                 Some(&meta.info_hash),
                 "failed",
                 Some(&format!("add failed: {}", e)),

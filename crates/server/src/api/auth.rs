@@ -33,13 +33,9 @@ async fn register(
 ) -> Result<(StatusCode, CookieJar, Json<UserInfo>), (StatusCode, Json<AuthError>)> {
     let repo = &state.inner.repo;
 
-    // Check if any user already exists by trying to find one with the given username
-    // A cleaner approach: try to find ANY user. We use the username lookup as a proxy --
-    // but really we want "has any user been registered." We check if a user with this
-    // username exists; if registration is first-come-first-serve, that's fine.
-    // For a single-user app, we check if a user already exists at all.
-    let existing = repo
-        .find_user_by_username(&req.username)
+    // Single-admin app: registration is first-come-first-serve.
+    let existing_count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM users")
+        .fetch_one(&state.inner.db_pool)
         .await
         .map_err(|e| {
             (
@@ -50,7 +46,7 @@ async fn register(
             )
         })?;
 
-    if existing.is_some() {
+    if existing_count.0 > 0 {
         return Err((
             StatusCode::CONFLICT,
             Json(AuthError {

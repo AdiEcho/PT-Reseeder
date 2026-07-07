@@ -30,14 +30,21 @@ pub fn filter_by_tracker(cached_announce_urls: &HashSet<String>, site_base_url: 
 }
 
 /// Filter 2: Check reseed_history for a prior successful add for this
-/// pieces_hash + site_id.
+/// pieces_hash + site_id, but only skip if that successful info_hash is still
+/// present in the current source scan or destination downloader.
 pub async fn filter_by_history(
     repo: &Repository,
     pieces_hash: &str,
     site_id: SiteId,
+    present_info_hashes: &HashSet<String>,
 ) -> Result<bool, CoreError> {
     let history = repo.find_reseed_history(pieces_hash, site_id.0).await?;
-    Ok(history.iter().any(|h| h.status == "success"))
+    Ok(history.iter().any(|h| {
+        h.status == "success"
+            && h.info_hash
+                .as_deref()
+                .is_some_and(|info_hash| present_info_hashes.contains(info_hash))
+    }))
 }
 
 /// Filter 3: Check if the destination downloader already has this info_hash.

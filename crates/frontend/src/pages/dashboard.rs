@@ -214,7 +214,11 @@ fn TrendChart(points: Vec<TrendPoint>) -> impl IntoView {
     let chart_w = width - padding * 2.0;
     let chart_h = height - padding * 2.0;
     let n = points.len() as f64;
-    let step = if n > 1.0 { chart_w / (n - 1.0) } else { chart_w };
+    let step = if n > 1.0 {
+        chart_w / (n - 1.0)
+    } else {
+        chart_w
+    };
 
     let success_path = points
         .iter()

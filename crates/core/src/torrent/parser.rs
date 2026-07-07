@@ -137,3 +137,52 @@ pub fn parse_bytes(data: &[u8]) -> Result<TorrentMeta, CoreError> {
         pieces_count,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sha1::{Digest, Sha1};
+
+    fn hex(bytes: &[u8]) -> String {
+        bytes.iter().map(|b| format!("{:02x}", b)).collect()
+    }
+
+    #[test]
+    fn parse_bytes_computes_info_hash_and_pieces_hash() {
+        let pieces = [7u8; 20];
+        let mut data = Vec::new();
+        data.extend_from_slice(b"d8:announce23:http://tracker/announce4:infod");
+        data.extend_from_slice(b"6:lengthi123e4:name10:sample.mkv12:piece lengthi16384e6:pieces20:");
+        data.extend_from_slice(&pieces);
+        data.extend_from_slice(b"ee");
+
+        let meta = parse_bytes(&data).expect("valid torrent metadata");
+        let info_bytes = b"d6:lengthi123e4:name10:sample.mkv12:piece lengthi16384e6:pieces20:\x07\x07\x07\x07\x07\x07\x07\x07\x07\x07\x07\x07\x07\x07\x07\x07\x07\x07\x07\x07e";
+
+        assert_eq!(meta.name, "sample.mkv");
+        assert_eq!(meta.total_size, 123);
+        assert_eq!(meta.info_hash, hex(&Sha1::digest(info_bytes)));
+        assert_eq!(meta.pieces_hash, hex(&Sha1::digest(pieces)));
+    }
+
+    #[test]
+    fn parse_file_reads_torrent_from_disk() {
+        let pieces = [3u8; 20];
+        let mut data = Vec::new();
+        data.extend_from_slice(b"d4:infod6:lengthi1e4:name1:a12:piece lengthi1e6:pieces20:");
+        data.extend_from_slice(&pieces);
+        data.extend_from_slice(b"ee");
+
+        let path = std::env::temp_dir().join(format!(
+            "pt-reseeder-parser-test-{}.torrent",
+            std::process::id()
+        ));
+        std::fs::write(&path, data).expect("write fixture torrent");
+        let meta = parse_file(&path).expect("parse fixture torrent");
+        let _ = std::fs::remove_file(&path);
+
+        assert_eq!(meta.name, "a");
+        assert_eq!(meta.total_size, 1);
+        assert_eq!(meta.pieces_hash, hex(&Sha1::digest(pieces)));
+    }
+}

@@ -45,6 +45,10 @@ impl SiteRateLimiter {
         }
 
         self.limiter.until_ready().await;
+        let current = self.current_interval_ms.load(Ordering::SeqCst);
+        if current > self.base_interval_ms {
+            tokio::time::sleep(Duration::from_millis(current - self.base_interval_ms)).await;
+        }
         Ok(())
     }
 
@@ -90,5 +94,49 @@ impl SiteRateLimiter {
 
     pub fn current_interval_ms(&self) -> u64 {
         self.current_interval_ms.load(Ordering::SeqCst)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+
+    #[tokio::test]
+    async fn shared_handle_enforces_interval_budget() {
+        let limiter = Arc::new(SiteRateLimiter::new(50, 1));
+        limiter.acquire().await.expect("first permit");
+        let start = Instant::now();
+
+        let first = Arc::clone(&limiter);
+        let second = Arc::clone(&limiter);
+        let (a, b) = tokio::join!(first.acquire(), second.acquire());
+        a.expect("second permit");
+        b.expect("third permit");
+
+        assert!(start.elapsed() >= Duration::from_millis(50));
+    }
+
+    #[tokio::test]
+    async fn errors_backoff_and_trip_circuit() {
+        let limiter = SiteRateLimiter::new(10, 1);
+        assert!(!limiter.record_error().await);
+        assert_eq!(limiter.current_interval_ms(), 20);
+        assert!(!limiter.record_error().await);
+        assert_eq!(limiter.current_interval_ms(), 40);
+        assert!(!limiter.record_error().await);
+        assert!(!limiter.record_error().await);
+        assert!(limiter.record_error().await);
+        assert!(limiter.is_circuit_open().await);
+    }
+
+    #[tokio::test]
+    async fn success_resets_backoff() {
+        let limiter = SiteRateLimiter::new(10, 1);
+        let _ = limiter.record_error().await;
+        assert!(limiter.current_interval_ms() > 10);
+        limiter.record_success();
+        assert_eq!(limiter.current_interval_ms(), 10);
+        assert_eq!(limiter.consecutive_errors(), 0);
     }
 }

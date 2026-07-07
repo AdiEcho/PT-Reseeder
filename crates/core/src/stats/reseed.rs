@@ -21,7 +21,7 @@ pub struct SiteReseedStats {
     pub failed: i64,
     pub skipped: i64,
     pub success_rate: f64,
-    /// Circuit breaker status derived from recent history: "ok" | "tripped" | "unknown"
+    /// Circuit breaker status: "ok" | "tripped" | "unknown"
     pub breaker_status: String,
 }
 
@@ -64,11 +64,10 @@ impl ReseedStatsService {
         .await
         .map_err(DbError::Sqlx)?;
 
-        let total_sites: (i64,) =
-            sqlx::query_as("SELECT COUNT(*) FROM sites WHERE enabled = 1")
-                .fetch_one(&self.pool)
-                .await
-                .map_err(DbError::Sqlx)?;
+        let total_sites: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM sites WHERE enabled = 1")
+            .fetch_one(&self.pool)
+            .await
+            .map_err(DbError::Sqlx)?;
 
         let tracked_torrents: (i64,) =
             sqlx::query_as("SELECT COUNT(DISTINCT pieces_hash) FROM pieces_cache")
@@ -102,30 +101,6 @@ impl ReseedStatsService {
         .await
         .map_err(DbError::Sqlx)?;
 
-        // Query breaker status: if the last 5 entries for a site are ALL failures, mark as tripped.
-        // This approximates the in-memory circuit breaker (5 consecutive errors -> 30min disable).
-        let breaker_rows: Vec<BreakerStatusRow> = sqlx::query_as(
-            "SELECT site_id, \
-             CASE WHEN COUNT(*) >= 5 \
-                  AND SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) = COUNT(*) \
-                  THEN 'tripped' ELSE 'ok' END AS breaker_status \
-             FROM ( \
-                 SELECT site_id, status, \
-                        ROW_NUMBER() OVER (PARTITION BY site_id ORDER BY created_at DESC) AS rn \
-                 FROM reseed_history \
-             ) sub \
-             WHERE rn <= 5 \
-             GROUP BY site_id",
-        )
-        .fetch_all(&self.pool)
-        .await
-        .map_err(DbError::Sqlx)?;
-
-        let breaker_map: std::collections::HashMap<i64, String> = breaker_rows
-            .into_iter()
-            .map(|b| (b.site_id, b.breaker_status))
-            .collect();
-
         Ok(rows
             .into_iter()
             .map(|r| {
@@ -134,10 +109,6 @@ impl ReseedStatsService {
                 } else {
                     0.0
                 };
-                let breaker_status = breaker_map
-                    .get(&r.site_id)
-                    .cloned()
-                    .unwrap_or_else(|| "unknown".to_string());
                 SiteReseedStats {
                     site_id: r.site_id,
                     site_name: r.site_name,
@@ -146,26 +117,40 @@ impl ReseedStatsService {
                     failed: r.failed,
                     skipped: r.skipped,
                     success_rate,
-                    breaker_status,
+                    breaker_status: "unknown".to_string(),
                 }
             })
             .collect())
     }
 
     pub async fn get_trend(&self, days: i64) -> Result<Vec<TrendPoint>, CoreError> {
-        let rows: Vec<TrendRow> = sqlx::query_as(
-            "SELECT date(created_at) AS date, \
-             SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) AS succeeded, \
-             SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed \
-             FROM reseed_history \
-             WHERE created_at >= date('now', '-' || ?1 || ' days') \
-             GROUP BY date(created_at) \
-             ORDER BY date(created_at)",
-        )
-        .bind(days)
-        .fetch_all(&self.pool)
-        .await
-        .map_err(DbError::Sqlx)?;
+        let rows: Vec<TrendRow> = if days <= 0 {
+            sqlx::query_as(
+                "SELECT date(created_at) AS date, \
+                 SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) AS succeeded, \
+                 SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed \
+                 FROM reseed_history \
+                 GROUP BY date(created_at) \
+                 ORDER BY date(created_at)",
+            )
+            .fetch_all(&self.pool)
+            .await
+            .map_err(DbError::Sqlx)?
+        } else {
+            sqlx::query_as(
+                "SELECT date(created_at) AS date, \
+                 SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) AS succeeded, \
+                 SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed \
+                 FROM reseed_history \
+                 WHERE created_at >= date('now', '-' || ?1 || ' days') \
+                 GROUP BY date(created_at) \
+                 ORDER BY date(created_at)",
+            )
+            .bind(days)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(DbError::Sqlx)?
+        };
 
         Ok(rows
             .into_iter()
@@ -186,12 +171,6 @@ struct SiteReseedRow {
     succeeded: i64,
     failed: i64,
     skipped: i64,
-}
-
-#[derive(Debug, sqlx::FromRow)]
-struct BreakerStatusRow {
-    site_id: i64,
-    breaker_status: String,
 }
 
 #[derive(Debug, sqlx::FromRow)]

@@ -30,8 +30,12 @@ pub struct ReseedConfig {
     pub default_save_path: String,
     /// Whether to skip hash check when adding to destination.
     pub skip_hash_check: bool,
+    /// Whether added torrents should be explicitly resumed.
+    pub auto_start: bool,
     /// Tag to apply to added torrents.
     pub tag: Option<String>,
+    /// Jackett URL + API key for pack component search. None = skip pack detection.
+    pub jackett_config: Option<super::jackett::JackettConfig>,
 }
 
 /// Real-time progress snapshot sent via watch channel.
@@ -219,6 +223,64 @@ async fn run_pipeline(
         return Ok(());
     }
 
+    // ── Phase 1.5: Pack detection ────────────────────────────────────
+    let mut pack_matched_torrents = Vec::new();
+    if let Some(ref jackett_cfg) = config.jackett_config {
+        update_progress(progress_tx, "pack_detection", stats, start);
+        tracing::info!("phase 1.5: pack detection via Jackett");
+
+        let http_client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .map_err(|e| EngineError::ScanFailed(format!("http client: {}", e)))?;
+
+        for meta in merged_scan.torrents.values() {
+            if cancel.is_cancelled() {
+                return Err(EngineError::Cancelled.into());
+            }
+
+            if super::pack::is_pack(meta) {
+                tracing::info!(name = %meta.name, size = meta.total_size, "detected pack torrent");
+                match super::pack::search_pack_components(meta, jackett_cfg, &http_client).await {
+                    Ok(matches) => {
+                        for m in matches {
+                            if let Some(site_id) = site_id_for_jackett_tracker(
+                                registry,
+                                &config.target_site_ids,
+                                &m.result.tracker,
+                            ) {
+                                tracing::debug!(
+                                    component = %m.component_name,
+                                    tracker = %m.result.tracker,
+                                    info_hash = %m.info_hash,
+                                    "validated pack component match found"
+                                );
+                                pack_matched_torrents.push(adder::MatchedTorrent {
+                                    pieces_hash: m.pieces_hash,
+                                    site_id,
+                                    torrent_id: None,
+                                    download_url: m.result.download_url,
+                                    save_path: config.default_save_path.clone(),
+                                    skip_hash_check: config.skip_hash_check,
+                                    tag: config.tag.clone(),
+                                });
+                            } else {
+                                tracing::warn!(
+                                    component = %m.component_name,
+                                    tracker = %m.result.tracker,
+                                    "validated Jackett pack component has no matching target site; skipping add"
+                                );
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!(pack = %meta.name, error = %e, "pack component search failed, continuing");
+                    }
+                }
+            }
+        }
+    }
+
     // ── Phase 2: Match ─────────────────────────────────────────────────
     update_progress(progress_tx, "matching", stats, start);
     tracing::info!(sites = config.target_site_ids.len(), "phase 2: match");
@@ -229,7 +291,7 @@ async fn run_pipeline(
 
     // Determine save paths from source torrents
     // For now use the configured default; the adder will use it
-    let matched_torrents = matcher::match_all_sites(
+    let mut matched_torrents = matcher::match_all_sites(
         &merged_scan,
         registry,
         &config.target_site_ids,
@@ -241,6 +303,14 @@ async fn run_pipeline(
         cancel,
     )
     .await?;
+
+    if !pack_matched_torrents.is_empty() {
+        stats.matched.fetch_add(
+            pack_matched_torrents.len() as u64,
+            std::sync::atomic::Ordering::Relaxed,
+        );
+        matched_torrents.extend(pack_matched_torrents);
+    }
 
     let match_snapshot = stats.snapshot();
     tracing::info!(
@@ -275,7 +345,8 @@ async fn run_pipeline(
             matched,
             &http_client,
             dest_client,
-            &merged_scan.dest_hashes,
+            &mut merged_scan.dest_hashes,
+            config.auto_start,
             db_writer,
             stats,
         )
@@ -297,6 +368,38 @@ async fn run_pipeline(
     );
 
     Ok(())
+}
+
+fn site_id_for_jackett_tracker(
+    registry: &SiteRegistry,
+    target_site_ids: &[SiteId],
+    tracker: &str,
+) -> Option<SiteId> {
+    let tracker_lower = tracker.to_lowercase();
+    let tracker_domain = extract_domain(tracker);
+
+    target_site_ids.iter().copied().find(|site_id| {
+        registry.get(site_id).is_some_and(|handle| {
+            let site_name = handle.core.name().to_lowercase();
+            let site_domain = extract_domain(handle.core.base_url());
+            (!tracker_domain.is_empty() && tracker_domain == site_domain)
+                || (!tracker_lower.is_empty()
+                    && !site_name.is_empty()
+                    && (tracker_lower.contains(&site_name) || site_name.contains(&tracker_lower)))
+        })
+    })
+}
+
+fn extract_domain(url: &str) -> String {
+    let without_proto = url
+        .strip_prefix("https://")
+        .or_else(|| url.strip_prefix("http://"))
+        .unwrap_or(url);
+    without_proto
+        .split(|c| c == '/' || c == ':')
+        .next()
+        .unwrap_or("")
+        .to_lowercase()
 }
 
 fn update_progress(

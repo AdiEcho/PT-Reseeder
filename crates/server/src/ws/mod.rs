@@ -11,6 +11,7 @@ use axum::{
     response::Response,
 };
 use events::WsEvent;
+use pt_reseeder_core::site::models::SiteId;
 use pt_reseeder_core::stats::reseed::ReseedStatsService;
 use pt_reseeder_core::stats::user_info::UserInfoService;
 use std::time::Duration;
@@ -112,8 +113,21 @@ async fn build_dashboard_event(state: &AppState) -> WsEvent {
     let user_svc = UserInfoService::new(state.inner.db_pool.clone());
 
     let overview = reseed_svc.get_overview().await.ok();
-    let site_stats = reseed_svc.get_site_reseed_stats().await.ok();
+    let mut site_stats = reseed_svc.get_site_reseed_stats().await.ok();
     let user_info = user_svc.get_aggregated_user_info().await.ok();
+
+    if let Some(stats) = site_stats.as_mut() {
+        let registry = state.site_registry_snapshot().await;
+        for site in stats {
+            site.breaker_status = match registry.get(&SiteId::from(site.site_id)) {
+                Some(handle) if handle.rate_limiter.is_circuit_open().await => {
+                    "tripped".to_string()
+                }
+                Some(_) => "ok".to_string(),
+                None => "unknown".to_string(),
+            };
+        }
+    }
 
     WsEvent::DashboardUpdate {
         overview,

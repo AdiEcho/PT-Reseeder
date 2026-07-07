@@ -23,6 +23,10 @@ pub trait ReseedCapable: SiteCore {
     async fn query_pieces_hash(&self, hashes: &[String]) -> Result<Vec<(String, i64)>, CoreError>;
     /// Build download URL for a torrent by its site-specific ID
     fn build_download_url(&self, torrent_id: i64) -> String;
+    /// Preferred pieces_hash query batch size for this site.
+    fn batch_size(&self) -> usize {
+        1000
+    }
 }
 
 #[async_trait]

@@ -162,8 +162,25 @@ impl TaskExecutor {
         for fid in &folder_ids {
             if let Some(folder) = self.repo.get_folder(*fid).await? {
                 if folder.enabled {
-                    scan_folders.push(PathBuf::from(&folder.path));
-                    self.repo.update_folder_scanned(*fid).await?;
+                    match folder.scan_mode.as_str() {
+                        "local" => {
+                            scan_folders.push(PathBuf::from(&folder.path));
+                            self.repo.update_folder_scanned(*fid).await?;
+                        }
+                        "downloader" => {
+                            return Err(CoreError::Scheduler(SchedulerError::ExecutorError(
+                                format!(
+                                    "folder {} uses downloader scan mode, which is unsupported until downloader APIs expose .torrent data/pieces_hash",
+                                    folder.id
+                                ),
+                            )));
+                        }
+                        other => {
+                            return Err(CoreError::Scheduler(SchedulerError::ExecutorError(
+                                format!("folder {} has invalid scan_mode: {}", folder.id, other),
+                            )));
+                        }
+                    }
                 }
             }
         }
@@ -196,7 +213,7 @@ impl TaskExecutor {
             )));
         }
 
-        let dest_downloader = self.build_destination_downloader(task).await?;
+        let (dest_downloader, auto_start) = self.build_destination_downloader(task).await?;
         let task_config = parse_reseed_config(task.config_json.as_deref())?;
         let default_save_path = task_config
             .default_save_path
@@ -207,7 +224,9 @@ impl TaskExecutor {
             target_site_ids,
             default_save_path,
             skip_hash_check: task_config.skip_hash_check.unwrap_or(false),
+            auto_start,
             tag: task_config.tag,
+            jackett_config: None,
         };
 
         let engine = ReseedEngine::new(
@@ -267,7 +286,7 @@ impl TaskExecutor {
     async fn build_destination_downloader(
         &self,
         task: &TaskRow,
-    ) -> Result<Arc<dyn Downloader>, CoreError> {
+    ) -> Result<(Arc<dyn Downloader>, bool), CoreError> {
         let pair_id = task.downloader_pair_id.ok_or_else(|| {
             CoreError::Scheduler(SchedulerError::ExecutorError(
                 "downloader_pair_id is required for reseed tasks".to_string(),
@@ -300,7 +319,9 @@ impl TaskExecutor {
             )));
         }
 
-        build_downloader(&row, self.vault.as_ref()).await
+        let auto_start = row.auto_start.unwrap_or(true);
+        let downloader = build_downloader(&row, self.vault.as_ref()).await?;
+        Ok((downloader, auto_start))
     }
 
     /// Write a task log entry via the DbWriter channel.

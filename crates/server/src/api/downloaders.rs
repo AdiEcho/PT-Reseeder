@@ -72,6 +72,7 @@ pub struct TestConnectionResponse {
     pub success: bool,
     pub message: String,
     pub version: Option<String>,
+    pub torrent_count: Option<u64>,
 }
 
 #[derive(Deserialize)]
@@ -611,36 +612,32 @@ async fn test_connection(
             success: false,
             message: format!("connection failed: {}", e),
             version: None,
+            torrent_count: None,
         }));
     }
 
     // Test connection
     match client.test_connection().await {
         Ok(true) => {
-            // Try to get version for the response
-            let version = match row.dl_type.as_str() {
-                "qbittorrent" => {
-                    // We know it's connected, try to get version
-                    // The test_connection already validated it works
-                    None // version is checked internally
-                }
-                _ => None,
-            };
+            let torrent_hashes = client.get_all_info_hashes().await.ok();
             Ok(Json(TestConnectionResponse {
                 success: true,
                 message: "connection successful".to_string(),
-                version,
+                version: None,
+                torrent_count: torrent_hashes.map(|hashes| hashes.len() as u64),
             }))
         }
         Ok(false) => Ok(Json(TestConnectionResponse {
             success: false,
             message: "connection test returned false".to_string(),
             version: None,
+            torrent_count: None,
         })),
         Err(e) => Ok(Json(TestConnectionResponse {
             success: false,
             message: format!("connection test failed: {}", e),
             version: None,
+            torrent_count: None,
         })),
     }
 }

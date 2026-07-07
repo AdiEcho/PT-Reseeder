@@ -49,20 +49,23 @@ pub fn use_dashboard_ws() -> ReadSignal<Option<DashboardWsUpdate>> {
                 if let Ok(js_str) = e.data().dyn_into::<js_sys::JsString>() {
                     let text: String = js_str.into();
                     // The server sends: {"type":"dashboard_update","overview":{...},...}
-                    // Unknown fields are silently ignored by default serde behaviour.
+                    // Ignore explicit non-dashboard progress events.
                     #[derive(serde::Deserialize)]
                     struct RawWsEvent {
+                        r#type: String,
                         overview: Option<DashboardOverview>,
                         site_stats: Option<Vec<SiteReseedStats>>,
                         user_info: Option<UserInfoAggregate>,
                     }
 
                     if let Ok(evt) = serde_json::from_str::<RawWsEvent>(&text) {
-                        set_ws_data.set(Some(DashboardWsUpdate {
-                            overview: evt.overview,
-                            site_stats: evt.site_stats,
-                            user_info: evt.user_info,
-                        }));
+                        if evt.r#type == "dashboard_update" {
+                            set_ws_data.set(Some(DashboardWsUpdate {
+                                overview: evt.overview,
+                                site_stats: evt.site_stats,
+                                user_info: evt.user_info,
+                            }));
+                        }
                     }
                 }
             });

@@ -1,7 +1,8 @@
 use tracing;
 
-use crate::error::CoreError;
+use crate::error::{CoreError, EngineError};
 use crate::torrent::models::{TorrentFile, TorrentMeta};
+use crate::torrent::parser;
 
 use super::jackett::{self, JackettConfig, JackettResult};
 
@@ -63,12 +64,17 @@ pub async fn search_pack_components(
             jackett::search(jackett_config, http_client, &comp.name, Some(comp.size)).await?;
 
         for result in results {
-            // Verify file list overlap if possible
-            matches.push(PackComponentMatch {
-                component_name: comp.name.clone(),
-                component_size: comp.size,
-                result,
-            });
+            match download_and_validate_component(http_client, comp, result).await {
+                Ok(Some(component_match)) => matches.push(component_match),
+                Ok(None) => {}
+                Err(e) => {
+                    tracing::warn!(
+                        component = %comp.name,
+                        error = %e,
+                        "failed to validate Jackett pack component candidate"
+                    );
+                }
+            }
         }
     }
 
@@ -86,8 +92,7 @@ pub async fn search_pack_components(
 struct PackComponent {
     name: String,
     size: u64,
-    #[allow(dead_code)]
-    file_count: usize,
+    files: Vec<(String, u64)>,
 }
 
 /// A match result for a single pack component.
@@ -96,30 +101,109 @@ pub struct PackComponentMatch {
     pub component_name: String,
     pub component_size: u64,
     pub result: JackettResult,
+    pub pieces_hash: String,
+    pub info_hash: String,
 }
 
 /// Extract components (top-level sub-folders) from a pack torrent.
 fn extract_components(meta: &TorrentMeta) -> Vec<PackComponent> {
-    let mut component_map: std::collections::HashMap<String, (u64, usize)> =
+    let mut component_map: std::collections::HashMap<String, (u64, Vec<(String, u64)>)> =
         std::collections::HashMap::new();
 
     for f in &meta.files {
         if f.path.len() >= 2 {
             let top_dir = &f.path[0];
-            let entry = component_map.entry(top_dir.clone()).or_insert((0, 0));
+            let relative_path = normalize_path(&f.path[1..]);
+            let entry = component_map
+                .entry(top_dir.clone())
+                .or_insert_with(|| (0, Vec::new()));
             entry.0 += f.length;
-            entry.1 += 1;
+            entry.1.push((relative_path, f.length));
         }
     }
 
     component_map
         .into_iter()
-        .map(|(name, (size, file_count))| PackComponent {
-            name,
-            size,
-            file_count,
-        })
+        .map(|(name, (size, files))| PackComponent { name, size, files })
         .collect()
+}
+
+fn normalize_path(parts: &[String]) -> String {
+    parts.join("/").to_lowercase()
+}
+
+async fn download_and_validate_component(
+    http_client: &reqwest::Client,
+    component: &PackComponent,
+    result: JackettResult,
+) -> Result<Option<PackComponentMatch>, CoreError> {
+    let resp = http_client
+        .get(&result.download_url)
+        .send()
+        .await
+        .map_err(|e| EngineError::MatchFailed(format!("download Jackett torrent: {}", e)))?;
+    let status = resp.status();
+    if !status.is_success() {
+        return Err(EngineError::MatchFailed(format!(
+            "download Jackett torrent HTTP {}: {}",
+            status, result.download_url
+        ))
+        .into());
+    }
+    let torrent_data = resp
+        .bytes()
+        .await
+        .map_err(|e| EngineError::MatchFailed(format!("read Jackett torrent body: {}", e)))?;
+    let meta = parser::parse_bytes(&torrent_data)?;
+
+    if !component_overlaps(component, &meta) {
+        tracing::debug!(
+            component = %component.name,
+            result = %result.title,
+            "Jackett candidate rejected by file overlap validation"
+        );
+        return Ok(None);
+    }
+
+    Ok(Some(PackComponentMatch {
+        component_name: component.name.clone(),
+        component_size: component.size,
+        result,
+        pieces_hash: meta.pieces_hash,
+        info_hash: meta.info_hash,
+    }))
+}
+
+fn component_overlaps(component: &PackComponent, candidate: &TorrentMeta) -> bool {
+    let size_diff = component.size.abs_diff(candidate.total_size);
+    let size_tolerance = (component.size / 100).max(10_737_418);
+    if size_diff > size_tolerance {
+        return false;
+    }
+
+    let component_files: std::collections::HashSet<(&str, u64)> = component
+        .files
+        .iter()
+        .map(|(path, size)| (path.as_str(), *size))
+        .collect();
+    let mut matched_files = 0usize;
+    let mut matched_bytes = 0u64;
+
+    for file in &candidate.files {
+        let relative_path = if file.path.len() >= 2 {
+            normalize_path(&file.path[1..])
+        } else {
+            normalize_path(&file.path)
+        };
+        if component_files.contains(&(relative_path.as_str(), file.length)) {
+            matched_files += 1;
+            matched_bytes += file.length;
+        }
+    }
+
+    matched_files > 0
+        && (matched_files == candidate.files.len()
+            || matched_bytes >= candidate.total_size.saturating_mul(90) / 100)
 }
 
 #[cfg(test)]

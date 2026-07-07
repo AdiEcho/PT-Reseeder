@@ -62,7 +62,7 @@ build-server:
 
 build-desktop: build-server
 	command -v cargo-tauri >/dev/null || { echo "cargo-tauri is required. Install with: cargo install tauri-cli --version '^2'"; exit 1; }
-	cd crates/desktop && $(CARGO) tauri build
+	cd crates/desktop && $(CARGO) tauri build --bundles app
 
 artifacts: build-server
 	rm -rf "$(SERVER_DIST_DIR)"

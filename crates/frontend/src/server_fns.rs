@@ -501,7 +501,9 @@ pub async fn probe_site(id: i64) -> Result<(), ServerFnError> {
     let handle = context
         .site_registry
         .get(&pt_reseeder_core::site::models::SiteId::from(site.id))
-        .ok_or_else(|| ServerFnError::new("site is not registered; ensure credentials are unlocked"))?;
+        .ok_or_else(|| {
+            ServerFnError::new("site is not registered; ensure credentials are unlocked")
+        })?;
     let probe = run_site_probe(handle.reseed.as_ref(), handle.user_info.as_ref()).await;
     let status = probe.status_str().to_string();
     let detail = probe.to_json();
@@ -703,12 +705,17 @@ pub async fn test_downloader(id: i64) -> Result<String, ServerFnError> {
                 username.as_deref().unwrap_or(""),
                 password.as_deref().unwrap_or(""),
             );
-            client.connect().await.map_err(|e| ServerFnError::new(format!("{e}")))?;
+            client
+                .connect()
+                .await
+                .map_err(|e| ServerFnError::new(format!("{e}")))?;
             let version = client.get_version().await.ok();
             let torrent_count = client.get_torrent_count().await.ok();
             Ok(format!(
                 "Connection successful{}{}",
-                version.map(|v| format!("; version: {v}")).unwrap_or_default(),
+                version
+                    .map(|v| format!("; version: {v}"))
+                    .unwrap_or_default(),
                 torrent_count
                     .map(|c| format!("; torrents: {c}"))
                     .unwrap_or_default()
@@ -721,12 +728,17 @@ pub async fn test_downloader(id: i64) -> Result<String, ServerFnError> {
                 username.as_deref(),
                 password.as_deref(),
             );
-            client.connect().await.map_err(|e| ServerFnError::new(format!("{e}")))?;
+            client
+                .connect()
+                .await
+                .map_err(|e| ServerFnError::new(format!("{e}")))?;
             let version = client.get_version().await.ok();
             let torrent_count = client.get_all_info_hashes().await.ok().map(|h| h.len());
             Ok(format!(
                 "Connection successful{}{}",
-                version.map(|v| format!("; version: {v}")).unwrap_or_default(),
+                version
+                    .map(|v| format!("; version: {v}"))
+                    .unwrap_or_default(),
                 torrent_count
                     .map(|c| format!("; torrents: {c}"))
                     .unwrap_or_default()

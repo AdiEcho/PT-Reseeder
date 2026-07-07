@@ -152,7 +152,9 @@ mod tests {
         let pieces = [7u8; 20];
         let mut data = Vec::new();
         data.extend_from_slice(b"d8:announce23:http://tracker/announce4:infod");
-        data.extend_from_slice(b"6:lengthi123e4:name10:sample.mkv12:piece lengthi16384e6:pieces20:");
+        data.extend_from_slice(
+            b"6:lengthi123e4:name10:sample.mkv12:piece lengthi16384e6:pieces20:",
+        );
         data.extend_from_slice(&pieces);
         data.extend_from_slice(b"ee");
 

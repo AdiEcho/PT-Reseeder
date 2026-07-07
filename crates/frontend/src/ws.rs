@@ -2,6 +2,11 @@ use leptos::prelude::*;
 
 use crate::server_fns::{DashboardOverview, SiteReseedStats, UserInfoAggregate};
 
+#[cfg(target_arch = "wasm32")]
+thread_local! {
+    static DASHBOARD_WS_HANDLES: std::cell::RefCell<Vec<Option<web_sys::WebSocket>>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
 /// A single real-time update pushed over the WebSocket.
 #[derive(Debug, Clone)]
 pub struct DashboardWsUpdate {
@@ -72,17 +77,23 @@ pub fn use_dashboard_ws() -> ReadSignal<Option<DashboardWsUpdate>> {
             ws.set_onmessage(Some(on_message.as_ref().unchecked_ref()));
             on_message.forget(); // prevent GC -- closure lives as long as the WS
 
-            // Keep a handle so we can close it on cleanup.
-            let ws_handle = ws.clone();
-
-            on_cleanup(move || {
-                let _ = ws_handle.close();
+            let handle_id = DASHBOARD_WS_HANDLES.with(|handles| {
+                let mut handles = handles.borrow_mut();
+                handles.push(Some(ws));
+                handles.len() - 1
             });
 
-            // Prevent the WS object from being dropped (it is ref-counted on
-            // the JS side via the clone above, so this just prevents the Rust
-            // wrapper from calling `close` on drop).
-            std::mem::forget(ws);
+            on_cleanup(move || {
+                DASHBOARD_WS_HANDLES.with(|handles| {
+                    if let Some(ws) = handles
+                        .borrow_mut()
+                        .get_mut(handle_id)
+                        .and_then(Option::take)
+                    {
+                        let _ = ws.close();
+                    }
+                });
+            });
         });
     }
 

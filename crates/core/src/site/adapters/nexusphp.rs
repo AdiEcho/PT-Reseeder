@@ -94,19 +94,18 @@ impl NexusPhpAdapter {
             .await
             .map_err(|e| SiteError::HttpError(e.to_string()))?;
         if !resp.status().is_success() {
-            return Err(SiteError::HttpError(format!(
-                "HTTP {} resolving user id",
-                resp.status()
-            ))
-            .into());
+            return Err(
+                SiteError::HttpError(format!("HTTP {} resolving user id", resp.status())).into(),
+            );
         }
         let body = resp
             .text()
             .await
             .map_err(|e| SiteError::HttpError(e.to_string()))?;
         let html = Html::parse_document(&body);
-        extract_user_id(&html, &self.selectors)
-            .ok_or_else(|| SiteError::AuthFailed("failed to resolve user_id from cookie session".into()).into())
+        extract_user_id(&html, &self.selectors).ok_or_else(|| {
+            SiteError::AuthFailed("failed to resolve user_id from cookie session".into()).into()
+        })
     }
 }
 

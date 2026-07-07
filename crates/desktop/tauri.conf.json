@@ -3,9 +3,7 @@
   "productName": "PT-Reseeder",
   "version": "0.1.0",
   "identifier": "com.pt-reseeder.app",
-  "build": {
-    "beforeBuildCommand": "cargo leptos build --release"
-  },
+  "build": {},
   "app": {
     "withGlobalTauri": true,
     "windows": [

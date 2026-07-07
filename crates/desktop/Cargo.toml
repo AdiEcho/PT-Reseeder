@@ -6,10 +6,10 @@ edition = "2021"
 [dependencies]
 pt-reseeder-server = { path = "../server" }
 pt-reseeder-core = { path = "../core" }
-tauri = "2"
+tauri = { version = "2", features = [] }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 url = "2"
 
 [build-dependencies]
-tauri-build = "2"
+tauri-build = { version = "2", features = [] }

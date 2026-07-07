@@ -60,7 +60,7 @@ build-server:
 	command -v cargo-leptos >/dev/null || { echo "cargo-leptos is required. Install with: cargo install cargo-leptos"; exit 1; }
 	$(CARGO) leptos build $(CARGO_PROFILE_FLAGS)
 
-build-desktop:
+build-desktop: build-server
 	command -v cargo-tauri >/dev/null || { echo "cargo-tauri is required. Install with: cargo install tauri-cli --version '^2'"; exit 1; }
 	cd crates/desktop && $(CARGO) tauri build
 
@@ -74,9 +74,14 @@ artifacts: build-server
 		rm -rf "$(DESKTOP_DIST_DIR)"; \
 		mkdir -p "$(DESKTOP_DIST_DIR)"; \
 		cp -R target/release/bundle/. "$(DESKTOP_DIST_DIR)/"; \
-		echo "Desktop artifacts written to $(DESKTOP_DIST_DIR)/"; \
+		echo "Desktop bundle artifacts written to $(DESKTOP_DIST_DIR)/"; \
+	elif [ -x target/release/pt-reseeder-desktop ]; then \
+		rm -rf "$(DESKTOP_DIST_DIR)"; \
+		mkdir -p "$(DESKTOP_DIST_DIR)"; \
+		cp target/release/pt-reseeder-desktop "$(DESKTOP_DIST_DIR)/"; \
+		echo "Desktop executable written to $(DESKTOP_DIST_DIR)/"; \
 	else \
-		echo "Desktop bundle not found. Run 'make build-desktop' to create it."; \
+		echo "Desktop artifact not found. Run 'make build-desktop' to create it."; \
 	fi
 
 install-tools:

@@ -8,8 +8,32 @@ use crate::pages::site_detail::SiteDetailPage;
 use crate::pages::sites::SitesPage;
 use crate::pages::tasks::TasksPage;
 use leptos::prelude::*;
+#[cfg(feature = "ssr")]
+use leptos::{config::LeptosOptions, hydration::HydrationScripts};
+#[cfg(feature = "ssr")]
+use leptos_meta::MetaTags;
 use leptos_router::components::*;
 use leptos_router::path;
+
+#[cfg(feature = "ssr")]
+pub fn shell(options: LeptosOptions) -> impl IntoView {
+    view! {
+        <!DOCTYPE html>
+        <html lang="zh-CN">
+            <head>
+                <meta charset="utf-8" />
+                <meta name="viewport" content="width=device-width, initial-scale=1" />
+                <title>"PT-Reseeder"</title>
+                <link rel="stylesheet" href="/pkg/pt-reseeder.css" />
+                <HydrationScripts options />
+                <MetaTags />
+            </head>
+            <body>
+                <App />
+            </body>
+        </html>
+    }
+}
 
 #[component]
 pub fn App() -> impl IntoView {

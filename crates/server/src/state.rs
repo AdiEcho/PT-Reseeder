@@ -17,6 +17,12 @@ use pt_reseeder_core::site::traits::{
     RepostCapable, ReseedCapable, SearchCapable, SiteCore, UserInfoCapable,
 };
 use sqlx::SqlitePool;
+
+impl axum::extract::FromRef<AppState> for leptos::config::LeptosOptions {
+    fn from_ref(state: &AppState) -> Self {
+        state.leptos_options()
+    }
+}
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, warn};
@@ -32,6 +38,7 @@ pub struct AppStateInner {
     pub repo: Repository,
     pub vault: Arc<RwLock<Option<Vault>>>,
     pub config: AppConfig,
+    pub leptos_options: leptos::config::LeptosOptions,
     pub cancel_token: CancellationToken,
     pub start_time: std::time::Instant,
     pub site_registry: RwLock<SiteRegistry>,
@@ -48,6 +55,12 @@ impl AppState {
         site_registry: SiteRegistry,
     ) -> Self {
         let repo = Repository::new(db_pool.clone());
+        let leptos_options = leptos::config::LeptosOptions::builder()
+            .output_name("pt-reseeder")
+            .site_root(config.leptos_site_root.to_string_lossy().to_string())
+            .site_pkg_dir("pkg")
+            .site_addr(config.server_bind)
+            .build();
         Self {
             inner: Arc::new(AppStateInner {
                 db_pool,
@@ -55,6 +68,7 @@ impl AppState {
                 repo,
                 vault: Arc::new(RwLock::new(None)),
                 config,
+                leptos_options,
                 cancel_token,
                 start_time: std::time::Instant::now(),
                 site_registry: RwLock::new(site_registry),
@@ -62,6 +76,10 @@ impl AppState {
                 file_watcher: RwLock::new(None),
             }),
         }
+    }
+
+    pub fn leptos_options(&self) -> leptos::config::LeptosOptions {
+        self.inner.leptos_options.clone()
     }
 
     pub async fn start_task_runtime(&self) -> Result<(), CoreError> {

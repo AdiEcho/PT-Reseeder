@@ -5,12 +5,13 @@ use crate::ws;
 use axum::{
     body::Body,
     extract::State,
-    http::{header, HeaderMap, Method, Request, StatusCode, Uri},
+    http::{header, HeaderMap, Method, Request, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post},
     Router,
 };
 use leptos::prelude::provide_context;
+use leptos_axum::{generate_route_list, LeptosRoutes};
 use tower::ServiceExt;
 use tower_http::services::ServeDir;
 
@@ -67,6 +68,11 @@ async fn validate_server_fn_request(
     Ok(Some(session.user_id))
 }
 
+fn provide_server_fn_context(context: pt_reseeder_frontend::server_fns::ServerFnContext) {
+    provide_context(context.pool.clone());
+    provide_context(context);
+}
+
 async fn server_fn_handler(State(state): State<AppState>, request: Request<Body>) -> Response {
     let method = request.method().clone();
     let path = request.uri().path().to_string();
@@ -84,22 +90,16 @@ async fn server_fn_handler(State(state): State<AppState>, request: Request<Body>
         authenticated_user_id: user_id,
     };
     leptos_axum::handle_server_fns_with_context(
-        move || {
-            provide_context(context.clone());
-        },
+        move || provide_server_fn_context(context.clone()),
         request,
     )
     .await
     .into_response()
 }
 
-async fn static_fallback(
-    State(state): State<AppState>,
-    uri: Uri,
-    request: Request<Body>,
-) -> Response {
+async fn static_fallback(State(state): State<AppState>, request: Request<Body>) -> Response {
     let site_root = state.inner.config.leptos_site_root.clone();
-    let response = ServeDir::new(&site_root)
+    ServeDir::new(site_root)
         .oneshot(request)
         .await
         .map(|res| res.into_response())
@@ -109,30 +109,13 @@ async fn static_fallback(
                 format!("failed to serve static asset: {err}"),
             )
                 .into_response()
-        });
-
-    if response.status() == StatusCode::NOT_FOUND {
-        let index_request = Request::builder()
-            .uri("/index.html")
-            .body(Body::empty())
-            .expect("valid index request");
-        ServeDir::new(site_root)
-            .oneshot(index_request)
-            .await
-            .map(|res| res.into_response())
-            .unwrap_or_else(|_| {
-                (
-                    StatusCode::NOT_FOUND,
-                    format!("no static asset for {} and index.html is missing", uri),
-                )
-                    .into_response()
-            })
-    } else {
-        response
-    }
+        })
 }
 
 pub fn build_router(state: AppState) -> Router {
+    let routes = generate_route_list(pt_reseeder_frontend::app::App);
+    let leptos_options = state.leptos_options();
+
     // Routes that require authentication
     let authed_routes = Router::new()
         .merge(api::sites::router())
@@ -161,5 +144,26 @@ pub fn build_router(state: AppState) -> Router {
         .nest("/api", api_routes)
         .route("/ws/dashboard", get(ws::ws_handler))
         .fallback(static_fallback)
+        .leptos_routes_with_context(
+            &state,
+            routes,
+            {
+                let context = pt_reseeder_frontend::server_fns::ServerFnContext {
+                    pool: state.inner.db_pool.clone(),
+                    vault: state.inner.vault.clone(),
+                    session_ttl_hours: state.inner.config.session_ttl_hours,
+                    data_dir: state.inner.config.data_dir.clone(),
+                    site_registry: std::sync::Arc::new(
+                        pt_reseeder_core::site::registry::SiteRegistry::new(),
+                    ),
+                    authenticated_user_id: None,
+                };
+                move || provide_server_fn_context(context.clone())
+            },
+            {
+                let leptos_options = leptos_options.clone();
+                move || pt_reseeder_frontend::app::shell(leptos_options.clone())
+            },
+        )
         .with_state(state)
 }

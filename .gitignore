@@ -25,3 +25,6 @@ research/
 /target.md
 dist/
 pt-reseeder.db*
+.claude/
+.agents/
+skills-lock.json

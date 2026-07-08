@@ -6,13 +6,24 @@ use leptos::prelude::*;
 use serde_json::json;
 
 const STATUSES: &[(&str, Option<&str>)] = &[
-    ("All", None),
-    ("Pending", Some("pending")),
-    ("Approved", Some("approved")),
-    ("Submitted", Some("submitted")),
-    ("Failed", Some("failed")),
-    ("Rejected", Some("rejected")),
+    ("全部", None),
+    ("待审核", Some("pending")),
+    ("已批准", Some("approved")),
+    ("已提交", Some("submitted")),
+    ("失败", Some("failed")),
+    ("已拒绝", Some("rejected")),
 ];
+
+fn status_label(status: &str) -> &'static str {
+    match status {
+        "pending" => "待审核",
+        "approved" => "已批准",
+        "submitted" => "已提交",
+        "failed" => "失败",
+        "rejected" => "已拒绝",
+        _ => "未知",
+    }
+}
 
 fn status_badge_class(status: &str) -> &'static str {
     match status {
@@ -162,7 +173,7 @@ pub fn RepostPage() -> impl IntoView {
     view! {
         <div class="dashboard">
             <div class="dashboard-header">
-                <h1>"Repost Queue"</h1>
+                <h1>"转种队列"</h1>
                 <div class="trend-selector">
                     {STATUSES
                         .iter()
@@ -186,7 +197,7 @@ pub fn RepostPage() -> impl IntoView {
             </div>
 
             <Suspense fallback=move || {
-                view! { <p>"Loading repost queue..."</p> }
+                view! { <p>"正在加载转种队列..."</p> }
             }>
                 {move || {
                     queue
@@ -196,14 +207,14 @@ pub fn RepostPage() -> impl IntoView {
                                 Err(e) => {
                                     view! {
                                         <p class="error">
-                                            {format!("Failed to load repost queue: {e}")}
+                                            {format!("转种队列加载失败：{e}")}
                                         </p>
                                     }
                                         .into_any()
                                 }
                                 Ok(entries) => {
                                     if entries.is_empty() {
-                                        view! { <p>"No entries in the queue."</p> }.into_any()
+                                        view! { <p>"队列中没有条目。"</p> }.into_any()
                                     } else {
                                         view! {
                                             <RepostTable entries=entries on_mutated=refetch />
@@ -230,14 +241,14 @@ where
                 <table class="stats-table">
                     <thead>
                         <tr>
-                            <th>"Source Site"</th>
-                            <th>"Torrent ID"</th>
-                            <th>"Target Site"</th>
-                            <th>"Status"</th>
-                            <th>"Notes"</th>
-                            <th>"Submitted"</th>
-                            <th>"Created"</th>
-                            <th>"Actions"</th>
+                            <th>"源站点"</th>
+                            <th>"种子 ID"</th>
+                            <th>"目标站点"</th>
+                            <th>"状态"</th>
+                            <th>"备注"</th>
+                            <th>"提交时间"</th>
+                            <th>"创建时间"</th>
+                            <th>"操作"</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -262,6 +273,7 @@ where
     let id = entry.id;
     let status = entry.status.clone();
     let badge_class = status_badge_class(&status);
+    let status_text = status_label(&status);
 
     let submitted_display = entry
         .submitted_at
@@ -289,7 +301,7 @@ where
             <td>{entry.source_torrent_id.clone()}</td>
             <td>{entry.target_site_name.clone()}</td>
             <td>
-                <span class=badge_class>{status.clone()}</span>
+                <span class=badge_class>{status_text}</span>
             </td>
             <td class="text-muted">{notes_display}</td>
             <td class="text-muted">{submitted_display}</td>
@@ -319,7 +331,7 @@ where
                         });
                     }
                 >
-                    "Submit"
+                    "提交"
                 </button>
                 <DesktopAutofillAction id=id />
             </div>
@@ -335,7 +347,7 @@ where
                     });
                 }
             >
-                "Retry"
+                "重试"
             </button>
         }
         .into_any(),
@@ -350,7 +362,7 @@ where
                     });
                 }
             >
-                "Delete"
+                "删除"
             </button>
         }
         .into_any(),
@@ -378,19 +390,19 @@ fn DesktopAutofillAction(id: i64) -> impl IntoView {
                     <span class="desktop-autofill">
                         <button
                             class="btn btn--blue btn--sm"
-                            title="Desktop WebView autofill hook"
+                            title="桌面端 WebView 自动填表"
                             on:click=move |_| {
                                 leptos::task::spawn_local(async move {
                                     match inject_desktop_autofill(id).await {
-                                        Ok(()) => set_message.set(Some("Autofill event sent".to_string())),
-                                        Err(e) => set_message.set(Some(format!("Autofill unavailable: {e}"))),
+                                        Ok(()) => set_message.set(Some("自动填表事件已发送".to_string())),
+                                        Err(e) => set_message.set(Some(format!("自动填表不可用：{e}"))),
                                     }
                                 });
                             }
                         >
-                            "Autofill"
+                            "自动填表"
                         </button>
-                        <span class="badge badge--blue">"Desktop WebView"</span>
+                        <span class="badge badge--blue">"桌面端"</span>
                         {move || {
                             message
                                 .get()
@@ -421,13 +433,13 @@ where
             {move || {
                 if show_notes.get() {
                     let action = pending_action.get().unwrap_or_default();
-                    let action_label = if action == "approve" { "Approve" } else { "Reject" };
+                    let action_label = if action == "approve" { "批准" } else { "拒绝" };
                     let action_clone = action.clone();
                     view! {
                         <div class="inline-notes">
                             <input
                                 type="text"
-                                placeholder="Notes (optional)"
+                                placeholder="备注（可选）"
                                 class="input input--sm"
                                 on:input=move |ev| {
                                     set_notes
@@ -459,7 +471,7 @@ where
                                     set_pending_action.set(None);
                                 }
                             >
-                                "Cancel"
+                                "取消"
                             </button>
                         </div>
                     }
@@ -474,7 +486,7 @@ where
                                     set_show_notes.set(true);
                                 }
                             >
-                                "Approve"
+                                "批准"
                             </button>
                             <button
                                 class="btn btn--red btn--sm"
@@ -483,7 +495,7 @@ where
                                     set_show_notes.set(true);
                                 }
                             >
-                                "Reject"
+                                "拒绝"
                             </button>
                         </div>
                     }

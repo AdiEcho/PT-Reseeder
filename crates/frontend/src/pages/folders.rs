@@ -19,7 +19,7 @@ pub fn FoldersPage() -> impl IntoView {
         let p = path.get_untracked();
         let sm = scan_mode.get_untracked();
         if p.trim().is_empty() {
-            set_form_error.set(Some("Folder path is required.".into()));
+            set_form_error.set(Some("文件夹路径不能为空。".into()));
             return;
         }
         let dl_id = if sm == "downloader" {
@@ -27,7 +27,7 @@ pub fn FoldersPage() -> impl IntoView {
             match raw.trim().parse::<i64>() {
                 Ok(id) => Some(id),
                 Err(_) => {
-                    set_form_error.set(Some("Downloader ID must be a valid number.".into()));
+                    set_form_error.set(Some("下载器 ID 必须是有效数字。".into()));
                     return;
                 }
             }
@@ -54,15 +54,15 @@ pub fn FoldersPage() -> impl IntoView {
     view! {
         <div class="dashboard">
             <div class="dashboard-header">
-                <h1>"Folder Management"</h1>
+                <h1>"文件夹管理"</h1>
             </div>
 
             // --- Add Folder Form ---
             <div class="form-section">
-                <h2>"Add Folder"</h2>
+                <h2>"添加文件夹"</h2>
                 <form class="inline-form" on:submit=on_create>
                     <label>
-                        "Path"
+                        "路径"
                         <input
                             type="text"
                             placeholder="/path/to/torrents"
@@ -73,14 +73,14 @@ pub fn FoldersPage() -> impl IntoView {
                         />
                     </label>
                     <label>
-                        "Scan Mode"
+                        "扫描模式"
                         <select on:change=move |ev| {
                             set_scan_mode.set(event_target_value(&ev));
                         }>
                             <option value="local" selected=true>
-                                "Local"
+                                "本地"
                             </option>
-                            <option value="downloader">"Downloader"</option>
+                            <option value="downloader">"下载器"</option>
                         </select>
                     </label>
                     {move || {
@@ -88,10 +88,10 @@ pub fn FoldersPage() -> impl IntoView {
                             Some(
                                 view! {
                                     <label>
-                                        "Downloader ID"
+                                        "下载器 ID"
                                         <input
                                             type="text"
-                                            placeholder="Downloader ID"
+                                            placeholder="下载器 ID"
                                             prop:value=move || downloader_id.get()
                                             on:input=move |ev| {
                                                 set_downloader_id.set(event_target_value(&ev));
@@ -105,7 +105,7 @@ pub fn FoldersPage() -> impl IntoView {
                         }
                     }}
                     <button type="submit" disabled=move || submitting.get()>
-                        {move || if submitting.get() { "Adding..." } else { "Add" }}
+                        {move || if submitting.get() { "添加中..." } else { "添加" }}
                     </button>
                 </form>
                 {move || {
@@ -119,9 +119,9 @@ pub fn FoldersPage() -> impl IntoView {
 
             // --- Folders Table ---
             <div class="stats-table-section">
-                <h2>"Watched Folders"</h2>
+                <h2>"监控文件夹"</h2>
                 <Suspense fallback=move || {
-                    view! { <p>"Loading folders..."</p> }
+                    view! { <p>"正在加载文件夹..."</p> }
                 }>
                     {move || {
                         folders
@@ -131,13 +131,13 @@ pub fn FoldersPage() -> impl IntoView {
                                     Err(e) => {
                                         view! {
                                             <p class="error">
-                                                {format!("Failed to load folders: {e}")}
+                                                {format!("文件夹加载失败：{e}")}
                                             </p>
                                         }
                                             .into_any()
                                     }
                                     Ok(list) if list.is_empty() => {
-                                        view! { <p>"No folders configured yet."</p> }.into_any()
+                                        view! { <p>"尚未配置任何文件夹。"</p> }.into_any()
                                     }
                                     Ok(list) => {
                                         view! {
@@ -145,12 +145,12 @@ pub fn FoldersPage() -> impl IntoView {
                                                 <table class="stats-table">
                                                     <thead>
                                                         <tr>
-                                                            <th>"Path"</th>
-                                                            <th>"Scan Mode"</th>
-                                                            <th>"Downloader"</th>
-                                                            <th>"Enabled"</th>
-                                                            <th>"Last Scanned"</th>
-                                                            <th>"Actions"</th>
+                                                            <th>"路径"</th>
+                                                            <th>"扫描模式"</th>
+                                                            <th>"下载器"</th>
+                                                            <th>"启用"</th>
+                                                            <th>"上次扫描"</th>
+                                                            <th>"操作"</th>
                                                         </tr>
                                                     </thead>
                                                     <tbody>
@@ -204,7 +204,12 @@ fn FolderRow(
     } else {
         "text-muted"
     };
-    let enabled_label = if folder.enabled { "Yes" } else { "No" };
+    let enabled_label = if folder.enabled { "是" } else { "否" };
+    let scan_mode_label = match folder.scan_mode.as_str() {
+        "local" => "本地".to_string(),
+        "downloader" => "下载器".to_string(),
+        other => other.to_string(),
+    };
     let downloader_display = folder
         .downloader_id
         .map(|id| id.to_string())
@@ -219,7 +224,7 @@ fn FolderRow(
     view! {
         <tr>
             <td>{folder.path.clone()}</td>
-            <td>{folder.scan_mode.clone()}</td>
+            <td>{scan_mode_label}</td>
             <td class="text-muted">{downloader_display}</td>
             <td class=enabled_class>{enabled_label}</td>
             <td class="text-muted">{last_scanned}</td>
@@ -229,7 +234,7 @@ fn FolderRow(
                     disabled=move || acting.get()
                     on:click=on_delete
                 >
-                    "Delete"
+                    "删除"
                 </button>
             </td>
         </tr>

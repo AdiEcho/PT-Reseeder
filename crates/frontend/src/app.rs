@@ -64,8 +64,8 @@ fn NotFound() -> impl IntoView {
     view! {
         <div class="app-loading" style="padding: 48px; text-align: center;">
             <h1>"404"</h1>
-            <p>"Page not found."</p>
-            <a href="/dashboard">"Go to Dashboard"</a>
+            <p>"页面不存在。"</p>
+            <a href="/dashboard">"返回仪表盘"</a>
         </div>
     }
 }

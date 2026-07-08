@@ -34,7 +34,7 @@ pub fn TasksPage() -> impl IntoView {
         let cron = if tg == "cron" {
             let c = cron_expr.get_untracked();
             if c.trim().is_empty() {
-                set_form_error.set(Some("Cron expression is required for cron trigger.".into()));
+                set_form_error.set(Some("Cron 触发器必须填写 Cron 表达式。".into()));
                 return;
             }
             Some(c)
@@ -42,7 +42,7 @@ pub fn TasksPage() -> impl IntoView {
             None
         };
         if n.trim().is_empty() {
-            set_form_error.set(Some("Task name is required.".into()));
+            set_form_error.set(Some("任务名称不能为空。".into()));
             return;
         }
         set_submitting.set(true);
@@ -65,18 +65,18 @@ pub fn TasksPage() -> impl IntoView {
     view! {
         <div class="dashboard">
             <div class="dashboard-header">
-                <h1>"Task Management"</h1>
+                <h1>"任务管理"</h1>
             </div>
 
             // --- Create Task Form ---
             <div class="form-section">
-                <h2>"Create Task"</h2>
+                <h2>"创建任务"</h2>
                 <form class="inline-form" on:submit=on_create>
                     <label>
-                        "Name"
+                        "名称"
                         <input
                             type="text"
-                            placeholder="Task name"
+                            placeholder="任务名称"
                             prop:value=move || name.get()
                             on:input=move |ev| {
                                 set_name.set(event_target_value(&ev));
@@ -84,26 +84,26 @@ pub fn TasksPage() -> impl IntoView {
                         />
                     </label>
                     <label>
-                        "Type"
+                        "类型"
                         <select on:change=move |ev| {
                             set_task_type.set(event_target_value(&ev));
                         }>
                             <option value="reseed" selected=true>
-                                "Reseed"
+                                "辅种"
                             </option>
-                            <option value="repost">"Repost"</option>
+                            <option value="repost">"转种"</option>
                         </select>
                     </label>
                     <label>
-                        "Trigger"
+                        "触发方式"
                         <select on:change=move |ev| {
                             set_trigger_type.set(event_target_value(&ev));
                         }>
                             <option value="manual" selected=true>
-                                "Manual"
+                                "手动"
                             </option>
-                            <option value="cron">"Cron"</option>
-                            <option value="file_watch">"File Watch"</option>
+                            <option value="cron">"定时"</option>
+                            <option value="file_watch">"文件监控"</option>
                         </select>
                     </label>
                     {move || {
@@ -111,7 +111,7 @@ pub fn TasksPage() -> impl IntoView {
                             Some(
                                 view! {
                                     <label>
-                                        "Cron Expression"
+                                        "Cron 表达式"
                                         <input
                                             type="text"
                                             placeholder="0 */5 * * * *"
@@ -128,7 +128,7 @@ pub fn TasksPage() -> impl IntoView {
                         }
                     }}
                     <button type="submit" disabled=move || submitting.get()>
-                        {move || if submitting.get() { "Creating..." } else { "Create" }}
+                        {move || if submitting.get() { "创建中..." } else { "创建" }}
                     </button>
                 </form>
                 {move || {
@@ -142,9 +142,9 @@ pub fn TasksPage() -> impl IntoView {
 
             // --- Tasks Table ---
             <div class="stats-table-section">
-                <h2>"Tasks"</h2>
+                <h2>"任务列表"</h2>
                 <Suspense fallback=move || {
-                    view! { <p>"Loading tasks..."</p> }
+                    view! { <p>"正在加载任务..."</p> }
                 }>
                     {move || {
                         tasks
@@ -153,12 +153,12 @@ pub fn TasksPage() -> impl IntoView {
                                 match result {
                                     Err(e) => {
                                         view! {
-                                            <p class="error">{format!("Failed to load tasks: {e}")}</p>
+                                            <p class="error">{format!("任务加载失败：{e}")}</p>
                                         }
                                             .into_any()
                                     }
                                     Ok(list) if list.is_empty() => {
-                                        view! { <p>"No tasks configured yet."</p> }.into_any()
+                                        view! { <p>"尚未配置任何任务。"</p> }.into_any()
                                     }
                                     Ok(list) => {
                                         view! {
@@ -166,15 +166,15 @@ pub fn TasksPage() -> impl IntoView {
                                                 <table class="stats-table">
                                                     <thead>
                                                         <tr>
-                                                            <th>"Name"</th>
-                                                            <th>"Type"</th>
-                                                            <th>"Trigger"</th>
+                                                            <th>"名称"</th>
+                                                            <th>"类型"</th>
+                                                            <th>"触发方式"</th>
                                                             <th>"Cron"</th>
-                                                            <th>"Status"</th>
-                                                            <th>"Last Run"</th>
-                                                            <th>"Next Run"</th>
-                                                            <th>"Runs"</th>
-                                                            <th>"Actions"</th>
+                                                            <th>"状态"</th>
+                                                            <th>"上次运行"</th>
+                                                            <th>"下次运行"</th>
+                                                            <th>"运行次数"</th>
+                                                            <th>"操作"</th>
                                                         </tr>
                                                     </thead>
                                                     <tbody>
@@ -240,7 +240,12 @@ fn TaskRow(task: TaskInfo, on_change: impl Fn() + Copy + Send + Sync + 'static) 
     };
 
     let sc = status_class(&task.status);
-    let status_label = task.status.clone();
+    let status_label = match task.status.as_str() {
+        "running" => "运行中",
+        "paused" => "已暂停",
+        "error" => "错误",
+        _ => "空闲",
+    };
     let last_run = task
         .last_run_at
         .as_deref()
@@ -275,14 +280,14 @@ fn TaskRow(task: TaskInfo, on_change: impl Fn() + Copy + Send + Sync + 'static) 
                         disabled=move || acting.get()
                         on:click=on_trigger
                     >
-                        "Run Now"
+                        "立即运行"
                     </button>
                     <button
                         class="btn-sm btn-red"
                         disabled=move || acting.get()
                         on:click=on_delete
                     >
-                        "Delete"
+                        "删除"
                     </button>
                 </td>
             </tr>
@@ -293,7 +298,7 @@ fn TaskRow(task: TaskInfo, on_change: impl Fn() + Copy + Send + Sync + 'static) 
                             <tr class="expand-row">
                                 <td colspan="9">
                                     <Suspense fallback=move || {
-                                        view! { <p class="text-muted">"Loading logs..."</p> }
+                                        view! { <p class="text-muted">"正在加载日志..."</p> }
                                     }>
                                         {move || {
                                             logs.get()
@@ -318,7 +323,7 @@ fn TaskRow(task: TaskInfo, on_change: impl Fn() + Copy + Send + Sync + 'static) 
 #[component]
 fn TaskLogTable(logs: Vec<TaskLogInfo>) -> impl IntoView {
     if logs.is_empty() {
-        return view! { <p class="text-muted">"No logs for this task."</p> }.into_any();
+        return view! { <p class="text-muted">"该任务暂无日志。"</p> }.into_any();
     }
 
     view! {
@@ -326,12 +331,12 @@ fn TaskLogTable(logs: Vec<TaskLogInfo>) -> impl IntoView {
             <table class="stats-table">
                 <thead>
                     <tr>
-                        <th>"Status"</th>
-                        <th>"Matched"</th>
-                        <th>"Succeeded"</th>
-                        <th>"Failed"</th>
-                        <th>"Duration"</th>
-                        <th>"Timestamp"</th>
+                        <th>"状态"</th>
+                        <th>"匹配"</th>
+                        <th>"成功"</th>
+                        <th>"失败"</th>
+                        <th>"耗时"</th>
+                        <th>"时间"</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -344,9 +349,15 @@ fn TaskLogTable(logs: Vec<TaskLogInfo>) -> impl IntoView {
                                 "running" => "text-blue",
                                 _ => "text-muted",
                             };
+                            let status_label = match log.status.as_str() {
+                                "success" => "成功",
+                                "failed" | "error" => "失败",
+                                "running" => "运行中",
+                                _ => "未知",
+                            };
                             let duration = log
                                 .duration_ms
-                                .map(|ms| format!("{:.1}s", ms as f64 / 1000.0))
+                                .map(|ms| format!("{:.1}秒", ms as f64 / 1000.0))
                                 .unwrap_or_else(|| "-".into());
                             let ts = if log.created_at.len() >= 16 {
                                 log.created_at[..16].to_string()
@@ -355,7 +366,7 @@ fn TaskLogTable(logs: Vec<TaskLogInfo>) -> impl IntoView {
                             };
                             view! {
                                 <tr>
-                                    <td class=lsc>{log.status.clone()}</td>
+                                    <td class=lsc>{status_label}</td>
                                     <td>{log.matched_count}</td>
                                     <td class="text-green">{log.succeeded_count}</td>
                                     <td class="text-red">{log.failed_count}</td>

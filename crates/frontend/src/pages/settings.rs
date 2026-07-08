@@ -5,7 +5,7 @@ use leptos::prelude::*;
 const KNOWN_KEYS: &[(&str, &str, bool)] = &[
     ("jackett_url", "Jackett URL", false),
     ("jackett_api_key", "Jackett API Key", true),
-    ("session_ttl_hours", "Session TTL (hours)", false),
+    ("session_ttl_hours", "会话有效期（小时）", false),
 ];
 
 fn label_for_key(key: &str) -> String {
@@ -35,11 +35,11 @@ pub fn SettingsPage() -> impl IntoView {
     view! {
         <div class="dashboard">
             <div class="dashboard-header">
-                <h1>"Settings"</h1>
+                <h1>"设置"</h1>
             </div>
 
             <Suspense fallback=move || {
-                view! { <p>"Loading settings..."</p> }
+                view! { <p>"正在加载设置..."</p> }
             }>
                 {move || {
                     config
@@ -49,7 +49,7 @@ pub fn SettingsPage() -> impl IntoView {
                                 Err(e) => {
                                     view! {
                                         <p class="error">
-                                            {format!("Failed to load settings: {e}")}
+                                            {format!("设置加载失败：{e}")}
                                         </p>
                                     }
                                         .into_any()
@@ -73,15 +73,15 @@ where
 {
     view! {
         <div class="stats-table-section">
-            <h2>"Application Configuration"</h2>
+            <h2>"应用配置"</h2>
             <div class="table-wrap">
                 <table class="stats-table">
                     <thead>
                         <tr>
-                            <th>"Setting"</th>
-                            <th>"Value"</th>
-                            <th>"Updated"</th>
-                            <th>"Actions"</th>
+                            <th>"设置项"</th>
+                            <th>"值"</th>
+                            <th>"更新时间"</th>
+                            <th>"操作"</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -145,7 +145,7 @@ where
                                     class="btn btn--gray btn--sm"
                                     on:click=move |_| set_revealed.update(|r| *r = !*r)
                                 >
-                                    {move || if revealed.get() { "Hide" } else { "Show" }}
+                                    {move || if revealed.get() { "隐藏" } else { "显示" }}
                                 </button>
                             },
                         )
@@ -173,7 +173,7 @@ where
                         }
                     }
                 >
-                    {move || if saving.get() { "Saving..." } else { "Save" }}
+                    {move || if saving.get() { "保存中..." } else { "保存" }}
                 </button>
             </td>
         </tr>
@@ -191,18 +191,18 @@ where
 
     view! {
         <div class="add-setting-form">
-            <h3>"Add Setting"</h3>
+            <h3>"添加设置项"</h3>
             <div class="form-row">
                 <input
                     type="text"
-                    placeholder="Key"
+                    placeholder="键名"
                     class="input"
                     prop:value=move || new_key.get()
                     on:input=move |ev| set_new_key.set(event_target_value(&ev))
                 />
                 <input
                     type="text"
-                    placeholder="Value"
+                    placeholder="值"
                     class="input"
                     prop:value=move || new_value.get()
                     on:input=move |ev| set_new_value.set(event_target_value(&ev))
@@ -223,7 +223,7 @@ where
                         });
                     }
                 >
-                    {move || if saving.get() { "Adding..." } else { "Add" }}
+                    {move || if saving.get() { "添加中..." } else { "添加" }}
                 </button>
             </div>
         </div>

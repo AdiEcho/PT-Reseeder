@@ -65,7 +65,7 @@ pub fn LoginPage() -> impl IntoView {
                     font-size: 16px;
                     font-weight: 400;
                     margin: 0 0 32px 0;
-                ">{move || if is_register.get() { "Create Account" } else { "Sign In" }}</h2>
+                ">{move || if is_register.get() { "创建账号" } else { "登录" }}</h2>
 
                 <form on:submit=move |ev| {
                     ev.prevent_default();
@@ -80,7 +80,7 @@ pub fn LoginPage() -> impl IntoView {
                             margin-bottom: 6px;
                             text-transform: uppercase;
                             letter-spacing: 0.5px;
-                        ">"Username"</label>
+                        ">"用户名"</label>
                         <input
                             type="text"
                             id="username"
@@ -111,7 +111,7 @@ pub fn LoginPage() -> impl IntoView {
                             margin-bottom: 6px;
                             text-transform: uppercase;
                             letter-spacing: 0.5px;
-                        ">"Password"</label>
+                        ">"密码"</label>
                         <input
                             type="password"
                             id="password"
@@ -152,11 +152,11 @@ pub fn LoginPage() -> impl IntoView {
                     >
                         {move || {
                             if pending.get() {
-                                "Loading..."
+                                "加载中..."
                             } else if is_register.get() {
-                                "Register"
+                                "注册"
                             } else {
-                                "Login"
+                                "登录"
                             }
                         }}
                     </button>
@@ -197,9 +197,9 @@ pub fn LoginPage() -> impl IntoView {
                     >
                         {move || {
                             if is_register.get() {
-                                "Already have an account? Sign in"
+                                "已有账号？去登录"
                             } else {
-                                "No account? Register"
+                                "还没有账号？去注册"
                             }
                         }}
                     </a>

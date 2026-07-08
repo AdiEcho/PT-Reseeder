@@ -71,12 +71,12 @@ pub fn SitesPage() -> impl IntoView {
     view! {
         <div class="dashboard">
             <div class="dashboard-header">
-                <h1>"Site Management"</h1>
+                <h1>"站点管理"</h1>
                 <button
                     class="btn btn-primary"
                     on:click=move |_| set_show_form.update(|v| *v = !*v)
                 >
-                    {move || if show_form.get() { "Cancel" } else { "Add Site" }}
+                    {move || if show_form.get() { "取消" } else { "添加站点" }}
                 </button>
             </div>
 
@@ -85,13 +85,13 @@ pub fn SitesPage() -> impl IntoView {
                 if show_form.get() {
                     view! {
                         <div class="form-section">
-                            <h2>"Add New Site"</h2>
+                            <h2>"添加新站点"</h2>
                             <div class="form-grid">
                                 <div class="form-group">
-                                    <label>"Name"</label>
+                                    <label>"名称"</label>
                                     <input
                                         type="text"
-                                        placeholder="Site name"
+                                        placeholder="站点名称"
                                         prop:value=move || name.get()
                                         on:input=move |ev| {
                                             set_name
@@ -130,7 +130,7 @@ pub fn SitesPage() -> impl IntoView {
                                     />
                                 </div>
                                 <div class="form-group">
-                                    <label>"Adapter Type"</label>
+                                    <label>"适配器类型"</label>
                                     <select
                                         prop:value=move || adapter_type.get()
                                         on:change=move |ev| {
@@ -148,7 +148,7 @@ pub fn SitesPage() -> impl IntoView {
                                     </select>
                                 </div>
                                 <div class="form-group">
-                                    <label>"Auth Type"</label>
+                                    <label>"认证方式"</label>
                                     <select
                                         prop:value=move || auth_type.get()
                                         on:change=move |ev| {
@@ -167,7 +167,7 @@ pub fn SitesPage() -> impl IntoView {
                                     <label>"Cookie"</label>
                                     <input
                                         type="text"
-                                        placeholder="Session cookie"
+                                        placeholder="会话 Cookie"
                                         prop:value=move || cookie.get()
                                         on:input=move |ev| {
                                             set_cookie
@@ -197,7 +197,7 @@ pub fn SitesPage() -> impl IntoView {
                                     class="btn btn-primary"
                                     on:click=move |_| { create_action.dispatch(()); }
                                 >
-                                    "Create Site"
+                                    "创建站点"
                                 </button>
                             </div>
                         </div>
@@ -215,7 +215,7 @@ pub fn SitesPage() -> impl IntoView {
                     .get()
                     .and_then(|r| r.err())
                     .map(|e| {
-                        view! { <p class="error">{format!("Create failed: {e}")}</p> }
+                        view! { <p class="error">{format!("创建失败：{e}")}</p> }
                     })
             }}
             {move || {
@@ -224,7 +224,7 @@ pub fn SitesPage() -> impl IntoView {
                     .get()
                     .and_then(|r| r.err())
                     .map(|e| {
-                        view! { <p class="error">{format!("Delete failed: {e}")}</p> }
+                        view! { <p class="error">{format!("删除失败：{e}")}</p> }
                     })
             }}
             {move || {
@@ -233,12 +233,12 @@ pub fn SitesPage() -> impl IntoView {
                     .get()
                     .and_then(|r| r.err())
                     .map(|e| {
-                        view! { <p class="error">{format!("Probe failed: {e}")}</p> }
+                        view! { <p class="error">{format!("探针失败：{e}")}</p> }
                     })
             }}
 
             // Sites table
-            <Suspense fallback=move || view! { <p>"Loading sites..."</p> }>
+            <Suspense fallback=move || view! { <p>"正在加载站点..."</p> }>
                 {move || {
                     sites
                         .get()
@@ -247,24 +247,24 @@ pub fn SitesPage() -> impl IntoView {
                                 if sites_list.is_empty() {
                                     view! {
                                         <div class="stats-table-section">
-                                            <p>"No sites configured yet. Add one above."</p>
+                                            <p>"尚未配置任何站点，请在上方添加。"</p>
                                         </div>
                                     }
                                         .into_any()
                                 } else {
                                     view! {
                                         <div class="stats-table-section">
-                                            <h2>"Sites"</h2>
+                                            <h2>"站点列表"</h2>
                                             <div class="table-wrap">
                                                 <table class="stats-table">
                                                     <thead>
                                                         <tr>
-                                                            <th>"Name"</th>
+                                                            <th>"名称"</th>
                                                             <th>"URL"</th>
-                                                            <th>"Adapter"</th>
-                                                            <th>"Probe Status"</th>
-                                                            <th>"Enabled"</th>
-                                                            <th>"Actions"</th>
+                                                            <th>"适配器"</th>
+                                                            <th>"探针状态"</th>
+                                                            <th>"启用"</th>
+                                                            <th>"操作"</th>
                                                         </tr>
                                                     </thead>
                                                     <tbody>
@@ -280,10 +280,10 @@ pub fn SitesPage() -> impl IntoView {
                                                                     .probe_status
                                                                     .as_str()
                                                                 {
-                                                                    "ok" => ("text-green", "OK"),
-                                                                    "failed" => ("text-red", "Failed"),
-                                                                    "pending" => ("text-muted", "Pending"),
-                                                                    _ => ("text-muted", "Unknown"),
+                                                                    "ok" => ("text-green", "正常"),
+                                                                    "failed" => ("text-red", "失败"),
+                                                                    "pending" => ("text-muted", "探测中"),
+                                                                    _ => ("text-muted", "未知"),
                                                                 };
                                                                 view! {
                                                                     <tr>
@@ -295,10 +295,10 @@ pub fn SitesPage() -> impl IntoView {
                                                                         <td class=probe_class>{probe_label}</td>
                                                                         <td>
                                                                             {if site.enabled {
-                                                                                view! { <span class="text-green">"Yes"</span> }
+                                                                                view! { <span class="text-green">"是"</span> }
                                                                                     .into_any()
                                                                             } else {
-                                                                                view! { <span class="text-red">"No"</span> }
+                                                                                view! { <span class="text-red">"否"</span> }
                                                                                     .into_any()
                                                                             }}
                                                                         </td>
@@ -307,13 +307,13 @@ pub fn SitesPage() -> impl IntoView {
                                                                                 class="btn btn-sm btn-outline"
                                                                                 on:click=move |_| { probe_action.dispatch(site_id); }
                                                                             >
-                                                                                "Probe"
+                                                                                "探针"
                                                                             </button>
                                                                             <button
                                                                                 class="btn btn-sm btn-danger"
                                                                                 on:click=move |_| { delete_action.dispatch(site_id); }
                                                                             >
-                                                                                "Delete"
+                                                                                "删除"
                                                                             </button>
                                                                         </td>
                                                                     </tr>
@@ -330,7 +330,7 @@ pub fn SitesPage() -> impl IntoView {
                             }
                             Err(e) => {
                                 view! {
-                                    <p class="error">{format!("Failed to load sites: {e}")}</p>
+                                    <p class="error">{format!("站点加载失败：{e}")}</p>
                                 }
                                     .into_any()
                             }

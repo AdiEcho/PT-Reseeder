@@ -79,31 +79,31 @@ pub fn DashboardPage() -> impl IntoView {
     view! {
         <div class="dashboard">
             <div class="dashboard-header">
-                <h1>"Dashboard"</h1>
+                <h1>"仪表盘"</h1>
                 <div class="trend-selector">
                     <button
                         class:active=move || days.get() == 7
                         on:click=move |_| set_days.set(7)
                     >
-                        "7d"
+                        "7天"
                     </button>
                     <button
                         class:active=move || days.get() == 30
                         on:click=move |_| set_days.set(30)
                     >
-                        "30d"
+                        "30天"
                     </button>
                     <button
                         class:active=move || days.get() == 0
                         on:click=move |_| set_days.set(0)
                     >
-                        "All"
+                        "全部"
                     </button>
                 </div>
             </div>
 
             <Suspense fallback=move || {
-                view! { <p>"Loading dashboard..."</p> }
+                view! { <p>"正在加载仪表盘..."</p> }
             }>
                 {move || {
                     // Show error from initial load if nothing has been populated yet.
@@ -112,7 +112,7 @@ pub fn DashboardPage() -> impl IntoView {
                             return Some(
                                 view! {
                                     <p class="error">
-                                        {format!("Failed to load dashboard: {err}")}
+                                        {format!("仪表盘加载失败：{err}")}
                                     </p>
                                 }
                                     .into_any(),
@@ -156,27 +156,27 @@ fn OverviewCards(data: DashboardData) -> impl IntoView {
     view! {
         <div class="stat-cards">
             <StatCard
-                label="Running Tasks"
+                label="运行中任务"
                 value=o.running_tasks.to_string()
                 accent="blue"
             />
             <StatCard
-                label="Today Success"
+                label="今日成功"
                 value=o.today_success.to_string()
                 accent="green"
             />
             <StatCard
-                label="Today Failed"
+                label="今日失败"
                 value=o.today_failed.to_string()
                 accent="red"
             />
             <StatCard
-                label="Active Sites"
+                label="站点数"
                 value=o.total_sites.to_string()
                 accent="purple"
             />
             <StatCard
-                label="Tracked Torrents"
+                label="追踪种子数"
                 value=o.tracked_torrents.to_string()
                 accent="teal"
             />
@@ -198,7 +198,7 @@ fn StatCard(label: &'static str, value: String, accent: &'static str) -> impl In
 #[component]
 fn TrendChart(points: Vec<TrendPoint>) -> impl IntoView {
     if points.is_empty() {
-        return view! { <div class="trend-chart"><p>"No trend data yet."</p></div> }.into_any();
+        return view! { <div class="trend-chart"><p>"暂无趋势数据。"</p></div> }.into_any();
     }
 
     let max_val = points
@@ -272,7 +272,7 @@ fn TrendChart(points: Vec<TrendPoint>) -> impl IntoView {
 
     view! {
         <div class="trend-chart">
-            <h2>"Reseed Trend"</h2>
+            <h2>"辅种趋势"</h2>
             <svg
                 viewBox=format!("0 0 {width} {height}")
                 class="trend-svg"
@@ -323,11 +323,11 @@ fn TrendChart(points: Vec<TrendPoint>) -> impl IntoView {
                 // Legend
                 <circle cx=format!("{}", padding + 10.0) cy="12" r="4" fill="#22c55e" />
                 <text x=format!("{}", padding + 18.0) y="16" font-size="12" fill="#888">
-                    "Success"
+                    "成功"
                 </text>
                 <circle cx=format!("{}", padding + 80.0) cy="12" r="4" fill="#ef4444" />
                 <text x=format!("{}", padding + 88.0) y="16" font-size="12" fill="#888">
-                    "Failed"
+                    "失败"
                 </text>
             </svg>
         </div>
@@ -339,22 +339,22 @@ fn TrendChart(points: Vec<TrendPoint>) -> impl IntoView {
 fn SiteStatsTable(stats: Vec<SiteReseedStats>) -> impl IntoView {
     view! {
         <div class="stats-table-section">
-            <h2>"Site Reseed Statistics"</h2>
+            <h2>"站点辅种统计"</h2>
             {if stats.is_empty() {
-                view! { <p>"No reseed history yet."</p> }.into_any()
+                view! { <p>"暂无辅种记录。"</p> }.into_any()
             } else {
                 view! {
                     <div class="table-wrap">
                         <table class="stats-table">
                             <thead>
                                 <tr>
-                                    <th>"Site"</th>
-                                    <th>"Matched"</th>
-                                    <th>"Success"</th>
-                                    <th>"Failed"</th>
-                                    <th>"Skipped"</th>
-                                    <th>"Rate"</th>
-                                    <th>"Status"</th>
+                                    <th>"站点"</th>
+                                    <th>"匹配"</th>
+                                    <th>"成功"</th>
+                                    <th>"失败"</th>
+                                    <th>"跳过"</th>
+                                    <th>"成功率"</th>
+                                    <th>"状态"</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -362,8 +362,8 @@ fn SiteStatsTable(stats: Vec<SiteReseedStats>) -> impl IntoView {
                                     .into_iter()
                                     .map(|s| {
                                         let (status_class, status_label) = match s.breaker_status.as_str() {
-                                            "tripped" => ("text-red", "Tripped"),
-                                            "ok" => ("text-green", "OK"),
+                                            "tripped" => ("text-red", "已熔断"),
+                                            "ok" => ("text-green", "正常"),
                                             _ => ("text-muted", "—"),
                                         };
                                         view! {
@@ -393,48 +393,48 @@ fn SiteStatsTable(stats: Vec<SiteReseedStats>) -> impl IntoView {
 fn UserInfoTable(info: UserInfoAggregate) -> impl IntoView {
     view! {
         <div class="user-info-section">
-            <h2>"Cross-Site User Stats"</h2>
+            <h2>"跨站用户信息"</h2>
 
             <div class="stat-cards stat-cards--summary">
                 <StatCard
-                    label="Total Upload"
+                    label="总上传"
                     value=format_bytes(info.total_uploaded)
                     accent="green"
                 />
                 <StatCard
-                    label="Total Download"
+                    label="总下载"
                     value=format_bytes(info.total_downloaded)
                     accent="blue"
                 />
                 <StatCard
-                    label="Total Seeding"
+                    label="总做种数"
                     value=info.total_seeding.to_string()
                     accent="purple"
                 />
                 <StatCard
-                    label="Total Bonus"
+                    label="总积分"
                     value=format!("{:.1}", info.total_bonus)
                     accent="teal"
                 />
             </div>
 
             {if info.sites.is_empty() {
-                view! { <p>"No user stats data yet."</p> }.into_any()
+                view! { <p>"暂无用户统计数据。"</p> }.into_any()
             } else {
                 view! {
                     <div class="table-wrap">
                         <table class="stats-table">
                             <thead>
                                 <tr>
-                                    <th>"Site"</th>
-                                    <th>"Upload"</th>
-                                    <th>"Download"</th>
-                                    <th>"Ratio"</th>
-                                    <th>"Bonus"</th>
-                                    <th>"Class"</th>
-                                    <th>"Seeding"</th>
-                                    <th>"Leeching"</th>
-                                    <th>"Updated"</th>
+                                    <th>"站点"</th>
+                                    <th>"上传量"</th>
+                                    <th>"下载量"</th>
+                                    <th>"分享率"</th>
+                                    <th>"积分"</th>
+                                    <th>"等级"</th>
+                                    <th>"做种数"</th>
+                                    <th>"下载数量"</th>
+                                    <th>"更新时间"</th>
                                 </tr>
                             </thead>
                             <tbody>

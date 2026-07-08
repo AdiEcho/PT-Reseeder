@@ -19,43 +19,43 @@ struct NavEntry {
 
 const NAV: &[NavEntry] = &[
     NavEntry {
-        label: "Dashboard",
+        label: "仪表盘",
         href: "/dashboard",
         icon: "▣",
         exact: true,
     },
     NavEntry {
-        label: "Sites",
+        label: "站点",
         href: "/sites",
         icon: "◈",
         exact: false,
     },
     NavEntry {
-        label: "Downloaders",
+        label: "下载器",
         href: "/downloaders",
         icon: "⬇",
         exact: true,
     },
     NavEntry {
-        label: "Tasks",
+        label: "任务",
         href: "/tasks",
         icon: "⏱",
         exact: true,
     },
     NavEntry {
-        label: "Folders",
+        label: "文件夹",
         href: "/folders",
         icon: "📁",
         exact: true,
     },
     NavEntry {
-        label: "Repost",
+        label: "转种",
         href: "/repost",
         icon: "↻",
         exact: true,
     },
     NavEntry {
-        label: "Settings",
+        label: "设置",
         href: "/settings",
         icon: "⚙",
         exact: true,
@@ -72,10 +72,10 @@ pub fn AppLayout() -> impl IntoView {
     let current_user = Resource::new(|| (), |_| get_current_user());
 
     view! {
-        <Suspense fallback=|| view! { <div class="app-loading">"Loading…"</div> }>
+        <Suspense fallback=|| view! { <div class="app-loading">"加载中…"</div> }>
             {move || {
                 match current_user.get() {
-                    None => view! { <div class="app-loading">"Loading…"</div> }.into_any(),
+                    None => view! { <div class="app-loading">"加载中…"</div> }.into_any(),
                     Some(Err(_)) => view! { <Redirect path="/login" /> }.into_any(),
                     Some(Ok(None)) => view! { <Redirect path="/login" /> }.into_any(),
                     Some(Ok(Some(user))) => view! { <Shell user=user /> }.into_any(),
@@ -127,7 +127,7 @@ where
                 <span class="app-sidebar__title">"PT-Reseeder"</span>
             </div>
             <nav class="app-sidebar__nav">
-                <div class="app-sidebar__section">"Management"</div>
+                <div class="app-sidebar__section">"管理"</div>
                 {NAV
                     .iter()
                     .map(|entry| {
@@ -143,7 +143,7 @@ where
             <div class="app-sidebar__footer">
                 <button class="app-nav-link" on:click=move |ev| on_logout.clone()(ev)>
                     <span class="app-nav-link__icon">"⏻"</span>
-                    <span>"Logout"</span>
+                    <span>"退出登录"</span>
                 </button>
             </div>
         </aside>

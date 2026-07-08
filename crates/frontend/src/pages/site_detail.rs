@@ -78,8 +78,8 @@ pub fn SiteDetailPage() -> impl IntoView {
     view! {
         <div class="dashboard">
             <div class="dashboard-header">
-                <h1>"Site Detail"</h1>
-                <a href="/sites" class="btn btn-outline">"Back to Sites"</a>
+                <h1>"站点详情"</h1>
+                <a href="/sites" class="btn btn-outline">"返回站点列表"</a>
             </div>
 
             // Error display for actions
@@ -90,7 +90,7 @@ pub fn SiteDetailPage() -> impl IntoView {
                     .and_then(|r| r.err())
                     .map(|e| {
                         view! {
-                            <p class="error">{format!("Refresh failed: {e}")}</p>
+                            <p class="error">{format!("刷新失败：{e}")}</p>
                         }
                     })
             }}
@@ -101,12 +101,12 @@ pub fn SiteDetailPage() -> impl IntoView {
                     .and_then(|r| r.err())
                     .map(|e| {
                         view! {
-                            <p class="error">{format!("Probe failed: {e}")}</p>
+                            <p class="error">{format!("探针失败：{e}")}</p>
                         }
                     })
             }}
 
-            <Suspense fallback=move || view! { <p>"Loading site detail..."</p> }>
+            <Suspense fallback=move || view! { <p>"正在加载站点详情..."</p> }>
                 {move || {
                     detail
                         .get()
@@ -120,12 +120,11 @@ pub fn SiteDetailPage() -> impl IntoView {
                                 let site_probe_status = site.probe_status.clone();
                                 let user_stats = data.user_stats;
                                 let probe_detail = data.probe_detail;
-                                let (_probe_class, probe_label) = match site_probe_status.as_str()
-                                {
-                                    "ok" => ("text-green", "OK"),
-                                    "failed" => ("text-red", "Failed"),
-                                    "pending" => ("text-muted", "Pending"),
-                                    _ => ("text-muted", "Unknown"),
+                                let (_probe_class, probe_label) = match site_probe_status.as_str() {
+                                    "ok" => ("text-green", "正常"),
+                                    "failed" => ("text-red", "失败"),
+                                    "pending" => ("text-muted", "探测中"),
+                                    _ => ("text-muted", "未知"),
                                 };
                                 view! {
                                     <div>
@@ -133,25 +132,25 @@ pub fn SiteDetailPage() -> impl IntoView {
                                         <div class="stat-cards">
                                             <div class="stat-card stat-card--blue">
                                                 <div class="stat-card__value">{site_name.clone()}</div>
-                                                <div class="stat-card__label">"Name"</div>
+                                                <div class="stat-card__label">"名称"</div>
                                             </div>
                                             <div class="stat-card stat-card--purple">
                                                 <div class="stat-card__value">{site_adapter.clone()}</div>
-                                                <div class="stat-card__label">"Adapter"</div>
+                                                <div class="stat-card__label">"适配器"</div>
                                             </div>
                                             <div class="stat-card stat-card--teal">
                                                 <div class="stat-card__value">{site_auth_type.clone()}</div>
-                                                <div class="stat-card__label">"Auth Type"</div>
+                                                <div class="stat-card__label">"认证方式"</div>
                                             </div>
                                             <div class={format!("stat-card stat-card--{}", if site_probe_status == "ok" { "green" } else { "red" })}>
                                                 <div class="stat-card__value">{probe_label}</div>
-                                                <div class="stat-card__label">"Probe Status"</div>
+                                                <div class="stat-card__label">"探针状态"</div>
                                             </div>
                                         </div>
 
                                         // Site URL
                                         <div class="stats-table-section">
-                                            <h2>"Site URL"</h2>
+                                            <h2>"站点 URL"</h2>
                                             <p>
                                                 <a href=site_url.clone() target="_blank" rel="noopener">
                                                     {site_url.clone()}
@@ -165,13 +164,13 @@ pub fn SiteDetailPage() -> impl IntoView {
                                                 class="btn btn-primary"
                                                 on:click=move |_| { refresh_action.dispatch(()); }
                                             >
-                                                "Refresh Stats"
+                                                "刷新统计"
                                             </button>
                                             <button
                                                 class="btn btn-outline"
                                                 on:click=move |_| { probe_action.dispatch(()); }
                                             >
-                                                "Re-probe"
+                                                "重新探针"
                                             </button>
                                         </div>
 
@@ -180,18 +179,18 @@ pub fn SiteDetailPage() -> impl IntoView {
                                             Some(stats) => {
                                                 view! {
                                                     <div class="stats-table-section">
-                                                        <h2>"User Statistics"</h2>
+                                                        <h2>"用户统计"</h2>
                                                         <div class="table-wrap">
                                                             <table class="stats-table">
                                                                 <thead>
                                                                     <tr>
-                                                                        <th>"Field"</th>
-                                                                        <th>"Value"</th>
+                                                                        <th>"字段"</th>
+                                                                        <th>"数值"</th>
                                                                     </tr>
                                                                 </thead>
                                                                 <tbody>
                                                                     <tr>
-                                                                        <td>"Uploaded"</td>
+                                                                        <td>"上传量"</td>
                                                                         <td class="text-green">
                                                                             {stats
                                                                                 .uploaded
@@ -200,7 +199,7 @@ pub fn SiteDetailPage() -> impl IntoView {
                                                                         </td>
                                                                     </tr>
                                                                     <tr>
-                                                                        <td>"Downloaded"</td>
+                                                                        <td>"下载量"</td>
                                                                         <td class="text-blue">
                                                                             {stats
                                                                                 .downloaded
@@ -209,7 +208,7 @@ pub fn SiteDetailPage() -> impl IntoView {
                                                                         </td>
                                                                     </tr>
                                                                     <tr>
-                                                                        <td>"Ratio"</td>
+                                                                        <td>"分享率"</td>
                                                                         <td>
                                                                             {stats
                                                                                 .ratio
@@ -218,7 +217,7 @@ pub fn SiteDetailPage() -> impl IntoView {
                                                                         </td>
                                                                     </tr>
                                                                     <tr>
-                                                                        <td>"Bonus"</td>
+                                                                        <td>"积分"</td>
                                                                         <td>
                                                                             {stats
                                                                                 .bonus
@@ -227,7 +226,7 @@ pub fn SiteDetailPage() -> impl IntoView {
                                                                         </td>
                                                                     </tr>
                                                                     <tr>
-                                                                        <td>"Class"</td>
+                                                                        <td>"用户等级"</td>
                                                                         <td>
                                                                             {stats
                                                                                 .user_class
@@ -236,7 +235,7 @@ pub fn SiteDetailPage() -> impl IntoView {
                                                                         </td>
                                                                     </tr>
                                                                     <tr>
-                                                                        <td>"Seeding"</td>
+                                                                        <td>"做种数"</td>
                                                                         <td>
                                                                             {stats
                                                                                 .seeding_count
@@ -245,7 +244,7 @@ pub fn SiteDetailPage() -> impl IntoView {
                                                                         </td>
                                                                     </tr>
                                                                     <tr>
-                                                                        <td>"Leeching"</td>
+                                                                        <td>"下载数量"</td>
                                                                         <td>
                                                                             {stats
                                                                                 .leeching_count
@@ -254,7 +253,7 @@ pub fn SiteDetailPage() -> impl IntoView {
                                                                         </td>
                                                                     </tr>
                                                                     <tr>
-                                                                        <td>"Seeding Size"</td>
+                                                                        <td>"做种量"</td>
                                                                         <td>
                                                                             {stats
                                                                                 .seeding_size
@@ -263,7 +262,7 @@ pub fn SiteDetailPage() -> impl IntoView {
                                                                         </td>
                                                                     </tr>
                                                                     <tr>
-                                                                        <td>"Upload Time"</td>
+                                                                        <td>"做种时间"</td>
                                                                         <td>
                                                                             {stats
                                                                                 .upload_time_seconds
@@ -281,8 +280,8 @@ pub fn SiteDetailPage() -> impl IntoView {
                                             None => {
                                                 view! {
                                                     <div class="stats-table-section">
-                                                        <h2>"User Statistics"</h2>
-                                                        <p>"No user stats available. Try refreshing."</p>
+                                                        <h2>"用户统计"</h2>
+                                                        <p>"暂无用户统计，请尝试刷新。"</p>
                                                     </div>
                                                 }
                                                     .into_any()
@@ -294,7 +293,7 @@ pub fn SiteDetailPage() -> impl IntoView {
                                             Some(json) => {
                                                 view! {
                                                     <div class="stats-table-section">
-                                                        <h2>"Probe Detail"</h2>
+                                                        <h2>"探针详情"</h2>
                                                         <pre class="probe-detail-json">{json}</pre>
                                                     </div>
                                                 }
@@ -303,8 +302,8 @@ pub fn SiteDetailPage() -> impl IntoView {
                                             None => {
                                                 view! {
                                                     <div class="stats-table-section">
-                                                        <h2>"Probe Detail"</h2>
-                                                        <p>"No probe detail available."</p>
+                                                        <h2>"探针详情"</h2>
+                                                        <p>"暂无探针详情。"</p>
                                                     </div>
                                                 }
                                                     .into_any()
@@ -317,7 +316,7 @@ pub fn SiteDetailPage() -> impl IntoView {
                             Err(e) => {
                                 view! {
                                     <p class="error">
-                                        {format!("Failed to load site detail: {e}")}
+                                        {format!("站点详情加载失败：{e}")}
                                     </p>
                                 }
                                     .into_any()

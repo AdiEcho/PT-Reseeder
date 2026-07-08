@@ -64,7 +64,7 @@ pub fn DownloadersPage() -> impl IntoView {
     view! {
         <div class="dashboard">
             <div class="dashboard-header">
-                <h1>"Downloader Management"</h1>
+                <h1>"下载器管理"</h1>
             </div>
 
             // Section 1: Downloaders
@@ -139,12 +139,12 @@ fn DownloadersSection(
     view! {
         <div class="stats-table-section">
             <div class="section-header">
-                <h2>"Downloaders"</h2>
+                <h2>"下载器"</h2>
                 <button
                     class="btn btn--primary"
                     on:click=move |_| set_show_form.update(|v| *v = !*v)
                 >
-                    {move || if show_form.get() { "Cancel" } else { "Add Downloader" }}
+                    {move || if show_form.get() { "取消" } else { "添加下载器" }}
                 </button>
             </div>
 
@@ -154,16 +154,16 @@ fn DownloadersSection(
                     Some(view! {
                         <div class="add-form">
                             <div class="form-row">
-                                <label>"Name"</label>
+                                <label>"名称"</label>
                                 <input
                                     type="text"
-                                    placeholder="My qBittorrent"
+                                    placeholder="我的 qBittorrent"
                                     prop:value=move || name.get()
                                     on:input=move |ev| set_name.set(event_target_value(&ev))
                                 />
                             </div>
                             <div class="form-row">
-                                <label>"Type"</label>
+                                <label>"类型"</label>
                                 <select
                                     prop:value=move || dl_type.get()
                                     on:change=move |ev| set_dl_type.set(event_target_value(&ev))
@@ -173,7 +173,7 @@ fn DownloadersSection(
                                 </select>
                             </div>
                             <div class="form-row">
-                                <label>"Host"</label>
+                                <label>"主机"</label>
                                 <input
                                     type="text"
                                     placeholder="127.0.0.1"
@@ -182,7 +182,7 @@ fn DownloadersSection(
                                 />
                             </div>
                             <div class="form-row">
-                                <label>"Port"</label>
+                                <label>"端口"</label>
                                 <input
                                     type="number"
                                     placeholder="8080"
@@ -191,7 +191,7 @@ fn DownloadersSection(
                                 />
                             </div>
                             <div class="form-row">
-                                <label>"Username"</label>
+                                <label>"用户名"</label>
                                 <input
                                     type="text"
                                     placeholder="admin"
@@ -200,28 +200,28 @@ fn DownloadersSection(
                                 />
                             </div>
                             <div class="form-row">
-                                <label>"Password"</label>
+                                <label>"密码"</label>
                                 <input
                                     type="password"
-                                    placeholder="password"
+                                    placeholder="密码"
                                     prop:value=move || password.get()
                                     on:input=move |ev| set_password.set(event_target_value(&ev))
                                 />
                             </div>
                             <div class="form-row">
-                                <label>"Role"</label>
+                                <label>"角色"</label>
                                 <select
                                     prop:value=move || role.get()
                                     on:change=move |ev| set_role.set(event_target_value(&ev))
                                 >
-                                    <option value="source">"Source"</option>
-                                    <option value="destination">"Destination"</option>
-                                    <option value="both">"Both"</option>
+                                    <option value="source">"源"</option>
+                                    <option value="destination">"目标"</option>
+                                    <option value="both">"双向"</option>
                                 </select>
                             </div>
                             <div class="form-actions">
                                 <button class="btn btn--primary" on:click=on_submit>
-                                    "Create"
+                                    "创建"
                                 </button>
                             </div>
                         </div>
@@ -232,26 +232,26 @@ fn DownloadersSection(
             }}
 
             // Downloaders table
-            <Suspense fallback=move || view! { <p>"Loading downloaders..."</p> }>
+            <Suspense fallback=move || view! { <p>"正在加载下载器..."</p> }>
                 {move || {
                     downloaders.get().map(|result| match result {
                         Err(e) => view! {
-                            <p class="error">{format!("Failed to load downloaders: {e}")}</p>
+                            <p class="error">{format!("下载器加载失败：{e}")}</p>
                         }.into_any(),
                         Ok(list) if list.is_empty() => view! {
-                            <p>"No downloaders configured yet."</p>
+                            <p>"尚未配置任何下载器。"</p>
                         }.into_any(),
                         Ok(list) => view! {
                             <div class="table-wrap">
                                 <table class="stats-table">
                                     <thead>
                                         <tr>
-                                            <th>"Name"</th>
-                                            <th>"Type"</th>
-                                            <th>"Host"</th>
-                                            <th>"Role"</th>
-                                            <th>"Enabled"</th>
-                                            <th>"Actions"</th>
+                                            <th>"名称"</th>
+                                            <th>"类型"</th>
+                                            <th>"主机"</th>
+                                            <th>"角色"</th>
+                                            <th>"启用"</th>
+                                            <th>"操作"</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -265,17 +265,23 @@ fn DownloadersSection(
                                                     "text-red"
                                                 };
                                                 let enabled_label = if dl.enabled {
-                                                    "Yes"
+                                                    "是"
                                                 } else {
-                                                    "No"
+                                                    "否"
                                                 };
                                                 let host_port = format!("{}:{}", dl.host, dl.port);
+                                                let role_label = match dl.role.as_str() {
+                                                    "source" => "源".to_string(),
+                                                    "destination" => "目标".to_string(),
+                                                    "both" => "双向".to_string(),
+                                                    other => other.to_string(),
+                                                };
                                                 view! {
                                                     <tr>
                                                         <td>{dl.name}</td>
                                                         <td>{dl.dl_type}</td>
                                                         <td>{host_port}</td>
-                                                        <td>{dl.role}</td>
+                                                        <td>{role_label}</td>
                                                         <td class=enabled_class>{enabled_label}</td>
                                                         <td class="actions-cell">
                                                             <button
@@ -284,7 +290,7 @@ fn DownloadersSection(
                                                                     test_dl_action.dispatch(dl_id);
                                                                 }
                                                             >
-                                                                "Test"
+                                                                "测试"
                                                             </button>
                                                             <button
                                                                 class="btn btn--small btn--danger"
@@ -292,7 +298,7 @@ fn DownloadersSection(
                                                                     delete_dl_action.dispatch(dl_id);
                                                                 }
                                                             >
-                                                                "Delete"
+                                                                "删除"
                                                             </button>
                                                         </td>
                                                     </tr>
@@ -311,7 +317,7 @@ fn DownloadersSection(
                                     }.into_any(),
                                     Err(e) => view! {
                                         <p class="test-result text-red">
-                                            {format!("Test failed: {e}")}
+                                            {format!("测试失败：{e}")}
                                         </p>
                                     }.into_any(),
                                 })
@@ -357,12 +363,12 @@ fn PairsSection(
     view! {
         <div class="stats-table-section">
             <div class="section-header">
-                <h2>"Source-Destination Pairs"</h2>
+                <h2>"源-目标配对"</h2>
                 <button
                     class="btn btn--primary"
                     on:click=move |_| set_show_form.update(|v| *v = !*v)
                 >
-                    {move || if show_form.get() { "Cancel" } else { "Add Pair" }}
+                    {move || if show_form.get() { "取消" } else { "添加配对" }}
                 </button>
             </div>
 
@@ -378,21 +384,21 @@ fn PairsSection(
                     Some(view! {
                         <div class="add-form">
                             <div class="form-row">
-                                <label>"Name"</label>
+                                <label>"名称"</label>
                                 <input
                                     type="text"
-                                    placeholder="Home to Seedbox"
+                                    placeholder="本机到盒子"
                                     prop:value=move || pair_name.get()
                                     on:input=move |ev| set_pair_name.set(event_target_value(&ev))
                                 />
                             </div>
                             <div class="form-row">
-                                <label>"Source"</label>
+                                <label>"源"</label>
                                 <select
                                     prop:value=move || source_id.get()
                                     on:change=move |ev| set_source_id.set(event_target_value(&ev))
                                 >
-                                    <option value="">"-- Select Source --"</option>
+                                    <option value="">"-- 选择源 --"</option>
                                     {dl_list
                                         .into_iter()
                                         .map(|dl| {
@@ -405,12 +411,12 @@ fn PairsSection(
                                 </select>
                             </div>
                             <div class="form-row">
-                                <label>"Destination"</label>
+                                <label>"目标"</label>
                                 <select
                                     prop:value=move || dest_id.get()
                                     on:change=move |ev| set_dest_id.set(event_target_value(&ev))
                                 >
-                                    <option value="">"-- Select Destination --"</option>
+                                    <option value="">"-- 选择目标 --"</option>
                                     {dl_list2
                                         .into_iter()
                                         .map(|dl| {
@@ -424,7 +430,7 @@ fn PairsSection(
                             </div>
                             <div class="form-actions">
                                 <button class="btn btn--primary" on:click=on_submit>
-                                    "Create"
+                                    "创建"
                                 </button>
                             </div>
                         </div>
@@ -435,24 +441,24 @@ fn PairsSection(
             }}
 
             // Pairs table
-            <Suspense fallback=move || view! { <p>"Loading pairs..."</p> }>
+            <Suspense fallback=move || view! { <p>"正在加载配对..."</p> }>
                 {move || {
                     pairs.get().map(|result| match result {
                         Err(e) => view! {
-                            <p class="error">{format!("Failed to load pairs: {e}")}</p>
+                            <p class="error">{format!("配对加载失败：{e}")}</p>
                         }.into_any(),
                         Ok(list) if list.is_empty() => view! {
-                            <p>"No source-destination pairs configured yet."</p>
+                            <p>"尚未配置任何源-目标配对。"</p>
                         }.into_any(),
                         Ok(list) => view! {
                             <div class="table-wrap">
                                 <table class="stats-table">
                                     <thead>
                                         <tr>
-                                            <th>"Name"</th>
-                                            <th>"Source"</th>
-                                            <th>"Destination"</th>
-                                            <th>"Actions"</th>
+                                            <th>"名称"</th>
+                                            <th>"源"</th>
+                                            <th>"目标"</th>
+                                            <th>"操作"</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -472,7 +478,7 @@ fn PairsSection(
                                                                     delete_pair_action.dispatch(pair_id);
                                                                 }
                                                             >
-                                                                "Delete"
+                                                                "删除"
                                                             </button>
                                                         </td>
                                                     </tr>

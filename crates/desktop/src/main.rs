@@ -8,7 +8,11 @@ fn main() {
     let cancel_token = CancellationToken::new();
 
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![webview::inject_repost_autofill])
+        .invoke_handler(tauri::generate_handler![
+            webview::inject_repost_autofill,
+            webview::open_upload_page,
+            webview::check_autofill_available,
+        ])
         .setup({
             let cancel_token = cancel_token.clone();
             move |app| {

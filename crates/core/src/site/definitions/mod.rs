@@ -9,6 +9,26 @@ const BUILTIN_MTEAM: &str = include_str!("mteam.toml");
 const BUILTIN_AUDIENCES: &str = include_str!("audiences.toml");
 const BUILTIN_PTERCLUB: &str = include_str!("pterclub.toml");
 const BUILTIN_OURBITS: &str = include_str!("ourbits.toml");
+const BUILTIN_CHDBITS: &str = include_str!("chdbits.toml");
+const BUILTIN_TTG: &str = include_str!("ttg.toml");
+const BUILTIN_DMHY: &str = include_str!("dmhy.toml");
+const BUILTIN_HDFANS: &str = include_str!("hdfans.toml");
+const BUILTIN_HDAREA: &str = include_str!("hdarea.toml");
+const BUILTIN_PTHOME: &str = include_str!("pthome.toml");
+const BUILTIN_LEMONHD: &str = include_str!("lemonhd.toml");
+const BUILTIN_HDHOME: &str = include_str!("hdhome.toml");
+const BUILTIN_SPRINGSUNDAY: &str = include_str!("springsunday.toml");
+const BUILTIN_KEEPFRDS: &str = include_str!("keepfrds.toml");
+const BUILTIN_HDCITY: &str = include_str!("hdcity.toml");
+const BUILTIN_BEITAI: &str = include_str!("beitai.toml");
+const BUILTIN_HAIDAN: &str = include_str!("haidan.toml");
+const BUILTIN_PIGGO: &str = include_str!("piggo.toml");
+const BUILTIN_HARES: &str = include_str!("hares.toml");
+const BUILTIN_ZHUQUE: &str = include_str!("zhuque.toml");
+const BUILTIN_GREATPOSTERWALL: &str = include_str!("greatposterwall.toml");
+const BUILTIN_DICMUSIC: &str = include_str!("dicmusic.toml");
+const BUILTIN_AITHER: &str = include_str!("aither.toml");
+const BUILTIN_BLUTOPIA: &str = include_str!("blutopia.toml");
 
 /// Load all built-in site definitions embedded at compile time.
 pub fn load_builtin_definitions() -> HashMap<String, SiteDefinition> {
@@ -20,6 +40,26 @@ pub fn load_builtin_definitions() -> HashMap<String, SiteDefinition> {
         ("audiences", BUILTIN_AUDIENCES),
         ("pterclub", BUILTIN_PTERCLUB),
         ("ourbits", BUILTIN_OURBITS),
+        ("chdbits", BUILTIN_CHDBITS),
+        ("ttg", BUILTIN_TTG),
+        ("dmhy", BUILTIN_DMHY),
+        ("hdfans", BUILTIN_HDFANS),
+        ("hdarea", BUILTIN_HDAREA),
+        ("pthome", BUILTIN_PTHOME),
+        ("lemonhd", BUILTIN_LEMONHD),
+        ("hdhome", BUILTIN_HDHOME),
+        ("springsunday", BUILTIN_SPRINGSUNDAY),
+        ("keepfrds", BUILTIN_KEEPFRDS),
+        ("hdcity", BUILTIN_HDCITY),
+        ("beitai", BUILTIN_BEITAI),
+        ("haidan", BUILTIN_HAIDAN),
+        ("piggo", BUILTIN_PIGGO),
+        ("hares", BUILTIN_HARES),
+        ("zhuque", BUILTIN_ZHUQUE),
+        ("greatposterwall", BUILTIN_GREATPOSTERWALL),
+        ("dicmusic", BUILTIN_DICMUSIC),
+        ("aither", BUILTIN_AITHER),
+        ("blutopia", BUILTIN_BLUTOPIA),
     ];
 
     for (name, toml_str) in &builtins {

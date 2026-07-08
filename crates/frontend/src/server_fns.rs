@@ -233,6 +233,16 @@ pub struct DashboardData {
 }
 
 #[server]
+pub async fn has_user() -> Result<bool, ServerFnError> {
+    let pool = server_pool()?;
+    let count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM users")
+        .fetch_one(&pool)
+        .await
+        .map_err(|e| ServerFnError::new(format!("{e}")))?;
+    Ok(count.0 > 0)
+}
+
+#[server]
 pub async fn login(username: String, password: String) -> Result<(), ServerFnError> {
     auth_login(username, password).await
 }

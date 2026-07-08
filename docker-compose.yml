@@ -1,0 +1,25 @@
+version: "3.8"
+
+services:
+  pt-reseeder:
+    build: .
+    container_name: pt-reseeder
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - pt-reseeder-data:/data
+    environment:
+      - LEPTOS_SITE_ROOT=/opt/pt-reseeder/site
+      - LEPTOS_SITE_ADDR=0.0.0.0:3000
+      - DATABASE_URL=sqlite:///data/pt-reseeder.db
+      - RUST_LOG=info,pt_reseeder=debug
+    healthcheck:
+      test: ["CMD", "pt-reseeder-server", "--healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  pt-reseeder-data:

@@ -8,7 +8,11 @@ use pt_reseeder_core::db::repo::Repository;
 use pt_reseeder_core::db::writer::DbWriterHandle;
 use pt_reseeder_core::error::CoreError;
 use pt_reseeder_core::scheduler::{CronScheduler, FileWatcher, TaskExecutor};
+use pt_reseeder_core::site::adapters::gazelle::GazelleAdapter;
+use pt_reseeder_core::site::adapters::mteam::MTeamAdapter;
 use pt_reseeder_core::site::adapters::nexusphp::NexusPhpAdapter;
+use pt_reseeder_core::site::adapters::unit3d::Unit3dAdapter;
+use pt_reseeder_core::site::adapters::zhuque::ZhuqueAdapter;
 use pt_reseeder_core::site::definitions::load_all_definitions;
 use pt_reseeder_core::site::models::{SiteId, UserInfoSelectors};
 use pt_reseeder_core::site::rate_limiter::SiteRateLimiter;
@@ -271,15 +275,19 @@ fn selectors_for(site: &SiteRow, data_dir: &std::path::Path) -> UserInfoSelector
         })
 }
 
+fn decrypt_token(site: &SiteRow, vault: &Vault) -> Result<Option<String>, CoreError> {
+    if let (Some(enc), Some(nonce)) = (&site.encrypted_token, &site.token_nonce) {
+        Ok(Some(decrypt_credential(vault, enc, nonce)?))
+    } else {
+        Ok(None)
+    }
+}
+
 fn build_adapter_handle(
     site: &SiteRow,
     vault: &Vault,
     config: &AppConfig,
 ) -> Result<Option<AdapterHandle>, CoreError> {
-    if site.adapter_type != "nexusphp" {
-        return Ok(None);
-    }
-
     let cookie = if let (Some(enc), Some(nonce)) = (&site.encrypted_cookie, &site.cookie_nonce) {
         Some(decrypt_credential(vault, enc, nonce)?)
     } else {
@@ -303,32 +311,132 @@ fn build_adapter_handle(
         .and_then(|def| def.site.batch_size)
         .unwrap_or(1000);
 
-    let adapter = Arc::new(NexusPhpAdapter::new(
-        site.name.clone(),
-        site.url.clone(),
-        site.api_url.clone(),
-        cookie,
-        passkey,
-        None,
-        selectors_for(site, &config.data_dir),
-        batch_size,
-    ));
-    let core: Arc<dyn SiteCore> = adapter.clone();
-    let reseed: Arc<dyn ReseedCapable> = adapter.clone();
-    let repost: Arc<dyn RepostCapable> = adapter.clone();
-    let user_info: Arc<dyn UserInfoCapable> = adapter.clone();
-    let search: Arc<dyn SearchCapable> = adapter;
     let rate_limiter = Arc::new(SiteRateLimiter::new(
         site.rate_limit_interval_ms.unwrap_or(5000).max(1) as u64,
         site.rate_limit_burst.unwrap_or(1).max(1) as u32,
     ));
 
-    Ok(Some(AdapterHandle {
-        core,
-        reseed: Some(reseed),
-        repost: Some(repost),
-        user_info: Some(user_info),
-        search: Some(search),
-        rate_limiter,
-    }))
+    match site.adapter_type.as_str() {
+        "nexusphp" => {
+            let adapter = Arc::new(NexusPhpAdapter::new(
+                site.name.clone(),
+                site.url.clone(),
+                site.api_url.clone(),
+                cookie,
+                passkey,
+                None,
+                selectors_for(site, &config.data_dir),
+                batch_size,
+            ));
+            let core: Arc<dyn SiteCore> = adapter.clone();
+            let reseed: Arc<dyn ReseedCapable> = adapter.clone();
+            let repost: Arc<dyn RepostCapable> = adapter.clone();
+            let user_info: Arc<dyn UserInfoCapable> = adapter.clone();
+            let search: Arc<dyn SearchCapable> = adapter;
+            Ok(Some(AdapterHandle {
+                core,
+                reseed: Some(reseed),
+                repost: Some(repost),
+                user_info: Some(user_info),
+                search: Some(search),
+                rate_limiter,
+            }))
+        }
+        "mteam" => {
+            let api_token = decrypt_token(site, vault)?;
+            let adapter = Arc::new(MTeamAdapter::new(
+                site.name.clone(),
+                site.url.clone(),
+                api_token,
+                passkey,
+                batch_size,
+            ));
+            let core: Arc<dyn SiteCore> = adapter.clone();
+            let reseed: Arc<dyn ReseedCapable> = adapter.clone();
+            let repost: Arc<dyn RepostCapable> = adapter.clone();
+            let user_info: Arc<dyn UserInfoCapable> = adapter.clone();
+            let search: Arc<dyn SearchCapable> = adapter;
+            Ok(Some(AdapterHandle {
+                core,
+                reseed: Some(reseed),
+                repost: Some(repost),
+                user_info: Some(user_info),
+                search: Some(search),
+                rate_limiter,
+            }))
+        }
+        "unit3d" => {
+            let api_token = decrypt_token(site, vault)?;
+            let adapter = Arc::new(Unit3dAdapter::new(
+                site.name.clone(),
+                site.url.clone(),
+                api_token,
+                passkey,
+                batch_size,
+            ));
+            let core: Arc<dyn SiteCore> = adapter.clone();
+            let reseed: Arc<dyn ReseedCapable> = adapter.clone();
+            let repost: Arc<dyn RepostCapable> = adapter.clone();
+            let user_info: Arc<dyn UserInfoCapable> = adapter.clone();
+            let search: Arc<dyn SearchCapable> = adapter;
+            Ok(Some(AdapterHandle {
+                core,
+                reseed: Some(reseed),
+                repost: Some(repost),
+                user_info: Some(user_info),
+                search: Some(search),
+                rate_limiter,
+            }))
+        }
+        "gazelle" => {
+            let adapter = Arc::new(GazelleAdapter::new(
+                site.name.clone(),
+                site.url.clone(),
+                cookie,
+                passkey,
+                batch_size,
+            ));
+            let core: Arc<dyn SiteCore> = adapter.clone();
+            let reseed: Arc<dyn ReseedCapable> = adapter.clone();
+            let repost: Arc<dyn RepostCapable> = adapter.clone();
+            let user_info: Arc<dyn UserInfoCapable> = adapter.clone();
+            let search: Arc<dyn SearchCapable> = adapter;
+            Ok(Some(AdapterHandle {
+                core,
+                reseed: Some(reseed),
+                repost: Some(repost),
+                user_info: Some(user_info),
+                search: Some(search),
+                rate_limiter,
+            }))
+        }
+        "zhuque" => {
+            let api_token = decrypt_token(site, vault)?;
+            let adapter = Arc::new(ZhuqueAdapter::new(
+                site.name.clone(),
+                site.url.clone(),
+                api_token,
+                passkey,
+                cookie,
+                batch_size,
+            ));
+            let core: Arc<dyn SiteCore> = adapter.clone();
+            let reseed: Arc<dyn ReseedCapable> = adapter.clone();
+            let repost: Arc<dyn RepostCapable> = adapter.clone();
+            let user_info: Arc<dyn UserInfoCapable> = adapter.clone();
+            let search: Arc<dyn SearchCapable> = adapter;
+            Ok(Some(AdapterHandle {
+                core,
+                reseed: Some(reseed),
+                repost: Some(repost),
+                user_info: Some(user_info),
+                search: Some(search),
+                rate_limiter,
+            }))
+        }
+        other => {
+            warn!(site = %site.name, adapter_type = %other, "unknown adapter type, skipping");
+            Ok(None)
+        }
+    }
 }

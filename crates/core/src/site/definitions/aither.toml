@@ -1,0 +1,8 @@
+[site]
+id = "aither"
+name = "Aither"
+url = "https://aither.cc"
+adapter = "unit3d"
+rate_limit_interval_ms = 5000
+rate_limit_burst = 1
+batch_size = 1000

@@ -18,7 +18,7 @@ use tower_http::services::ServeDir;
 fn server_fn_requires_auth(path: &str) -> bool {
     !matches!(
         path.rsplit('/').next().unwrap_or_default(),
-        "login" | "register" | "get_current_user"
+        "login" | "register" | "get_current_user" | "has_user"
     )
 }
 

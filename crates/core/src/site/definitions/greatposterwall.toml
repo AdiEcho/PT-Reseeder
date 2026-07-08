@@ -1,0 +1,8 @@
+[site]
+id = "greatposterwall"
+name = "GPW"
+url = "https://greatposterwall.com"
+adapter = "gazelle"
+rate_limit_interval_ms = 5000
+rate_limit_burst = 1
+batch_size = 1000

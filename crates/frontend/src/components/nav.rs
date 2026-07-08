@@ -1,0 +1,164 @@
+use crate::server_fns::{get_current_user, logout, UserInfo};
+use leptos::ev;
+use leptos::prelude::*;
+use leptos_router::{
+    components::{A, Outlet, Redirect},
+    hooks::use_navigate,
+};
+
+/// A single entry in the sidebar navigation.
+struct NavEntry {
+    label: &'static str,
+    href: &'static str,
+    icon: &'static str,
+    /// When `true`, the link is active only on an exact path match.
+    /// Otherwise it is active when the current path starts with `href`
+    /// (so `/sites` stays highlighted on `/sites/:id`).
+    exact: bool,
+}
+
+const NAV: &[NavEntry] = &[
+    NavEntry {
+        label: "Dashboard",
+        href: "/dashboard",
+        icon: "▣",
+        exact: true,
+    },
+    NavEntry {
+        label: "Sites",
+        href: "/sites",
+        icon: "◈",
+        exact: false,
+    },
+    NavEntry {
+        label: "Downloaders",
+        href: "/downloaders",
+        icon: "⬇",
+        exact: true,
+    },
+    NavEntry {
+        label: "Tasks",
+        href: "/tasks",
+        icon: "⏱",
+        exact: true,
+    },
+    NavEntry {
+        label: "Folders",
+        href: "/folders",
+        icon: "📁",
+        exact: true,
+    },
+    NavEntry {
+        label: "Repost",
+        href: "/repost",
+        icon: "↻",
+        exact: true,
+    },
+    NavEntry {
+        label: "Settings",
+        href: "/settings",
+        icon: "⚙",
+        exact: true,
+    },
+];
+
+/// Authenticated application shell: persistent sidebar + topbar, with the
+/// matched page rendered through `<Outlet />`.
+///
+/// Guards the whole subtree: while the session is being resolved we show a
+/// loading state; if there is no logged-in user we redirect to `/login`.
+#[component]
+pub fn AppLayout() -> impl IntoView {
+    let current_user = Resource::new(|| (), |_| get_current_user());
+
+    view! {
+        <Suspense fallback=|| view! { <div class="app-loading">"Loading…"</div> }>
+            {move || {
+                match current_user.get() {
+                    None => view! { <div class="app-loading">"Loading…"</div> }.into_any(),
+                    Some(Err(_)) => view! { <Redirect path="/login" /> }.into_any(),
+                    Some(Ok(None)) => view! { <Redirect path="/login" /> }.into_any(),
+                    Some(Ok(Some(user))) => view! { <Shell user=user /> }.into_any(),
+                }
+            }}
+        </Suspense>
+    }
+}
+
+#[component]
+fn Shell(user: UserInfo) -> impl IntoView {
+    let username = user.username.clone();
+    let initial = user
+        .username
+        .chars()
+        .next()
+        .map(|c| c.to_uppercase().to_string())
+        .unwrap_or_else(|| "?".to_string());
+    let navigate = use_navigate();
+
+    let on_logout = move |_: ev::MouseEvent| {
+        let navigate = navigate.clone();
+        leptos::task::spawn_local(async move {
+            let _ = logout().await;
+            navigate("/login", Default::default());
+        });
+    };
+
+    view! {
+        <div class="app-shell">
+            <Sidebar on_logout=on_logout />
+            <Topbar username=username.clone() initial=initial />
+            <main class="app-content">
+                <Outlet />
+            </main>
+        </div>
+    }
+}
+
+#[component]
+fn Sidebar<F>(on_logout: F) -> impl IntoView
+where
+    F: Fn(ev::MouseEvent) + 'static + Clone,
+{
+    view! {
+        <aside class="app-sidebar">
+            <div class="app-sidebar__brand">
+                <div class="app-sidebar__logo">"P"</div>
+                <span class="app-sidebar__title">"PT-Reseeder"</span>
+            </div>
+            <nav class="app-sidebar__nav">
+                <div class="app-sidebar__section">"Management"</div>
+                {NAV
+                    .iter()
+                    .map(|entry| {
+                        view! {
+                            <A href=entry.href exact=entry.exact {..} attr:class="app-nav-link">
+                                <span class="app-nav-link__icon">{entry.icon}</span>
+                                <span>{entry.label}</span>
+                            </A>
+                        }
+                    })
+                    .collect::<Vec<_>>()}
+            </nav>
+            <div class="app-sidebar__footer">
+                <button class="app-nav-link" on:click=move |ev| on_logout.clone()(ev)>
+                    <span class="app-nav-link__icon">"⏻"</span>
+                    <span>"Logout"</span>
+                </button>
+            </div>
+        </aside>
+    }
+}
+
+#[component]
+fn Topbar(username: String, initial: String) -> impl IntoView {
+    view! {
+        <header class="app-topbar">
+            <div class="app-topbar__title">"PT-Reseeder"</div>
+            <div class="app-topbar__user">
+                <span>{username}</span>
+                <div class="app-topbar__avatar">{initial}</div>
+            </div>
+        </header>
+    }
+}

@@ -1,3 +1,4 @@
+use crate::components::nav::AppLayout;
 use crate::pages::dashboard::DashboardPage;
 use crate::pages::downloaders::DownloadersPage;
 use crate::pages::folders::FoldersPage;
@@ -39,9 +40,10 @@ pub fn shell(options: LeptosOptions) -> impl IntoView {
 pub fn App() -> impl IntoView {
     view! {
         <Router>
-            <main>
-                <Routes fallback=|| "Page not found">
-                    <Route path=path!("/login") view=LoginPage />
+            <Routes fallback=|| view! { <NotFound /> }>
+                <Route path=path!("/login") view=LoginPage />
+
+                <ParentRoute path=path!("") view=AppLayout>
                     <Route path=path!("/dashboard") view=DashboardPage />
                     <Route path=path!("/sites") view=SitesPage />
                     <Route path=path!("/sites/:id") view=SiteDetailPage />
@@ -51,8 +53,19 @@ pub fn App() -> impl IntoView {
                     <Route path=path!("/repost") view=RepostPage />
                     <Route path=path!("/settings") view=SettingsPage />
                     <Route path=path!("/") view=|| view! { <Redirect path="/dashboard" /> } />
-                </Routes>
-            </main>
+                </ParentRoute>
+            </Routes>
         </Router>
+    }
+}
+
+#[component]
+fn NotFound() -> impl IntoView {
+    view! {
+        <div class="app-loading" style="padding: 48px; text-align: center;">
+            <h1>"404"</h1>
+            <p>"Page not found."</p>
+            <a href="/dashboard">"Go to Dashboard"</a>
+        </div>
     }
 }

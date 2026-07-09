@@ -20,12 +20,22 @@ use leptos_router::path;
 pub fn shell(options: LeptosOptions) -> impl IntoView {
     view! {
         <!DOCTYPE html>
-        <html lang="zh-CN">
+        <html lang="zh-CN" data-theme="dark">
             <head>
                 <meta charset="utf-8" />
                 <meta name="viewport" content="width=device-width, initial-scale=1" />
                 <title>"PT-Reseeder"</title>
                 <link rel="stylesheet" href="/pkg/pt-reseeder.css" />
+                <script>
+                    "(function () {
+                        try {
+                            var t = localStorage.getItem(\"pt-reseeder-theme\");
+                            if (t === \"light\" || t === \"dark\") {
+                                document.documentElement.setAttribute(\"data-theme\", t);
+                            }
+                        } catch (e) {}
+                    })();"
+                </script>
                 <HydrationScripts options />
                 <MetaTags />
             </head>

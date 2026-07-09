@@ -284,7 +284,7 @@ fn TrendChart(points: Vec<TrendPoint>) -> impl IntoView {
                     y1=format!("{padding}")
                     x2=format!("{padding}")
                     y2=format!("{}", padding + chart_h)
-                    stroke="#666"
+                    stroke="var(--chart-axis)"
                     stroke-width="1"
                 />
                 // X axis
@@ -293,14 +293,14 @@ fn TrendChart(points: Vec<TrendPoint>) -> impl IntoView {
                     y1=format!("{}", padding + chart_h)
                     x2=format!("{}", padding + chart_w)
                     y2=format!("{}", padding + chart_h)
-                    stroke="#666"
+                    stroke="var(--chart-axis)"
                     stroke-width="1"
                 />
 
                 // Success line
-                <path d=success_path fill="none" stroke="#22c55e" stroke-width="2" />
+                <path d=success_path fill="none" stroke="var(--chart-success)" stroke-width="2" />
                 // Failed line
-                <path d=failed_path fill="none" stroke="#ef4444" stroke-width="2" />
+                <path d=failed_path fill="none" stroke="var(--chart-failed)" stroke-width="2" />
 
                 // X labels
                 {x_labels
@@ -312,7 +312,7 @@ fn TrendChart(points: Vec<TrendPoint>) -> impl IntoView {
                                 y=format!("{}", padding + chart_h + 16.0)
                                 text-anchor="middle"
                                 font-size="11"
-                                fill="#888"
+                                fill="var(--chart-label)"
                             >
                                 {label}
                             </text>
@@ -321,12 +321,12 @@ fn TrendChart(points: Vec<TrendPoint>) -> impl IntoView {
                     .collect::<Vec<_>>()}
 
                 // Legend
-                <circle cx=format!("{}", padding + 10.0) cy="12" r="4" fill="#22c55e" />
-                <text x=format!("{}", padding + 18.0) y="16" font-size="12" fill="#888">
+                <circle cx=format!("{}", padding + 10.0) cy="12" r="4" fill="var(--chart-success)" />
+                <text x=format!("{}", padding + 18.0) y="16" font-size="12" fill="var(--chart-label)">
                     "成功"
                 </text>
-                <circle cx=format!("{}", padding + 80.0) cy="12" r="4" fill="#ef4444" />
-                <text x=format!("{}", padding + 88.0) y="16" font-size="12" fill="#888">
+                <circle cx=format!("{}", padding + 80.0) cy="12" r="4" fill="var(--chart-failed)" />
+                <text x=format!("{}", padding + 88.0) y="16" font-size="12" fill="var(--chart-label)">
                     "失败"
                 </text>
             </svg>

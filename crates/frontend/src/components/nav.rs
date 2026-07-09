@@ -1,3 +1,4 @@
+use crate::components::theme::ThemeToggle;
 use crate::server_fns::{get_current_user, logout, UserInfo};
 use leptos::ev;
 use leptos::prelude::*;
@@ -156,6 +157,7 @@ fn Topbar(username: String, initial: String) -> impl IntoView {
         <header class="app-topbar">
             <div class="app-topbar__title">"PT-Reseeder"</div>
             <div class="app-topbar__user">
+                <ThemeToggle />
                 <span>{username}</span>
                 <div class="app-topbar__avatar">{initial}</div>
             </div>

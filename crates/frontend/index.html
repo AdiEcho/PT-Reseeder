@@ -1,10 +1,22 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="dark">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>PT-Reseeder</title>
     <link rel="stylesheet" href="/pkg/pt-reseeder.css" />
+    <script>
+      // Apply the persisted theme before paint to avoid a flash of the wrong
+      // theme. Defaults to dark when no preference is stored.
+      (function () {
+        try {
+          var t = localStorage.getItem("pt-reseeder-theme");
+          if (t === "light" || t === "dark") {
+            document.documentElement.setAttribute("data-theme", t);
+          }
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <script type="module">

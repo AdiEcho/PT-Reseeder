@@ -130,7 +130,7 @@ pub fn SitesPage() -> impl IntoView {
                                     />
                                 </div>
                                 <div class="form-group">
-                                    <label>"适配器类型"</label>
+                                    <label>"站点架构"</label>
                                     <select
                                         prop:value=move || adapter_type.get()
                                         on:change=move |ev| {
@@ -233,7 +233,7 @@ pub fn SitesPage() -> impl IntoView {
                     .get()
                     .and_then(|r| r.err())
                     .map(|e| {
-                        view! { <p class="error">{format!("探针失败：{e}")}</p> }
+                        view! { <p class="error">{format!("连通测试失败：{e}")}</p> }
                     })
             }}
 
@@ -261,8 +261,8 @@ pub fn SitesPage() -> impl IntoView {
                                                         <tr>
                                                             <th>"名称"</th>
                                                             <th>"URL"</th>
-                                                            <th>"适配器"</th>
-                                                            <th>"探针状态"</th>
+                                                            <th>"架构"</th>
+                                                            <th>"连通状态"</th>
                                                             <th>"启用"</th>
                                                             <th>"操作"</th>
                                                         </tr>
@@ -282,7 +282,7 @@ pub fn SitesPage() -> impl IntoView {
                                                                 {
                                                                     "ok" => ("text-green", "正常"),
                                                                     "failed" => ("text-red", "失败"),
-                                                                    "pending" => ("text-muted", "探测中"),
+                                                                    "pending" => ("text-muted", "检测中"),
                                                                     _ => ("text-muted", "未知"),
                                                                 };
                                                                 view! {
@@ -307,7 +307,7 @@ pub fn SitesPage() -> impl IntoView {
                                                                                 class="btn btn-sm btn-outline"
                                                                                 on:click=move |_| { probe_action.dispatch(site_id); }
                                                                             >
-                                                                                "探针"
+                                                                                "连通测试"
                                                                             </button>
                                                                             <button
                                                                                 class="btn btn-sm btn-danger"

@@ -195,7 +195,7 @@ where
             <div class="form-row">
                 <input
                     type="text"
-                    placeholder="键名"
+                    placeholder="设置项名称"
                     class="input"
                     prop:value=move || new_key.get()
                     on:input=move |ev| set_new_key.set(event_target_value(&ev))

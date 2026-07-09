@@ -176,7 +176,7 @@ fn OverviewCards(data: DashboardData) -> impl IntoView {
                 accent="purple"
             />
             <StatCard
-                label="追踪种子数"
+                label="监控种子数"
                 value=o.tracked_torrents.to_string()
                 accent="teal"
             />
@@ -349,7 +349,7 @@ fn SiteStatsTable(stats: Vec<SiteReseedStats>) -> impl IntoView {
                             <thead>
                                 <tr>
                                     <th>"站点"</th>
-                                    <th>"匹配"</th>
+                                    <th>"匹配数"</th>
                                     <th>"成功"</th>
                                     <th>"失败"</th>
                                     <th>"跳过"</th>
@@ -362,7 +362,7 @@ fn SiteStatsTable(stats: Vec<SiteReseedStats>) -> impl IntoView {
                                     .into_iter()
                                     .map(|s| {
                                         let (status_class, status_label) = match s.breaker_status.as_str() {
-                                            "tripped" => ("text-red", "已熔断"),
+                                            "tripped" => ("text-red", "已暂停"),
                                             "ok" => ("text-green", "正常"),
                                             _ => ("text-muted", "—"),
                                         };
@@ -393,7 +393,7 @@ fn SiteStatsTable(stats: Vec<SiteReseedStats>) -> impl IntoView {
 fn UserInfoTable(info: UserInfoAggregate) -> impl IntoView {
     view! {
         <div class="user-info-section">
-            <h2>"跨站用户信息"</h2>
+            <h2>"各站点账号概览"</h2>
 
             <div class="stat-cards stat-cards--summary">
                 <StatCard
@@ -433,7 +433,7 @@ fn UserInfoTable(info: UserInfoAggregate) -> impl IntoView {
                                     <th>"积分"</th>
                                     <th>"等级"</th>
                                     <th>"做种数"</th>
-                                    <th>"下载数量"</th>
+                                    <th>"下载中"</th>
                                     <th>"更新时间"</th>
                                 </tr>
                             </thead>

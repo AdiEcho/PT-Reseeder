@@ -332,7 +332,7 @@ fn TaskLogTable(logs: Vec<TaskLogInfo>) -> impl IntoView {
                 <thead>
                     <tr>
                         <th>"状态"</th>
-                        <th>"匹配"</th>
+                        <th>"匹配数"</th>
                         <th>"成功"</th>
                         <th>"失败"</th>
                         <th>"耗时"</th>

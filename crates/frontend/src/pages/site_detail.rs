@@ -101,7 +101,7 @@ pub fn SiteDetailPage() -> impl IntoView {
                     .and_then(|r| r.err())
                     .map(|e| {
                         view! {
-                            <p class="error">{format!("探针失败：{e}")}</p>
+                            <p class="error">{format!("连通测试失败：{e}")}</p>
                         }
                     })
             }}
@@ -123,7 +123,7 @@ pub fn SiteDetailPage() -> impl IntoView {
                                 let (_probe_class, probe_label) = match site_probe_status.as_str() {
                                     "ok" => ("text-green", "正常"),
                                     "failed" => ("text-red", "失败"),
-                                    "pending" => ("text-muted", "探测中"),
+                                    "pending" => ("text-muted", "检测中"),
                                     _ => ("text-muted", "未知"),
                                 };
                                 view! {
@@ -136,7 +136,7 @@ pub fn SiteDetailPage() -> impl IntoView {
                                             </div>
                                             <div class="stat-card stat-card--purple">
                                                 <div class="stat-card__value">{site_adapter.clone()}</div>
-                                                <div class="stat-card__label">"适配器"</div>
+                                                <div class="stat-card__label">"架构"</div>
                                             </div>
                                             <div class="stat-card stat-card--teal">
                                                 <div class="stat-card__value">{site_auth_type.clone()}</div>
@@ -144,7 +144,7 @@ pub fn SiteDetailPage() -> impl IntoView {
                                             </div>
                                             <div class={format!("stat-card stat-card--{}", if site_probe_status == "ok" { "green" } else { "red" })}>
                                                 <div class="stat-card__value">{probe_label}</div>
-                                                <div class="stat-card__label">"探针状态"</div>
+                                                <div class="stat-card__label">"连通状态"</div>
                                             </div>
                                         </div>
 
@@ -170,7 +170,7 @@ pub fn SiteDetailPage() -> impl IntoView {
                                                 class="btn btn-outline"
                                                 on:click=move |_| { probe_action.dispatch(()); }
                                             >
-                                                "重新探针"
+                                                "重新检测"
                                             </button>
                                         </div>
 
@@ -184,8 +184,8 @@ pub fn SiteDetailPage() -> impl IntoView {
                                                             <table class="stats-table">
                                                                 <thead>
                                                                     <tr>
-                                                                        <th>"字段"</th>
-                                                                        <th>"数值"</th>
+                                                                        <th>"指标"</th>
+                                                                        <th>"当前值"</th>
                                                                     </tr>
                                                                 </thead>
                                                                 <tbody>
@@ -244,7 +244,7 @@ pub fn SiteDetailPage() -> impl IntoView {
                                                                         </td>
                                                                     </tr>
                                                                     <tr>
-                                                                        <td>"下载数量"</td>
+                                                                        <td>"下载中"</td>
                                                                         <td>
                                                                             {stats
                                                                                 .leeching_count
@@ -293,7 +293,7 @@ pub fn SiteDetailPage() -> impl IntoView {
                                             Some(json) => {
                                                 view! {
                                                     <div class="stats-table-section">
-                                                        <h2>"探针详情"</h2>
+                                                        <h2>"连通详情"</h2>
                                                         <pre class="probe-detail-json">{json}</pre>
                                                     </div>
                                                 }
@@ -302,8 +302,8 @@ pub fn SiteDetailPage() -> impl IntoView {
                                             None => {
                                                 view! {
                                                     <div class="stats-table-section">
-                                                        <h2>"探针详情"</h2>
-                                                        <p>"暂无探针详情。"</p>
+                                                        <h2>"连通详情"</h2>
+                                                        <p>"暂无连通详情。"</p>
                                                     </div>
                                                 }
                                                     .into_any()

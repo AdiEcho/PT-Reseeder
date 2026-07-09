@@ -26,8 +26,8 @@ impl Theme {
 
     fn label(self) -> &'static str {
         match self {
-            Theme::Dark => "切换到白天模式",
-            Theme::Light => "切换到暗黑模式",
+            Theme::Dark => "切换到浅色模式",
+            Theme::Light => "切换到深色模式",
         }
     }
 

@@ -73,14 +73,14 @@ pub fn FoldersPage() -> impl IntoView {
                         />
                     </label>
                     <label>
-                        "扫描模式"
+                        "种子来源"
                         <select on:change=move |ev| {
                             set_scan_mode.set(event_target_value(&ev));
                         }>
                             <option value="local" selected=true>
-                                "本地"
+                                "本机磁盘"
                             </option>
-                            <option value="downloader">"下载器"</option>
+                            <option value="downloader">"从下载器读取"</option>
                         </select>
                     </label>
                     {move || {
@@ -88,10 +88,10 @@ pub fn FoldersPage() -> impl IntoView {
                             Some(
                                 view! {
                                     <label>
-                                        "下载器 ID"
+                                        "关联下载器 ID"
                                         <input
                                             type="text"
-                                            placeholder="下载器 ID"
+                                            placeholder="关联下载器 ID"
                                             prop:value=move || downloader_id.get()
                                             on:input=move |ev| {
                                                 set_downloader_id.set(event_target_value(&ev));
@@ -119,7 +119,7 @@ pub fn FoldersPage() -> impl IntoView {
 
             // --- Folders Table ---
             <div class="stats-table-section">
-                <h2>"监控文件夹"</h2>
+                <h2>"种子文件夹"</h2>
                 <Suspense fallback=move || {
                     view! { <p>"正在加载文件夹..."</p> }
                 }>
@@ -146,7 +146,7 @@ pub fn FoldersPage() -> impl IntoView {
                                                     <thead>
                                                         <tr>
                                                             <th>"路径"</th>
-                                                            <th>"扫描模式"</th>
+                                                            <th>"种子来源"</th>
                                                             <th>"下载器"</th>
                                                             <th>"启用"</th>
                                                             <th>"上次扫描"</th>
@@ -206,8 +206,8 @@ fn FolderRow(
     };
     let enabled_label = if folder.enabled { "是" } else { "否" };
     let scan_mode_label = match folder.scan_mode.as_str() {
-        "local" => "本地".to_string(),
-        "downloader" => "下载器".to_string(),
+        "local" => "本机磁盘".to_string(),
+        "downloader" => "从下载器读取".to_string(),
         other => other.to_string(),
     };
     let downloader_display = folder

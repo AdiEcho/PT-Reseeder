@@ -60,6 +60,12 @@ build-server:
 	command -v cargo-leptos >/dev/null || { echo "cargo-leptos is required. Install with: cargo install cargo-leptos"; exit 1; }
 	$(CARGO) leptos build $(CARGO_PROFILE_FLAGS)
 	cp crates/frontend/index.html "$(SITE_DIR)/index.html"
+	@# wasm-bindgen JS references pt-reseeder_bg.wasm but cargo-leptos
+	@# outputs pt-reseeder.wasm — create a copy so the browser can find it.
+	@if [ -f "$(SITE_DIR)/pkg/$(APP_NAME).wasm" ] && [ ! -f "$(SITE_DIR)/pkg/$(APP_NAME)_bg.wasm" ]; then \
+		cp "$(SITE_DIR)/pkg/$(APP_NAME).wasm" "$(SITE_DIR)/pkg/$(APP_NAME)_bg.wasm"; \
+		echo "Created $(SITE_DIR)/pkg/$(APP_NAME)_bg.wasm"; \
+	fi
 
 build-desktop: build-server
 	command -v cargo-tauri >/dev/null || { echo "cargo-tauri is required. Install with: cargo install tauri-cli --version '^2'"; exit 1; }

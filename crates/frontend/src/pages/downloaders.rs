@@ -209,14 +209,14 @@ fn DownloadersSection(
                                 />
                             </div>
                             <div class="form-row">
-                                <label>"角色"</label>
+                                <label>"用途"</label>
                                 <select
                                     prop:value=move || role.get()
                                     on:change=move |ev| set_role.set(event_target_value(&ev))
                                 >
-                                    <option value="source">"源"</option>
-                                    <option value="destination">"目标"</option>
-                                    <option value="both">"双向"</option>
+                                    <option value="source">"仅拉取"</option>
+                                    <option value="destination">"仅推送"</option>
+                                    <option value="both">"拉取和推送"</option>
                                 </select>
                             </div>
                             <div class="form-actions">
@@ -249,7 +249,7 @@ fn DownloadersSection(
                                             <th>"名称"</th>
                                             <th>"类型"</th>
                                             <th>"主机"</th>
-                                            <th>"角色"</th>
+                                            <th>"用途"</th>
                                             <th>"启用"</th>
                                             <th>"操作"</th>
                                         </tr>
@@ -271,9 +271,9 @@ fn DownloadersSection(
                                                 };
                                                 let host_port = format!("{}:{}", dl.host, dl.port);
                                                 let role_label = match dl.role.as_str() {
-                                                    "source" => "源".to_string(),
-                                                    "destination" => "目标".to_string(),
-                                                    "both" => "双向".to_string(),
+                                                    "source" => "仅拉取".to_string(),
+                                                    "destination" => "仅推送".to_string(),
+                                                    "both" => "拉取和推送".to_string(),
                                                     other => other.to_string(),
                                                 };
                                                 view! {
@@ -363,12 +363,12 @@ fn PairsSection(
     view! {
         <div class="stats-table-section">
             <div class="section-header">
-                <h2>"源-目标配对"</h2>
+                <h2>"转种通道"</h2>
                 <button
                     class="btn btn--primary"
                     on:click=move |_| set_show_form.update(|v| *v = !*v)
                 >
-                    {move || if show_form.get() { "取消" } else { "添加配对" }}
+                    {move || if show_form.get() { "取消" } else { "添加通道" }}
                 </button>
             </div>
 
@@ -387,18 +387,18 @@ fn PairsSection(
                                 <label>"名称"</label>
                                 <input
                                     type="text"
-                                    placeholder="本机到盒子"
+                                    placeholder="本机 → 盒子"
                                     prop:value=move || pair_name.get()
                                     on:input=move |ev| set_pair_name.set(event_target_value(&ev))
                                 />
                             </div>
                             <div class="form-row">
-                                <label>"源"</label>
+                                <label>"从哪拉取"</label>
                                 <select
                                     prop:value=move || source_id.get()
                                     on:change=move |ev| set_source_id.set(event_target_value(&ev))
                                 >
-                                    <option value="">"-- 选择源 --"</option>
+                                    <option value="">"-- 选择拉取端 --"</option>
                                     {dl_list
                                         .into_iter()
                                         .map(|dl| {
@@ -411,12 +411,12 @@ fn PairsSection(
                                 </select>
                             </div>
                             <div class="form-row">
-                                <label>"目标"</label>
+                                <label>"推送到哪"</label>
                                 <select
                                     prop:value=move || dest_id.get()
                                     on:change=move |ev| set_dest_id.set(event_target_value(&ev))
                                 >
-                                    <option value="">"-- 选择目标 --"</option>
+                                    <option value="">"-- 选择推送端 --"</option>
                                     {dl_list2
                                         .into_iter()
                                         .map(|dl| {
@@ -441,14 +441,14 @@ fn PairsSection(
             }}
 
             // Pairs table
-            <Suspense fallback=move || view! { <p>"正在加载配对..."</p> }>
+            <Suspense fallback=move || view! { <p>"正在加载转种通道..."</p> }>
                 {move || {
                     pairs.get().map(|result| match result {
                         Err(e) => view! {
-                            <p class="error">{format!("配对加载失败：{e}")}</p>
+                            <p class="error">{format!("转种通道加载失败：{e}")}</p>
                         }.into_any(),
                         Ok(list) if list.is_empty() => view! {
-                            <p>"尚未配置任何源-目标配对。"</p>
+                            <p>"尚未配置任何转种通道。"</p>
                         }.into_any(),
                         Ok(list) => view! {
                             <div class="table-wrap">
@@ -456,8 +456,8 @@ fn PairsSection(
                                     <thead>
                                         <tr>
                                             <th>"名称"</th>
-                                            <th>"源"</th>
-                                            <th>"目标"</th>
+                                            <th>"拉取端"</th>
+                                            <th>"推送端"</th>
                                             <th>"操作"</th>
                                         </tr>
                                     </thead>

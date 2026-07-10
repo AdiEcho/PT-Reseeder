@@ -175,10 +175,7 @@ impl ZhuqueAdapter {
     }
 
     /// Make an authenticated GET request to the Zhuque REST API.
-    async fn api_get<T: serde::de::DeserializeOwned>(
-        &self,
-        path: &str,
-    ) -> Result<T, CoreError> {
+    async fn api_get<T: serde::de::DeserializeOwned>(&self, path: &str) -> Result<T, CoreError> {
         let url = format!("{}{}", self.base_url, path);
 
         debug!(site = %self.name, path, "zhuque API GET request");
@@ -209,9 +206,8 @@ impl ZhuqueAdapter {
             .await
             .map_err(|e| SiteError::HttpError(e.to_string()))?;
 
-        let api_resp: ZhuqueApiResponse<T> = serde_json::from_str(&body).map_err(|e| {
-            SiteError::ParseError(format!("failed to parse zhuque response: {e}"))
-        })?;
+        let api_resp: ZhuqueApiResponse<T> = serde_json::from_str(&body)
+            .map_err(|e| SiteError::ParseError(format!("failed to parse zhuque response: {e}")))?;
 
         // code == 0 or code absent means success
         if let Some(code) = api_resp.code {
@@ -221,9 +217,9 @@ impl ZhuqueAdapter {
             }
         }
 
-        api_resp.data.ok_or_else(|| {
-            SiteError::ParseError("API data field is null".into()).into()
-        })
+        api_resp
+            .data
+            .ok_or_else(|| SiteError::ParseError("API data field is null".into()).into())
     }
 
     /// Make an authenticated POST request with a JSON body to the Zhuque REST API.
@@ -260,10 +256,8 @@ impl ZhuqueAdapter {
             .await
             .map_err(|e| SiteError::HttpError(e.to_string()))?;
 
-        let api_resp: ZhuqueApiResponse<T> =
-            serde_json::from_str(&body_text).map_err(|e| {
-                SiteError::ParseError(format!("failed to parse zhuque response: {e}"))
-            })?;
+        let api_resp: ZhuqueApiResponse<T> = serde_json::from_str(&body_text)
+            .map_err(|e| SiteError::ParseError(format!("failed to parse zhuque response: {e}")))?;
 
         if let Some(code) = api_resp.code {
             if code != 0 {
@@ -272,17 +266,15 @@ impl ZhuqueAdapter {
             }
         }
 
-        api_resp.data.ok_or_else(|| {
-            SiteError::ParseError("API data field is null".into()).into()
-        })
+        api_resp
+            .data
+            .ok_or_else(|| SiteError::ParseError("API data field is null".into()).into())
     }
 
     /// Check whether we have valid auth credentials configured.
     fn require_auth(&self) -> Result<(), CoreError> {
         if self.api_token.is_none() && self.cookie.is_none() {
-            return Err(
-                SiteError::AuthFailed("no api_token or cookie configured".into()).into(),
-            );
+            return Err(SiteError::AuthFailed("no api_token or cookie configured".into()).into());
         }
         Ok(())
     }
@@ -366,10 +358,7 @@ impl ReseedCapable for ZhuqueAdapter {
     }
 
     fn build_download_url(&self, torrent_id: i64) -> String {
-        let mut url = format!(
-            "{}/api/torrent/{}/download",
-            self.base_url, torrent_id
-        );
+        let mut url = format!("{}/api/torrent/{}/download", self.base_url, torrent_id);
         if let Some(ref pk) = self.passkey {
             url.push_str(&format!("?passkey={pk}"));
         }
@@ -591,10 +580,7 @@ impl RepostCapable for ZhuqueAdapter {
             .into());
         }
 
-        Err(SiteError::HttpError(format!(
-            "upload may have failed: HTTP {status}"
-        ))
-        .into())
+        Err(SiteError::HttpError(format!("upload may have failed: HTTP {status}")).into())
     }
 }
 
@@ -611,10 +597,7 @@ impl SearchCapable for ZhuqueAdapter {
     ) -> Result<Vec<TorrentSearchResult>, CoreError> {
         self.require_auth()?;
 
-        let path = format!(
-            "/api/torrent/search?keyword={}",
-            urlencoding::encode(query)
-        );
+        let path = format!("/api/torrent/search?keyword={}", urlencoding::encode(query));
         debug!(site = %self.name, query, "searching torrents via /api/torrent/search");
 
         let search_resp: ZhuqueSearchResponse = self.api_get(&path).await?;

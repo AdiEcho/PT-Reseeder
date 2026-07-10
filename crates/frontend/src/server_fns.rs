@@ -696,12 +696,7 @@ pub async fn test_downloader_connection(
 
     match dl_type.as_str() {
         "qbittorrent" => {
-            let mut client = QBittorrentClient::new(
-                host.trim(),
-                port as u16,
-                &username,
-                &password,
-            );
+            let mut client = QBittorrentClient::new(host.trim(), port as u16, &username, &password);
             client
                 .connect()
                 .await
@@ -709,17 +704,23 @@ pub async fn test_downloader_connection(
             let version = client.get_version().await.ok();
             Ok(format!(
                 "连接成功{}",
-                version
-                    .map(|v| format!("，版本：{v}"))
-                    .unwrap_or_default(),
+                version.map(|v| format!("，版本：{v}")).unwrap_or_default(),
             ))
         }
         "transmission" => {
             let mut client = TransmissionClient::new(
                 host.trim(),
                 port as u16,
-                if username.is_empty() { None } else { Some(username.as_str()) },
-                if password.is_empty() { None } else { Some(password.as_str()) },
+                if username.is_empty() {
+                    None
+                } else {
+                    Some(username.as_str())
+                },
+                if password.is_empty() {
+                    None
+                } else {
+                    Some(password.as_str())
+                },
             );
             client
                 .connect()
@@ -728,14 +729,10 @@ pub async fn test_downloader_connection(
             let version = client.get_version().await.ok();
             Ok(format!(
                 "连接成功{}",
-                version
-                    .map(|v| format!("，版本：{v}"))
-                    .unwrap_or_default(),
+                version.map(|v| format!("，版本：{v}")).unwrap_or_default(),
             ))
         }
-        other => Err(ServerFnError::new(format!(
-            "不支持的下载器类型：{other}"
-        ))),
+        other => Err(ServerFnError::new(format!("不支持的下载器类型：{other}"))),
     }
 }
 

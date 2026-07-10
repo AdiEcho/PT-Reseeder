@@ -3,7 +3,7 @@ use crate::server_fns::{get_current_user, logout, UserInfo};
 use leptos::ev;
 use leptos::prelude::*;
 use leptos_router::{
-    components::{A, Outlet, Redirect},
+    components::{Outlet, Redirect, A},
     hooks::use_navigate,
 };
 

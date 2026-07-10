@@ -44,9 +44,8 @@ fn main() {
                         config.server_bind = match bind.parse() {
                             Ok(addr) => addr,
                             Err(err) => {
-                                let _ = addr_tx.send(Err(format!(
-                                    "failed to parse GUI bind address: {err}"
-                                )));
+                                let _ = addr_tx
+                                    .send(Err(format!("failed to parse GUI bind address: {err}")));
                                 return;
                             }
                         };

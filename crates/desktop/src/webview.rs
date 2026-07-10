@@ -183,22 +183,14 @@ pub async fn open_upload_page(
         return Ok(());
     }
 
-    let upload_url = format!(
-        "{}/upload.php",
-        site_url.trim_end_matches('/')
-    );
-    let url = url::Url::parse(&upload_url)
-        .map_err(|e| format!("invalid site URL: {e}"))?;
+    let upload_url = format!("{}/upload.php", site_url.trim_end_matches('/'));
+    let url = url::Url::parse(&upload_url).map_err(|e| format!("invalid site URL: {e}"))?;
 
-    tauri::WebviewWindowBuilder::new(
-        &app,
-        &label,
-        tauri::WebviewUrl::External(url),
-    )
-    .title(format!("Upload - repost #{entry_id}"))
-    .inner_size(1100.0, 800.0)
-    .build()
-    .map_err(|e| e.to_string())?;
+    tauri::WebviewWindowBuilder::new(&app, &label, tauri::WebviewUrl::External(url))
+        .title(format!("Upload - repost #{entry_id}"))
+        .inner_size(1100.0, 800.0)
+        .build()
+        .map_err(|e| e.to_string())?;
 
     Ok(())
 }

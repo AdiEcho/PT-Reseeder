@@ -222,10 +222,10 @@ impl MTeamAdapter {
             return Err(SiteError::RateLimited.into());
         }
         if status.as_u16() == 401 || status.as_u16() == 403 {
-            return Err(
-                SiteError::AuthFailed(format!("HTTP {status} from {path} (token=[REDACTED])"))
-                    .into(),
-            );
+            return Err(SiteError::AuthFailed(format!(
+                "HTTP {status} from {path} (token=[REDACTED])"
+            ))
+            .into());
         }
         if !status.is_success() {
             return Err(SiteError::HttpError(format!("HTTP {status} from {path}")).into());
@@ -243,9 +243,9 @@ impl MTeamAdapter {
             }
         }
 
-        api_resp
-            .data
-            .ok_or_else(|| SiteError::ParseError(format!("empty data in response from {path}")).into())
+        api_resp.data.ok_or_else(|| {
+            SiteError::ParseError(format!("empty data in response from {path}")).into()
+        })
     }
 
     /// Send a GET request and parse the typed API response.
@@ -269,10 +269,10 @@ impl MTeamAdapter {
             return Err(SiteError::RateLimited.into());
         }
         if status.as_u16() == 401 || status.as_u16() == 403 {
-            return Err(
-                SiteError::AuthFailed(format!("HTTP {status} from {path} (token=[REDACTED])"))
-                    .into(),
-            );
+            return Err(SiteError::AuthFailed(format!(
+                "HTTP {status} from {path} (token=[REDACTED])"
+            ))
+            .into());
         }
         if !status.is_success() {
             return Err(SiteError::HttpError(format!("HTTP {status} from {path}")).into());
@@ -289,9 +289,9 @@ impl MTeamAdapter {
             }
         }
 
-        api_resp
-            .data
-            .ok_or_else(|| SiteError::ParseError(format!("empty data in response from {path}")).into())
+        api_resp.data.ok_or_else(|| {
+            SiteError::ParseError(format!("empty data in response from {path}")).into()
+        })
     }
 }
 
@@ -352,7 +352,9 @@ impl ReseedCapable for MTeamAdapter {
             "piecesHashList": hashes,
         });
 
-        let parsed: PiecesHashData = self.api_post("/api/torrent/queryByPiecesHash", &body).await?;
+        let parsed: PiecesHashData = self
+            .api_post("/api/torrent/queryByPiecesHash", &body)
+            .await?;
 
         debug!(
             site = %self.name,
@@ -398,10 +400,9 @@ impl UserInfoCapable for MTeamAdapter {
 
         debug!(site = %self.name, "fetching user profile via API (token=[REDACTED])");
 
-        let profile: ProfileData = self.api_post(
-            "/api/member/profile",
-            &serde_json::json!({}),
-        ).await?;
+        let profile: ProfileData = self
+            .api_post("/api/member/profile", &serde_json::json!({}))
+            .await?;
 
         let (uploaded, downloaded, ratio, bonus, seeding_count, leeching_count, seeding_size) =
             if let Some(ref mc) = profile.member_count {
@@ -420,9 +421,7 @@ impl UserInfoCapable for MTeamAdapter {
                 (None, None, None, None, None, None, None)
             };
 
-        let user_class = profile
-            .member_class
-            .and_then(|mc| mc.name);
+        let user_class = profile.member_class.and_then(|mc| mc.name);
 
         debug!(site = %self.name, "user profile fetched successfully");
 
@@ -510,10 +509,7 @@ impl UserInfoCapable for MTeamAdapter {
 
 #[async_trait]
 impl RepostCapable for MTeamAdapter {
-    async fn extract_torrent_detail(
-        &self,
-        torrent_id: &str,
-    ) -> Result<RawTorrentInfo, CoreError> {
+    async fn extract_torrent_detail(&self, torrent_id: &str) -> Result<RawTorrentInfo, CoreError> {
         self.require_api_token()?;
 
         debug!(
@@ -544,19 +540,17 @@ impl RepostCapable for MTeamAdapter {
 
         // Download the torrent file
         let torrent_file_data = match torrent_id.parse::<i64>() {
-            Ok(id) => {
-                match self.download_torrent_file(id).await {
-                    Ok(data) => Some(data),
-                    Err(e) => {
-                        warn!(
-                            site = %self.name,
-                            torrent_id,
-                            "failed to download torrent file: {e}"
-                        );
-                        None
-                    }
+            Ok(id) => match self.download_torrent_file(id).await {
+                Ok(data) => Some(data),
+                Err(e) => {
+                    warn!(
+                        site = %self.name,
+                        torrent_id,
+                        "failed to download torrent file: {e}"
+                    );
+                    None
                 }
-            }
+            },
             Err(_) => {
                 warn!(
                     site = %self.name,
@@ -649,10 +643,10 @@ impl RepostCapable for MTeamAdapter {
 
         let status = resp.status();
         if status.as_u16() == 401 || status.as_u16() == 403 {
-            return Err(
-                SiteError::AuthFailed(format!("HTTP {status} uploading torrent (token=[REDACTED])"))
-                    .into(),
-            );
+            return Err(SiteError::AuthFailed(format!(
+                "HTTP {status} uploading torrent (token=[REDACTED])"
+            ))
+            .into());
         }
 
         let body = resp
@@ -661,10 +655,8 @@ impl RepostCapable for MTeamAdapter {
             .map_err(|e| SiteError::HttpError(e.to_string()))?;
 
         // Parse to check for success
-        let api_resp: MTeamApiResponse<UploadResult> =
-            serde_json::from_str(&body).map_err(|e| {
-                SiteError::ParseError(format!("failed to parse upload response: {e}"))
-            })?;
+        let api_resp: MTeamApiResponse<UploadResult> = serde_json::from_str(&body)
+            .map_err(|e| SiteError::ParseError(format!("failed to parse upload response: {e}")))?;
 
         let success = api_resp
             .code
@@ -673,10 +665,7 @@ impl RepostCapable for MTeamAdapter {
             .unwrap_or(false);
 
         if success {
-            let result_id = api_resp
-                .data
-                .and_then(|d| d.id)
-                .unwrap_or_default();
+            let result_id = api_resp.data.and_then(|d| d.id).unwrap_or_default();
             let result_url = if result_id.is_empty() {
                 format!("{}/api/torrent/upload", self.base_url)
             } else {
@@ -689,9 +678,7 @@ impl RepostCapable for MTeamAdapter {
             );
             Ok(result_url)
         } else {
-            let msg = api_resp
-                .message
-                .unwrap_or_else(|| format!("HTTP {status}"));
+            let msg = api_resp.message.unwrap_or_else(|| format!("HTTP {status}"));
             Err(SiteError::HttpError(format!("upload failed: {msg}")).into())
         }
     }
@@ -795,20 +782,16 @@ impl MTeamAdapter {
                 })
             })
             .ok_or_else(|| {
-                SiteError::ParseError(
-                    "genDlToken returned neither downloadUrl nor token".into(),
-                )
+                SiteError::ParseError("genDlToken returned neither downloadUrl nor token".into())
             })?;
 
         debug!(site = %self.name, torrent_id, "downloading torrent file");
 
         // Step 2: download the actual file
-        let resp = self
-            .client
-            .get(&download_url)
-            .send()
-            .await
-            .map_err(|e| SiteError::HttpError(format!("failed to download torrent file: {e}")))?;
+        let resp =
+            self.client.get(&download_url).send().await.map_err(|e| {
+                SiteError::HttpError(format!("failed to download torrent file: {e}"))
+            })?;
 
         if !resp.status().is_success() {
             return Err(SiteError::HttpError(format!(

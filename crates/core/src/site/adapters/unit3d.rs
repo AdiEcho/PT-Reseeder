@@ -252,20 +252,20 @@ impl UserInfoCapable for Unit3dAdapter {
     async fn fetch_user_info(&self) -> Result<UserStats, CoreError> {
         let body = self.api_get("/api/user").await?;
 
-        let parsed: Unit3dSingleResponse<Unit3dUserResource> =
-            serde_json::from_str(&body).map_err(|e| {
+        let parsed: Unit3dSingleResponse<Unit3dUserResource> = serde_json::from_str(&body)
+            .map_err(|e| {
                 SiteError::ParseError(format!("failed to parse user info response: {e}"))
             })?;
 
         let attrs = &parsed.data.attributes;
 
-        let ratio = attrs.ratio.or_else(|| {
-            match (attrs.uploaded, attrs.downloaded) {
+        let ratio = attrs
+            .ratio
+            .or_else(|| match (attrs.uploaded, attrs.downloaded) {
                 (Some(up), Some(down)) if down > 0 => Some(up as f64 / down as f64),
                 (Some(_), Some(0)) => Some(f64::INFINITY),
                 _ => None,
-            }
-        });
+            });
 
         debug!(
             site = %self.name,
@@ -279,10 +279,7 @@ impl UserInfoCapable for Unit3dAdapter {
             downloaded: attrs.downloaded,
             ratio,
             bonus: attrs.seedbonus,
-            user_class: attrs
-                .group
-                .as_ref()
-                .and_then(|g| g.name.clone()),
+            user_class: attrs.group.as_ref().and_then(|g| g.name.clone()),
             seeding_count: attrs.seeding_count,
             leeching_count: attrs.leeching_count,
             seeding_size: None,
@@ -313,8 +310,8 @@ impl RepostCapable for Unit3dAdapter {
         let path = format!("/api/torrents/{torrent_id}");
         let body = self.api_get(&path).await?;
 
-        let parsed: Unit3dSingleResponse<Unit3dTorrentResource> =
-            serde_json::from_str(&body).map_err(|e| {
+        let parsed: Unit3dSingleResponse<Unit3dTorrentResource> = serde_json::from_str(&body)
+            .map_err(|e| {
                 SiteError::ParseError(format!("failed to parse torrent detail response: {e}"))
             })?;
 
@@ -340,10 +337,7 @@ impl RepostCapable for Unit3dAdapter {
             }
         }
 
-        let torrent_type = attrs
-            .type_id
-            .map(|id| id.to_string())
-            .unwrap_or_default();
+        let torrent_type = attrs.type_id.map(|id| id.to_string()).unwrap_or_default();
         let resolution = attrs
             .resolution_id
             .map(|id| id.to_string())
@@ -485,9 +479,7 @@ impl RepostCapable for Unit3dAdapter {
             return Ok(format!("{}/torrents", self.base_url));
         }
 
-        Err(
-            SiteError::HttpError(format!("upload failed: HTTP {status}, body={body}")).into(),
-        )
+        Err(SiteError::HttpError(format!("upload failed: HTTP {status}, body={body}")).into())
     }
 }
 
@@ -506,10 +498,8 @@ impl SearchCapable for Unit3dAdapter {
         let path = format!("/api/torrents?name={encoded}");
         let body = self.api_get(&path).await?;
 
-        let parsed: Unit3dListResponse<Unit3dTorrentResource> =
-            serde_json::from_str(&body).map_err(|e| {
-                SiteError::ParseError(format!("failed to parse search response: {e}"))
-            })?;
+        let parsed: Unit3dListResponse<Unit3dTorrentResource> = serde_json::from_str(&body)
+            .map_err(|e| SiteError::ParseError(format!("failed to parse search response: {e}")))?;
 
         let mut results: Vec<TorrentSearchResult> = parsed
             .data

@@ -198,9 +198,8 @@ impl GazelleAdapter {
             .await
             .map_err(|e| SiteError::HttpError(e.to_string()))?;
 
-        let api_resp: GazelleApiResponse<T> = serde_json::from_str(&body).map_err(|e| {
-            SiteError::ParseError(format!("failed to parse gazelle response: {e}"))
-        })?;
+        let api_resp: GazelleApiResponse<T> = serde_json::from_str(&body)
+            .map_err(|e| SiteError::ParseError(format!("failed to parse gazelle response: {e}")))?;
 
         if api_resp.status != "success" {
             return Err(
@@ -208,9 +207,9 @@ impl GazelleAdapter {
             );
         }
 
-        api_resp.response.ok_or_else(|| {
-            SiteError::ParseError("API response field is null".into()).into()
-        })
+        api_resp
+            .response
+            .ok_or_else(|| SiteError::ParseError("API response field is null".into()).into())
     }
 
     /// Extract images from the wiki body HTML/BBCode description.
@@ -415,9 +414,8 @@ impl RepostCapable for GazelleAdapter {
 
         debug!(site = %self.name, torrent_id, "extracting torrent detail via ajax.php?action=torrent");
 
-        let detail: GazelleTorrentDetailResponse = self
-            .api_get("torrent", &[("id", torrent_id)])
-            .await?;
+        let detail: GazelleTorrentDetailResponse =
+            self.api_get("torrent", &[("id", torrent_id)]).await?;
 
         let name = detail.group.name.clone();
         let descr = detail.torrent.description.clone();
@@ -426,11 +424,7 @@ impl RepostCapable for GazelleAdapter {
         let images = Self::extract_images_from_body(&wiki_body);
 
         // Build small description from file path or torrent info
-        let small_descr = detail
-            .torrent
-            .file_path
-            .clone()
-            .unwrap_or_default();
+        let small_descr = detail.torrent.file_path.clone().unwrap_or_default();
 
         // Determine category from music_info if present
         let torrent_type = detail
@@ -481,10 +475,7 @@ impl RepostCapable for GazelleAdapter {
             audio_codec: String::new(),
             medium: String::new(),
             source_site: self.name.clone(),
-            source_url: format!(
-                "{}/torrents.php?torrentid={}",
-                self.base_url, torrent_id
-            ),
+            source_url: format!("{}/torrents.php?torrentid={}", self.base_url, torrent_id),
             torrent_file_data,
         })
     }
@@ -573,9 +564,7 @@ impl SearchCapable for GazelleAdapter {
 
         debug!(site = %self.name, query, "searching torrents via ajax.php?action=browse");
 
-        let browse: GazelleBrowseResponse = self
-            .api_get("browse", &[("searchstr", query)])
-            .await?;
+        let browse: GazelleBrowseResponse = self.api_get("browse", &[("searchstr", query)]).await?;
 
         let mut results = Vec::new();
 

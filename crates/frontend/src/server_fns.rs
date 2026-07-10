@@ -613,6 +613,25 @@ pub async fn create_downloader(
     use pt_reseeder_core::db::models::DownloaderRow;
     use pt_reseeder_core::db::repo::Repository;
 
+    // --- 输入验证 ---
+    let name = name.trim().to_string();
+    if name.is_empty() {
+        return Err(ServerFnError::new("名称不能为空"));
+    }
+    let host = host.trim().to_string();
+    if host.is_empty() {
+        return Err(ServerFnError::new("主机地址不能为空"));
+    }
+    if !(1..=65535).contains(&port) {
+        return Err(ServerFnError::new("端口必须在 1-65535 范围内"));
+    }
+    if !matches!(dl_type.as_str(), "qbittorrent" | "transmission") {
+        return Err(ServerFnError::new("不支持的下载器类型"));
+    }
+    if !matches!(role.as_str(), "source" | "destination" | "both") {
+        return Err(ServerFnError::new("无效的用途选项"));
+    }
+
     let context = server_context()?;
     let repo = Repository::new(context.pool.clone());
     let (encrypted_username, username_nonce, encrypted_password, password_nonce) = {
@@ -653,6 +672,71 @@ pub async fn create_downloader(
         .into_iter()
         .find(|d| d.id == id)
         .ok_or_else(|| ServerFnError::new("downloader created but not found"))
+}
+
+/// 在创建前测试下载器连接（不保存到数据库）
+#[server]
+pub async fn test_downloader_connection(
+    dl_type: String,
+    host: String,
+    port: i64,
+    username: String,
+    password: String,
+) -> Result<String, ServerFnError> {
+    use pt_reseeder_core::downloader::qbittorrent::QBittorrentClient;
+    use pt_reseeder_core::downloader::traits::Downloader;
+    use pt_reseeder_core::downloader::transmission::TransmissionClient;
+
+    if host.trim().is_empty() {
+        return Err(ServerFnError::new("主机地址不能为空"));
+    }
+    if !(1..=65535).contains(&port) {
+        return Err(ServerFnError::new("端口必须在 1-65535 范围内"));
+    }
+
+    match dl_type.as_str() {
+        "qbittorrent" => {
+            let mut client = QBittorrentClient::new(
+                host.trim(),
+                port as u16,
+                &username,
+                &password,
+            );
+            client
+                .connect()
+                .await
+                .map_err(|e| ServerFnError::new(format!("连接失败：{e}")))?;
+            let version = client.get_version().await.ok();
+            Ok(format!(
+                "连接成功{}",
+                version
+                    .map(|v| format!("，版本：{v}"))
+                    .unwrap_or_default(),
+            ))
+        }
+        "transmission" => {
+            let mut client = TransmissionClient::new(
+                host.trim(),
+                port as u16,
+                if username.is_empty() { None } else { Some(username.as_str()) },
+                if password.is_empty() { None } else { Some(password.as_str()) },
+            );
+            client
+                .connect()
+                .await
+                .map_err(|e| ServerFnError::new(format!("连接失败：{e}")))?;
+            let version = client.get_version().await.ok();
+            Ok(format!(
+                "连接成功{}",
+                version
+                    .map(|v| format!("，版本：{v}"))
+                    .unwrap_or_default(),
+            ))
+        }
+        other => Err(ServerFnError::new(format!(
+            "不支持的下载器类型：{other}"
+        ))),
+    }
 }
 
 #[server]

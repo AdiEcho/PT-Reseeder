@@ -743,6 +743,36 @@ textarea:focus {
     margin-top: 6px;
 }
 
+// ── 表单验证 & 连接测试 ────────────────────────────────────────────────────
+.required {
+    color: var(--red, #e74c3c);
+    margin-left: 2px;
+}
+
+.form-alert {
+    padding: 8px 12px;
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+    margin-bottom: 12px;
+}
+
+.form-alert--error {
+    background: rgba(231, 76, 60, 0.1);
+    border: 1px solid rgba(231, 76, 60, 0.3);
+    color: var(--red, #e74c3c);
+}
+
+.form-alert--success {
+    background: rgba(46, 204, 113, 0.1);
+    border: 1px solid rgba(46, 204, 113, 0.3);
+    color: var(--green, #2ecc71);
+}
+
+button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
 .probe-detail-json {
     background: var(--code-bg);
     color: var(--code-fg);

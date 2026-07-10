@@ -1,6 +1,7 @@
 use crate::server_fns::{
     create_downloader, create_downloader_pair, delete_downloader, delete_downloader_pair,
-    get_downloader_pairs, get_downloaders, test_downloader, DownloaderInfo, DownloaderPairInfo,
+    get_downloader_pairs, get_downloaders, test_downloader, test_downloader_connection,
+    DownloaderInfo, DownloaderPairInfo,
 };
 use leptos::prelude::*;
 
@@ -90,6 +91,31 @@ pub fn DownloadersPage() -> impl IntoView {
 // Section 1: Downloaders list + add form
 // ---------------------------------------------------------------------------
 
+/// 根据下载器类型返回默认端口
+fn default_port_for_type(dl_type: &str) -> &'static str {
+    match dl_type {
+        "qbittorrent" => "8080",
+        "transmission" => "9091",
+        _ => "",
+    }
+}
+
+/// 前端表单校验，返回 None 表示通过，Some(msg) 表示错误
+fn validate_form(name: &str, host: &str, port_str: &str) -> Option<String> {
+    if name.trim().is_empty() {
+        return Some("名称不能为空".into());
+    }
+    if host.trim().is_empty() {
+        return Some("主机地址不能为空".into());
+    }
+    match port_str.parse::<i64>() {
+        Ok(p) if (1..=65535).contains(&p) => {}
+        Ok(_) => return Some("端口必须在 1–65535 范围内".into()),
+        Err(_) => return Some("端口必须为数字".into()),
+    }
+    None
+}
+
 #[component]
 fn DownloadersSection(
     downloaders: Resource<Result<Vec<DownloaderInfo>, ServerFnError>>,
@@ -106,12 +132,75 @@ fn DownloadersSection(
     let (name, set_name) = signal(String::new());
     let (dl_type, set_dl_type) = signal("qbittorrent".to_string());
     let (host, set_host) = signal(String::new());
-    let (port, set_port) = signal(String::new());
+    let (port, set_port) = signal("8080".to_string());
     let (username, set_username) = signal(String::new());
     let (password, set_password) = signal(String::new());
     let (role, set_role) = signal("both".to_string());
 
+    // Validation & connection test state
+    let (form_error, set_form_error) = signal(Option::<String>::None);
+    // 连接测试状态：None=未测试, Some(Ok(msg))=成功, Some(Err(msg))=失败
+    let (conn_tested, set_conn_tested) = signal(Option::<Result<String, String>>::None);
+    let (conn_testing, set_conn_testing) = signal(false);
+
+    // 切换类型时自动填入默认端口、重置连接测试状态
+    let on_type_change = move |ev: web_sys::Event| {
+        let new_type = event_target_value(&ev);
+        set_port.set(default_port_for_type(&new_type).to_string());
+        set_dl_type.set(new_type);
+        set_conn_tested.set(None);
+        set_form_error.set(None);
+    };
+
+    // 任何字段变化时重置连接测试状态
+    let field_changed = move || {
+        set_conn_tested.set(None);
+        set_form_error.set(None);
+    };
+
+    // 连接测试
+    let on_test = move |_| {
+        // 先做前端校验
+        if let Some(msg) = validate_form(&name.get(), &host.get(), &port.get()) {
+            set_form_error.set(Some(msg));
+            return;
+        }
+        set_form_error.set(None);
+        set_conn_testing.set(true);
+        set_conn_tested.set(None);
+
+        let dl_type_val = dl_type.get();
+        let host_val = host.get();
+        let port_val: i64 = port.get().parse().unwrap_or(0);
+        let username_val = username.get();
+        let password_val = password.get();
+
+        leptos::task::spawn_local(async move {
+            let result = test_downloader_connection(
+                dl_type_val,
+                host_val,
+                port_val,
+                username_val,
+                password_val,
+            )
+            .await;
+            match result {
+                Ok(msg) => set_conn_tested.set(Some(Ok(msg))),
+                Err(e) => set_conn_tested.set(Some(Err(format!("{e}")))),
+            }
+            set_conn_testing.set(false);
+        });
+    };
+
+    // 提交创建
     let on_submit = move |_| {
+        // 前端校验
+        if let Some(msg) = validate_form(&name.get(), &host.get(), &port.get()) {
+            set_form_error.set(Some(msg));
+            return;
+        }
+        set_form_error.set(None);
+
         let port_val: i64 = port.get().parse().unwrap_or(0);
         create_dl_action.dispatch((
             name.get(),
@@ -126,12 +215,17 @@ fn DownloadersSection(
         set_name.set(String::new());
         set_dl_type.set("qbittorrent".to_string());
         set_host.set(String::new());
-        set_port.set(String::new());
+        set_port.set("8080".to_string());
         set_username.set(String::new());
         set_password.set(String::new());
         set_role.set("both".to_string());
+        set_form_error.set(None);
+        set_conn_tested.set(None);
         set_show_form.set(false);
     };
+
+    // 连接测试是否通过
+    let conn_ok = move || matches!(conn_tested.get(), Some(Ok(_)));
 
     // Track test results per-downloader
     let test_result = test_dl_action.value();
@@ -153,74 +247,129 @@ fn DownloadersSection(
                 if show_form.get() {
                     Some(view! {
                         <div class="add-form">
-                            <div class="form-row">
-                                <label>"名称"</label>
-                                <input
-                                    type="text"
-                                    placeholder="我的 qBittorrent"
-                                    prop:value=move || name.get()
-                                    on:input=move |ev| set_name.set(event_target_value(&ev))
-                                />
+                            // 验证错误提示
+                            {move || {
+                                form_error.get().map(|msg| view! {
+                                    <div class="form-alert form-alert--error">{msg}</div>
+                                })
+                            }}
+
+                            <div class="form-grid">
+                                <div class="form-group">
+                                    <label>"名称" <span class="required">"*"</span></label>
+                                    <input
+                                        type="text"
+                                        placeholder="我的 qBittorrent"
+                                        prop:value=move || name.get()
+                                        on:input=move |ev| {
+                                            set_name.set(event_target_value(&ev));
+                                            field_changed();
+                                        }
+                                    />
+                                </div>
+                                <div class="form-group">
+                                    <label>"类型"</label>
+                                    <select
+                                        prop:value=move || dl_type.get()
+                                        on:change=on_type_change
+                                    >
+                                        <option value="qbittorrent">"qBittorrent"</option>
+                                        <option value="transmission">"Transmission"</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label>"主机" <span class="required">"*"</span></label>
+                                    <input
+                                        type="text"
+                                        placeholder="127.0.0.1"
+                                        prop:value=move || host.get()
+                                        on:input=move |ev| {
+                                            set_host.set(event_target_value(&ev));
+                                            field_changed();
+                                        }
+                                    />
+                                </div>
+                                <div class="form-group">
+                                    <label>"端口" <span class="required">"*"</span></label>
+                                    <input
+                                        type="number"
+                                        placeholder="8080"
+                                        prop:value=move || port.get()
+                                        on:input=move |ev| {
+                                            set_port.set(event_target_value(&ev));
+                                            field_changed();
+                                        }
+                                    />
+                                </div>
+                                <div class="form-group">
+                                    <label>"用户名"</label>
+                                    <input
+                                        type="text"
+                                        placeholder="admin"
+                                        prop:value=move || username.get()
+                                        on:input=move |ev| {
+                                            set_username.set(event_target_value(&ev));
+                                            field_changed();
+                                        }
+                                    />
+                                </div>
+                                <div class="form-group">
+                                    <label>"密码"</label>
+                                    <input
+                                        type="password"
+                                        placeholder="密码"
+                                        prop:value=move || password.get()
+                                        on:input=move |ev| {
+                                            set_password.set(event_target_value(&ev));
+                                            field_changed();
+                                        }
+                                    />
+                                </div>
+                                <div class="form-group">
+                                    <label>"用途"</label>
+                                    <select
+                                        prop:value=move || role.get()
+                                        on:change=move |ev| set_role.set(event_target_value(&ev))
+                                    >
+                                        <option value="source">"仅拉取"</option>
+                                        <option value="destination">"仅推送"</option>
+                                        <option value="both">"拉取和推送"</option>
+                                    </select>
+                                </div>
                             </div>
-                            <div class="form-row">
-                                <label>"类型"</label>
-                                <select
-                                    prop:value=move || dl_type.get()
-                                    on:change=move |ev| set_dl_type.set(event_target_value(&ev))
-                                >
-                                    <option value="qbittorrent">"qBittorrent"</option>
-                                    <option value="transmission">"Transmission"</option>
-                                </select>
-                            </div>
-                            <div class="form-row">
-                                <label>"主机"</label>
-                                <input
-                                    type="text"
-                                    placeholder="127.0.0.1"
-                                    prop:value=move || host.get()
-                                    on:input=move |ev| set_host.set(event_target_value(&ev))
-                                />
-                            </div>
-                            <div class="form-row">
-                                <label>"端口"</label>
-                                <input
-                                    type="number"
-                                    placeholder="8080"
-                                    prop:value=move || port.get()
-                                    on:input=move |ev| set_port.set(event_target_value(&ev))
-                                />
-                            </div>
-                            <div class="form-row">
-                                <label>"用户名"</label>
-                                <input
-                                    type="text"
-                                    placeholder="admin"
-                                    prop:value=move || username.get()
-                                    on:input=move |ev| set_username.set(event_target_value(&ev))
-                                />
-                            </div>
-                            <div class="form-row">
-                                <label>"密码"</label>
-                                <input
-                                    type="password"
-                                    placeholder="密码"
-                                    prop:value=move || password.get()
-                                    on:input=move |ev| set_password.set(event_target_value(&ev))
-                                />
-                            </div>
-                            <div class="form-row">
-                                <label>"用途"</label>
-                                <select
-                                    prop:value=move || role.get()
-                                    on:change=move |ev| set_role.set(event_target_value(&ev))
-                                >
-                                    <option value="source">"仅拉取"</option>
-                                    <option value="destination">"仅推送"</option>
-                                    <option value="both">"拉取和推送"</option>
-                                </select>
-                            </div>
+
+                            // 连接测试结果
+                            {move || {
+                                conn_tested.get().map(|result| match result {
+                                    Ok(msg) => view! {
+                                        <div class="form-alert form-alert--success">{msg}</div>
+                                    }.into_any(),
+                                    Err(msg) => view! {
+                                        <div class="form-alert form-alert--error">{msg}</div>
+                                    }.into_any(),
+                                })
+                            }}
+
                             <div class="form-actions">
-                                <button class="btn btn--primary" on:click=on_submit>
+                                <button
+                                    class="btn btn--outline"
+                                    on:click=on_test
+                                    disabled=move || conn_testing.get()
+                                >
+                                    {move || if conn_testing.get() { "测试中…" } else { "测试连接" }}
+                                </button>
+                                <button
+                                    class="btn btn--primary"
+                                    on:click=on_submit
+                                    disabled=move || !conn_ok()
+                                    title=move || {
+                                        if conn_ok() {
+                                            "创建下载器".to_string()
+                                        } else {
+                                            "请先测试连接".to_string()
+                                        }
+                                    }
+                                >
                                     "创建"
                                 </button>
                             </div>

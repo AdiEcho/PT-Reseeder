@@ -99,4 +99,60 @@ mod tests {
         assert!(filter_by_existing_hash(&hashes, "abc123"));
         assert!(!filter_by_existing_hash(&hashes, "def456"));
     }
+
+    #[test]
+    fn test_extract_domain_with_port() {
+        assert_eq!(
+            extract_domain("http://tracker.example.com:8080/announce"),
+            "tracker.example.com"
+        );
+    }
+
+    #[test]
+    fn test_extract_domain_no_protocol() {
+        assert_eq!(
+            extract_domain("tracker.example.com/announce"),
+            "tracker.example.com"
+        );
+    }
+
+    #[test]
+    fn test_extract_domain_empty_string() {
+        assert_eq!(extract_domain(""), "");
+    }
+
+    #[test]
+    fn test_extract_domain_lowercases_output() {
+        // extract_domain lowercases the result; protocol prefix stripping is case-sensitive
+        assert_eq!(
+            extract_domain("https://HDSky.ME/announce"),
+            "hdsky.me"
+        );
+    }
+
+    #[test]
+    fn test_filter_by_tracker_empty_urls() {
+        let urls: HashSet<String> = HashSet::new();
+        assert!(!filter_by_tracker(&urls, "https://hdsky.me"));
+    }
+
+    #[test]
+    fn test_filter_by_tracker_matches_when_lowercase_protocol() {
+        let mut urls = HashSet::new();
+        urls.insert("https://HDSKY.me/announce".to_string());
+        assert!(filter_by_tracker(&urls, "https://hdsky.me"));
+    }
+
+    #[test]
+    fn test_filter_by_existing_hash_empty_set() {
+        let hashes: HashSet<String> = HashSet::new();
+        assert!(!filter_by_existing_hash(&hashes, "abc123"));
+    }
+
+    #[test]
+    fn test_filter_by_existing_hash_case_sensitive() {
+        let mut hashes = HashSet::new();
+        hashes.insert("ABC123".to_string());
+        assert!(!filter_by_existing_hash(&hashes, "abc123"));
+    }
 }

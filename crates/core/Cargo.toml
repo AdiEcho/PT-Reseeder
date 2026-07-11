@@ -31,3 +31,6 @@ tokio-cron-scheduler = "0.13"
 croner = "2.2"
 notify = "7"
 uuid = "1"
+
+[dev-dependencies]
+tempfile = "3"

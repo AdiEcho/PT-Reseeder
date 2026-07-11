@@ -1,8 +1,8 @@
 [site]
-id = "audiences"
-name = "Audiences"
-url = "https://audiences.me"
-api_url = "https://audiences.me/api/pieces-hash"
+id = "leaguhd"
+name = "LeaguHD"
+url = "https://leaguhd.com"
+api_url = "https://leaguhd.com/api/pieces-hash"
 adapter = "nexusphp"
 rate_limit_interval_ms = 5000
 rate_limit_burst = 1

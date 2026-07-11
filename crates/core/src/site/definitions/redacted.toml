@@ -1,0 +1,8 @@
+[site]
+id = "redacted"
+name = "RED"
+url = "https://redacted.sh"
+adapter = "gazelle"
+rate_limit_interval_ms = 10000
+rate_limit_burst = 1
+batch_size = 500

@@ -112,6 +112,7 @@ where
     let (value, set_value) = signal(entry.value.clone());
     let (revealed, set_revealed) = signal(!is_secret);
     let (saving, set_saving) = signal(false);
+    let (save_result, set_save_result) = signal(None::<Result<(), String>>);
 
     let updated_display = if entry.updated_at.len() >= 16 {
         entry.updated_at[..16].to_string()
@@ -136,7 +137,10 @@ where
                         type=move || if revealed.get() { "text" } else { "password" }
                         class="input"
                         prop:value=move || value.get()
-                        on:input=move |ev| set_value.set(event_target_value(&ev))
+                        on:input=move |ev| {
+                            set_value.set(event_target_value(&ev));
+                            set_save_result.set(None);
+                        }
                     />
                     {if is_secret {
                         Some(
@@ -153,6 +157,16 @@ where
                         None
                     }}
                 </div>
+                {move || {
+                    save_result.get().map(|r| match r {
+                        Ok(()) => view! {
+                            <span class="text-green" style="font-size: 12px;">"已保存"</span>
+                        }.into_any(),
+                        Err(msg) => view! {
+                            <span class="text-red" style="font-size: 12px;">{msg}</span>
+                        }.into_any(),
+                    })
+                }}
             </td>
             <td class="text-muted">{updated_display}</td>
             <td>
@@ -165,10 +179,18 @@ where
                             let k = save_key.clone();
                             let v = value.get();
                             set_saving.set(true);
+                            set_save_result.set(None);
                             leptos::task::spawn_local(async move {
-                                let _ = update_app_config(k, v).await;
+                                match update_app_config(k, v).await {
+                                    Ok(_) => {
+                                        set_save_result.set(Some(Ok(())));
+                                        on_saved();
+                                    }
+                                    Err(e) => {
+                                        set_save_result.set(Some(Err(format!("保存失败：{e}"))));
+                                    }
+                                }
                                 set_saving.set(false);
-                                on_saved();
                             });
                         }
                     }
@@ -188,38 +210,75 @@ where
     let (new_key, set_new_key) = signal(String::new());
     let (new_value, set_new_value) = signal(String::new());
     let (saving, set_saving) = signal(false);
+    let (add_error, set_add_error) = signal(None::<String>);
+    let (add_success, set_add_success) = signal(false);
 
     view! {
         <div class="add-setting-form">
             <h3>"添加设置项"</h3>
+            {move || {
+                add_error.get().map(|msg| view! {
+                    <div class="form-alert form-alert--error">{msg}</div>
+                })
+            }}
+            {move || {
+                if add_success.get() {
+                    Some(view! {
+                        <div class="form-alert form-alert--success">"设置项已添加"</div>
+                    })
+                } else {
+                    None
+                }
+            }}
             <div class="form-row">
                 <input
                     type="text"
                     placeholder="设置项名称"
                     class="input"
                     prop:value=move || new_key.get()
-                    on:input=move |ev| set_new_key.set(event_target_value(&ev))
+                    on:input=move |ev| {
+                        set_new_key.set(event_target_value(&ev));
+                        set_add_error.set(None);
+                        set_add_success.set(false);
+                    }
                 />
                 <input
                     type="text"
                     placeholder="值"
                     class="input"
                     prop:value=move || new_value.get()
-                    on:input=move |ev| set_new_value.set(event_target_value(&ev))
+                    on:input=move |ev| {
+                        set_new_value.set(event_target_value(&ev));
+                        set_add_error.set(None);
+                        set_add_success.set(false);
+                    }
                 />
                 <button
                     class="btn btn--green"
-                    disabled=move || saving.get() || new_key.get().is_empty()
+                    disabled=move || saving.get() || new_key.get().trim().is_empty()
                     on:click=move |_| {
                         let k = new_key.get();
                         let v = new_value.get();
+                        if k.trim().is_empty() {
+                            set_add_error.set(Some("设置项名称不能为空".into()));
+                            return;
+                        }
                         set_saving.set(true);
+                        set_add_error.set(None);
+                        set_add_success.set(false);
                         leptos::task::spawn_local(async move {
-                            let _ = update_app_config(k, v).await;
+                            match update_app_config(k, v).await {
+                                Ok(_) => {
+                                    set_add_success.set(true);
+                                    set_new_key.set(String::new());
+                                    set_new_value.set(String::new());
+                                    on_saved();
+                                }
+                                Err(e) => {
+                                    set_add_error.set(Some(format!("添加失败：{e}")));
+                                }
+                            }
                             set_saving.set(false);
-                            set_new_key.set(String::new());
-                            set_new_value.set(String::new());
-                            on_saved();
                         });
                     }
                 >

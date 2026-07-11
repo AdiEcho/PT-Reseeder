@@ -123,3 +123,97 @@ pub enum SchedulerError {
     #[error("folder not found: {0}")]
     FolderNotFound(i64),
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn core_error_display_includes_inner_message() {
+        let err = CoreError::Config("test".into());
+        let display = format!("{}", err);
+        assert!(
+            display.contains("test"),
+            "expected display to contain 'test', got: {}",
+            display
+        );
+    }
+
+    #[test]
+    fn crypto_error_variants_display() {
+        let kdf = CryptoError::KdfFailed("bad salt".into());
+        assert!(format!("{}", kdf).contains("bad salt"));
+
+        let enc = CryptoError::EncryptionFailed("key too short".into());
+        assert!(format!("{}", enc).contains("key too short"));
+
+        let dec = CryptoError::DecryptionFailed("corrupt data".into());
+        assert!(format!("{}", dec).contains("corrupt data"));
+
+        let inv = CryptoError::InvalidKey;
+        assert!(format!("{}", inv).contains("invalid key"));
+
+        let zero = CryptoError::Zeroized;
+        assert!(format!("{}", zero).contains("zeroized"));
+    }
+
+    #[test]
+    fn engine_error_variants_display() {
+        let scan = EngineError::ScanFailed("no folder".into());
+        assert!(format!("{}", scan).contains("no folder"));
+
+        let mat = EngineError::MatchFailed("timeout".into());
+        assert!(format!("{}", mat).contains("timeout"));
+
+        let add = EngineError::AddFailed("disk full".into());
+        assert!(format!("{}", add).contains("disk full"));
+
+        let cancel = EngineError::Cancelled;
+        assert!(format!("{}", cancel).contains("cancelled"));
+    }
+
+    #[test]
+    fn scheduler_error_task_not_found_includes_id() {
+        let err = SchedulerError::TaskNotFound(42);
+        let display = format!("{}", err);
+        assert!(
+            display.contains("42"),
+            "expected display to contain '42', got: {}",
+            display
+        );
+    }
+
+    #[test]
+    fn repost_error_variants_display() {
+        let ext = RepostError::ExtractionFailed("parse error".into());
+        assert!(format!("{}", ext).contains("parse error"));
+
+        let inv = RepostError::InvalidState("wrong phase".into());
+        assert!(format!("{}", inv).contains("wrong phase"));
+
+        let nf = RepostError::NotFound("id=99".into());
+        assert!(format!("{}", nf).contains("id=99"));
+    }
+
+    #[test]
+    fn core_error_from_engine_error() {
+        let engine_err = EngineError::Cancelled;
+        let core_err: CoreError = engine_err.into();
+        assert!(
+            matches!(core_err, CoreError::Engine(_)),
+            "expected CoreError::Engine, got: {:?}",
+            core_err
+        );
+    }
+
+    #[test]
+    fn core_error_from_crypto_error() {
+        let crypto_err = CryptoError::InvalidKey;
+        let core_err: CoreError = crypto_err.into();
+        assert!(
+            matches!(core_err, CoreError::Crypto(_)),
+            "expected CoreError::Crypto, got: {:?}",
+            core_err
+        );
+    }
+}

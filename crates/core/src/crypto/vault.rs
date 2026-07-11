@@ -277,4 +277,105 @@ mod tests {
         let decrypted = unlocked_vault.decrypt(&ciphertext, &nonce).unwrap();
         assert_eq!(decrypted, plaintext);
     }
+
+    #[test]
+    fn create_produces_non_empty_registration_data() {
+        let (_vault, reg) = Vault::create("pw").unwrap();
+        assert!(!reg.password_hash.is_empty());
+        assert!(!reg.kdf_salt.is_empty());
+        assert!(!reg.wrapped_dek.is_empty());
+        assert!(!reg.dek_nonce.is_empty());
+    }
+
+    #[test]
+    fn encrypt_produces_different_ciphertext_each_time() {
+        let (vault, _) = Vault::create("pw").unwrap();
+        let plaintext = b"same data";
+        let (ct1, _n1) = vault.encrypt(plaintext).unwrap();
+        let (ct2, _n2) = vault.encrypt(plaintext).unwrap();
+        // Different nonces mean different ciphertexts
+        assert_ne!(ct1, ct2);
+    }
+
+    #[test]
+    fn decrypt_fails_with_corrupted_ciphertext() {
+        let (vault, _) = Vault::create("pw").unwrap();
+        let (mut ciphertext, nonce) = vault.encrypt(b"secret").unwrap();
+        // Flip a byte
+        if let Some(byte) = ciphertext.first_mut() {
+            *byte ^= 0xff;
+        }
+        let result = vault.decrypt(&ciphertext, &nonce);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn decrypt_fails_with_wrong_nonce() {
+        let (vault, _) = Vault::create("pw").unwrap();
+        let (ciphertext, _nonce) = vault.encrypt(b"secret").unwrap();
+        let wrong_nonce = [0u8; 12];
+        let result = vault.decrypt(&ciphertext, &wrong_nonce);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn encrypt_empty_plaintext_succeeds() {
+        let (vault, _) = Vault::create("pw").unwrap();
+        let (ciphertext, nonce) = vault.encrypt(b"").unwrap();
+        let decrypted = vault.decrypt(&ciphertext, &nonce).unwrap();
+        assert!(decrypted.is_empty());
+    }
+
+    #[test]
+    fn encrypt_large_plaintext_roundtrips() {
+        let (vault, _) = Vault::create("pw").unwrap();
+        let plaintext = vec![0xABu8; 1024 * 64]; // 64 KB
+        let (ciphertext, nonce) = vault.encrypt(&plaintext).unwrap();
+        let decrypted = vault.decrypt(&ciphertext, &nonce).unwrap();
+        assert_eq!(decrypted, plaintext);
+    }
+
+    #[test]
+    fn unlock_fails_with_invalid_nonce_length() {
+        let (_vault, reg) = Vault::create("pw").unwrap();
+        let result = Vault::unlock(
+            "pw",
+            &reg.kdf_salt,
+            &reg.wrapped_dek,
+            &[0u8; 5], // wrong nonce length
+            &reg.password_hash,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn rewrap_with_wrong_old_password_fails() {
+        let (_vault, reg) = Vault::create("original").unwrap();
+        let result = Vault::rewrap(
+            "wrong-old",
+            "new",
+            &reg.kdf_salt,
+            &reg.wrapped_dek,
+            &reg.dek_nonce,
+            &reg.password_hash,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn vault_debug_redacts_dek() {
+        let (vault, _) = Vault::create("pw").unwrap();
+        let debug_str = format!("{:?}", vault);
+        assert!(debug_str.contains("REDACTED"));
+        assert!(!debug_str.contains("dek: ["));
+    }
+
+    #[test]
+    fn vault_clone_can_decrypt_same_data() {
+        let (vault, _) = Vault::create("pw").unwrap();
+        let (ciphertext, nonce) = vault.encrypt(b"clone test").unwrap();
+        let cloned = vault.clone();
+        let decrypted = cloned.decrypt(&ciphertext, &nonce).unwrap();
+        assert_eq!(decrypted, b"clone test");
+    }
 }

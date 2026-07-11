@@ -54,3 +54,39 @@ pub trait SearchCapable: SiteCore {
         size_hint: Option<u64>,
     ) -> Result<Vec<TorrentSearchResult>, CoreError>;
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn site_capability_equality() {
+        assert_eq!(SiteCapability::Reseed, SiteCapability::Reseed);
+        assert_ne!(SiteCapability::Reseed, SiteCapability::Repost);
+    }
+
+    #[test]
+    fn site_capability_can_be_used_in_hashset() {
+        let mut set = HashSet::new();
+        set.insert(SiteCapability::Reseed);
+        set.insert(SiteCapability::Repost);
+        set.insert(SiteCapability::UserInfo);
+        set.insert(SiteCapability::Search);
+        assert_eq!(set.len(), 4);
+        assert!(set.contains(&SiteCapability::Reseed));
+    }
+
+    #[test]
+    fn site_capability_debug_format() {
+        let cap = SiteCapability::Reseed;
+        let debug = format!("{:?}", cap);
+        assert_eq!(debug, "Reseed");
+    }
+
+    #[test]
+    fn site_capability_clone() {
+        let cap = SiteCapability::UserInfo;
+        let cloned = cap.clone();
+        assert_eq!(cap, cloned);
+    }
+}

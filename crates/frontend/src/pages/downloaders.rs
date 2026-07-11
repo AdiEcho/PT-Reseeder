@@ -68,6 +68,44 @@ pub fn DownloadersPage() -> impl IntoView {
                 <h1>"下载器管理"</h1>
             </div>
 
+            // 操作错误反馈
+            {move || {
+                create_dl_action
+                    .value()
+                    .get()
+                    .and_then(|r| r.err())
+                    .map(|e| {
+                        view! { <p class="error">{format!("创建下载器失败：{e}")}</p> }
+                    })
+            }}
+            {move || {
+                delete_dl_action
+                    .value()
+                    .get()
+                    .and_then(|r| r.err())
+                    .map(|e| {
+                        view! { <p class="error">{format!("删除下载器失败：{e}")}</p> }
+                    })
+            }}
+            {move || {
+                create_pair_action
+                    .value()
+                    .get()
+                    .and_then(|r| r.err())
+                    .map(|e| {
+                        view! { <p class="error">{format!("创建通道失败：{e}")}</p> }
+                    })
+            }}
+            {move || {
+                delete_pair_action
+                    .value()
+                    .get()
+                    .and_then(|r| r.err())
+                    .map(|e| {
+                        view! { <p class="error">{format!("删除通道失败：{e}")}</p> }
+                    })
+            }}
+
             // Section 1: Downloaders
             <DownloadersSection
                 downloaders=downloaders
@@ -407,50 +445,12 @@ fn DownloadersSection(
                                         {list
                                             .into_iter()
                                             .map(|dl| {
-                                                let dl_id = dl.id;
-                                                let enabled_class = if dl.enabled {
-                                                    "text-green"
-                                                } else {
-                                                    "text-red"
-                                                };
-                                                let enabled_label = if dl.enabled {
-                                                    "是"
-                                                } else {
-                                                    "否"
-                                                };
-                                                let host_port = format!("{}:{}", dl.host, dl.port);
-                                                let role_label = match dl.role.as_str() {
-                                                    "source" => "仅拉取".to_string(),
-                                                    "destination" => "仅推送".to_string(),
-                                                    "both" => "拉取和推送".to_string(),
-                                                    other => other.to_string(),
-                                                };
                                                 view! {
-                                                    <tr>
-                                                        <td>{dl.name}</td>
-                                                        <td>{dl.dl_type}</td>
-                                                        <td>{host_port}</td>
-                                                        <td>{role_label}</td>
-                                                        <td class=enabled_class>{enabled_label}</td>
-                                                        <td class="actions-cell">
-                                                            <button
-                                                                class="btn btn--small btn--outline"
-                                                                on:click=move |_| {
-                                                                    test_dl_action.dispatch(dl_id);
-                                                                }
-                                                            >
-                                                                "测试"
-                                                            </button>
-                                                            <button
-                                                                class="btn btn--small btn--danger"
-                                                                on:click=move |_| {
-                                                                    delete_dl_action.dispatch(dl_id);
-                                                                }
-                                                            >
-                                                                "删除"
-                                                            </button>
-                                                        </td>
-                                                    </tr>
+                                                    <DownloaderRow
+                                                        dl=dl
+                                                        test_dl_action=test_dl_action
+                                                        delete_dl_action=delete_dl_action
+                                                    />
                                                 }
                                             })
                                             .collect::<Vec<_>>()}
@@ -479,6 +479,80 @@ fn DownloadersSection(
     }
 }
 
+#[component]
+fn DownloaderRow(
+    dl: DownloaderInfo,
+    test_dl_action: Action<i64, Result<String, ServerFnError>>,
+    delete_dl_action: Action<i64, Result<(), ServerFnError>>,
+) -> impl IntoView {
+    let dl_id = dl.id;
+    let (confirm_delete, set_confirm_delete) = signal(false);
+    let enabled_class = if dl.enabled { "text-green" } else { "text-red" };
+    let enabled_label = if dl.enabled { "是" } else { "否" };
+    let host_port = format!("{}:{}", dl.host, dl.port);
+    let role_label = match dl.role.as_str() {
+        "source" => "仅拉取".to_string(),
+        "destination" => "仅推送".to_string(),
+        "both" => "拉取和推送".to_string(),
+        other => other.to_string(),
+    };
+
+    view! {
+        <tr>
+            <td>{dl.name}</td>
+            <td>{dl.dl_type}</td>
+            <td>{host_port}</td>
+            <td>{role_label}</td>
+            <td class=enabled_class>{enabled_label}</td>
+            <td class="actions-cell">
+                <button
+                    class="btn btn--small btn--outline"
+                    on:click=move |_| {
+                        test_dl_action.dispatch(dl_id);
+                    }
+                >
+                    "测试"
+                </button>
+                {move || {
+                    if confirm_delete.get() {
+                        view! {
+                            <span class="inline-form">
+                                <span class="text-red">"确认？"</span>
+                                <button
+                                    class="btn btn--sm btn--danger"
+                                    on:click=move |_| {
+                                        delete_dl_action.dispatch(dl_id);
+                                        set_confirm_delete.set(false);
+                                    }
+                                >
+                                    "是"
+                                </button>
+                                <button
+                                    class="btn btn--sm btn--outline"
+                                    on:click=move |_| set_confirm_delete.set(false)
+                                >
+                                    "否"
+                                </button>
+                            </span>
+                        }
+                            .into_any()
+                    } else {
+                        view! {
+                            <button
+                                class="btn btn--small btn--danger"
+                                on:click=move |_| set_confirm_delete.set(true)
+                            >
+                                "删除"
+                            </button>
+                        }
+                            .into_any()
+                    }
+                }}
+            </td>
+        </tr>
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Section 2: Source-Destination Pairs
 // ---------------------------------------------------------------------------
@@ -497,16 +571,34 @@ fn PairsSection(
     let (source_id, set_source_id) = signal(String::new());
     let (dest_id, set_dest_id) = signal(String::new());
 
+    let (pair_error, set_pair_error) = signal(None::<String>);
+
     let on_submit = move |_| {
+        let name_val = pair_name.get();
+        if name_val.trim().is_empty() {
+            set_pair_error.set(Some("通道名称不能为空".into()));
+            return;
+        }
         let src: i64 = source_id.get().parse().unwrap_or(0);
         let dst: i64 = dest_id.get().parse().unwrap_or(0);
-        if src != 0 && dst != 0 {
-            create_pair_action.dispatch((pair_name.get(), src, dst));
-            set_pair_name.set(String::new());
-            set_source_id.set(String::new());
-            set_dest_id.set(String::new());
-            set_show_form.set(false);
+        if src == 0 {
+            set_pair_error.set(Some("请选择拉取端下载器".into()));
+            return;
         }
+        if dst == 0 {
+            set_pair_error.set(Some("请选择推送端下载器".into()));
+            return;
+        }
+        if src == dst {
+            set_pair_error.set(Some("拉取端和推送端不能相同".into()));
+            return;
+        }
+        set_pair_error.set(None);
+        create_pair_action.dispatch((name_val, src, dst));
+        set_pair_name.set(String::new());
+        set_source_id.set(String::new());
+        set_dest_id.set(String::new());
+        set_show_form.set(false);
     };
 
     view! {
@@ -532,17 +624,26 @@ fn PairsSection(
 
                     Some(view! {
                         <div class="add-form">
+                            // 验证错误提示
+                            {move || {
+                                pair_error.get().map(|msg| view! {
+                                    <div class="form-alert form-alert--error">{msg}</div>
+                                })
+                            }}
                             <div class="form-row">
-                                <label>"名称"</label>
+                                <label>"名称" <span class="required">"*"</span></label>
                                 <input
                                     type="text"
                                     placeholder="本机 → 盒子"
                                     prop:value=move || pair_name.get()
-                                    on:input=move |ev| set_pair_name.set(event_target_value(&ev))
+                                    on:input=move |ev| {
+                                        set_pair_name.set(event_target_value(&ev));
+                                        set_pair_error.set(None);
+                                    }
                                 />
                             </div>
                             <div class="form-row">
-                                <label>"从哪拉取"</label>
+                                <label>"从哪拉取" <span class="required">"*"</span></label>
                                 <select
                                     prop:value=move || source_id.get()
                                     on:change=move |ev| set_source_id.set(event_target_value(&ev))
@@ -614,23 +715,11 @@ fn PairsSection(
                                         {list
                                             .into_iter()
                                             .map(|pair| {
-                                                let pair_id = pair.id;
                                                 view! {
-                                                    <tr>
-                                                        <td>{pair.name}</td>
-                                                        <td>{pair.source_name}</td>
-                                                        <td>{pair.destination_name}</td>
-                                                        <td class="actions-cell">
-                                                            <button
-                                                                class="btn btn--small btn--danger"
-                                                                on:click=move |_| {
-                                                                    delete_pair_action.dispatch(pair_id);
-                                                                }
-                                                            >
-                                                                "删除"
-                                                            </button>
-                                                        </td>
-                                                    </tr>
+                                                    <PairRow
+                                                        pair=pair
+                                                        delete_pair_action=delete_pair_action
+                                                    />
                                                 }
                                             })
                                             .collect::<Vec<_>>()}
@@ -642,5 +731,59 @@ fn PairsSection(
                 }}
             </Suspense>
         </div>
+    }
+}
+
+#[component]
+fn PairRow(
+    pair: DownloaderPairInfo,
+    delete_pair_action: Action<i64, Result<(), ServerFnError>>,
+) -> impl IntoView {
+    let pair_id = pair.id;
+    let (confirm_delete, set_confirm_delete) = signal(false);
+
+    view! {
+        <tr>
+            <td>{pair.name}</td>
+            <td>{pair.source_name}</td>
+            <td>{pair.destination_name}</td>
+            <td class="actions-cell">
+                {move || {
+                    if confirm_delete.get() {
+                        view! {
+                            <span class="inline-form">
+                                <span class="text-red">"确认？"</span>
+                                <button
+                                    class="btn btn--sm btn--danger"
+                                    on:click=move |_| {
+                                        delete_pair_action.dispatch(pair_id);
+                                        set_confirm_delete.set(false);
+                                    }
+                                >
+                                    "是"
+                                </button>
+                                <button
+                                    class="btn btn--sm btn--outline"
+                                    on:click=move |_| set_confirm_delete.set(false)
+                                >
+                                    "否"
+                                </button>
+                            </span>
+                        }
+                            .into_any()
+                    } else {
+                        view! {
+                            <button
+                                class="btn btn--small btn--danger"
+                                on:click=move |_| set_confirm_delete.set(true)
+                            >
+                                "删除"
+                            </button>
+                        }
+                            .into_any()
+                    }
+                }}
+            </td>
+        </tr>
     }
 }

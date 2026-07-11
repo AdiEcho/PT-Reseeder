@@ -289,4 +289,127 @@ mod tests {
         // Verify byte-level sorted order: a, b, c
         assert_eq!(encoded, b"d1:ai1e1:bi2e1:ci3ee");
     }
+
+    #[test]
+    fn decode_empty_data_returns_error() {
+        let result = decode(b"");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn decode_invalid_byte_returns_error() {
+        let result = decode(b"x");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn decode_unterminated_integer_returns_error() {
+        let result = decode(b"i42");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn decode_unterminated_list_returns_error() {
+        let result = decode(b"li1e");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn decode_unterminated_dict_returns_error() {
+        let result = decode(b"d3:keyi1e");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn decode_byte_string_exceeding_data_length_returns_error() {
+        let result = decode(b"10:short");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn roundtrip_zero_integer() {
+        let val = BencodeValue::Int(0);
+        let encoded = encode(&val);
+        assert_eq!(encoded, b"i0e");
+        let decoded = decode(&encoded).unwrap();
+        assert_eq!(decoded, val);
+    }
+
+    #[test]
+    fn roundtrip_large_integer() {
+        let val = BencodeValue::Int(i64::MAX);
+        let encoded = encode(&val);
+        let decoded = decode(&encoded).unwrap();
+        assert_eq!(decoded, val);
+    }
+
+    #[test]
+    fn roundtrip_empty_list() {
+        let val = BencodeValue::List(vec![]);
+        let encoded = encode(&val);
+        assert_eq!(encoded, b"le");
+        let decoded = decode(&encoded).unwrap();
+        assert_eq!(decoded, val);
+    }
+
+    #[test]
+    fn roundtrip_empty_dict() {
+        let val = BencodeValue::Dict(BTreeMap::new());
+        let encoded = encode(&val);
+        assert_eq!(encoded, b"de");
+        let decoded = decode(&encoded).unwrap();
+        assert_eq!(decoded, val);
+    }
+
+    #[test]
+    fn as_int_returns_none_for_non_int() {
+        let val = BencodeValue::Bytes(b"hello".to_vec());
+        assert!(val.as_int().is_none());
+    }
+
+    #[test]
+    fn as_bytes_returns_none_for_non_bytes() {
+        let val = BencodeValue::Int(42);
+        assert!(val.as_bytes().is_none());
+    }
+
+    #[test]
+    fn as_str_returns_none_for_non_utf8() {
+        let val = BencodeValue::Bytes(vec![0xFF, 0xFE]);
+        assert!(val.as_str().is_none());
+    }
+
+    #[test]
+    fn as_str_returns_string_for_valid_utf8() {
+        let val = BencodeValue::Bytes(b"hello".to_vec());
+        assert_eq!(val.as_str(), Some("hello"));
+    }
+
+    #[test]
+    fn as_list_returns_none_for_non_list() {
+        let val = BencodeValue::Int(1);
+        assert!(val.as_list().is_none());
+    }
+
+    #[test]
+    fn as_dict_returns_none_for_non_dict() {
+        let val = BencodeValue::Int(1);
+        assert!(val.as_dict().is_none());
+    }
+
+    #[test]
+    fn roundtrip_binary_bytes() {
+        let val = BencodeValue::Bytes(vec![0x00, 0xFF, 0x80, 0x7F]);
+        let encoded = encode(&val);
+        let decoded = decode(&encoded).unwrap();
+        assert_eq!(decoded, val);
+    }
+
+    #[test]
+    fn deeply_nested_structure_roundtrips() {
+        let inner = BencodeValue::List(vec![BencodeValue::List(vec![BencodeValue::Int(1)])]);
+        let encoded = encode(&inner);
+        let decoded = decode(&encoded).unwrap();
+        assert_eq!(decoded, inner);
+    }
 }

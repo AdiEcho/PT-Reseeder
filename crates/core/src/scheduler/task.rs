@@ -152,3 +152,88 @@ pub(crate) fn next_run_at_for(cron_expression: Option<&str>) -> Result<Option<St
         .map_err(|e| CoreError::Scheduler(SchedulerError::InvalidCron(e.to_string())))?;
     Ok(Some(next.to_rfc3339()))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::{DateTime, Duration, Utc};
+
+    #[test]
+    fn next_run_at_for_none_returns_none() {
+        let result = next_run_at_for(None).unwrap();
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn next_run_at_for_empty_string_returns_none() {
+        let result = next_run_at_for(Some("")).unwrap();
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn next_run_at_for_whitespace_only_returns_none() {
+        let result = next_run_at_for(Some("   ")).unwrap();
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn next_run_at_for_valid_cron_returns_future_time() {
+        let result = next_run_at_for(Some("0 0 * * *")).unwrap();
+        assert!(result.is_some(), "expected Some for valid cron");
+        let time_str = result.unwrap();
+        let parsed = DateTime::parse_from_rfc3339(&time_str)
+            .expect("should be a valid RFC 3339 datetime");
+        assert!(
+            parsed > Utc::now(),
+            "next run time should be in the future"
+        );
+    }
+
+    #[test]
+    fn next_run_at_for_every_minute_returns_within_two_minutes() {
+        let now = Utc::now();
+        let result = next_run_at_for(Some("* * * * *")).unwrap();
+        assert!(result.is_some(), "expected Some for every-minute cron");
+        let time_str = result.unwrap();
+        let parsed = DateTime::parse_from_rfc3339(&time_str)
+            .expect("should be a valid RFC 3339 datetime");
+        let upper_bound = now + Duration::minutes(2);
+        assert!(
+            parsed <= upper_bound,
+            "next run time ({parsed}) should be within 2 minutes of now ({upper_bound})"
+        );
+    }
+
+    #[test]
+    fn next_run_at_for_invalid_cron_returns_error() {
+        let result = next_run_at_for(Some("invalid cron"));
+        assert!(result.is_err(), "expected Err for invalid cron expression");
+    }
+
+    #[test]
+    fn task_create_request_serializes_to_json_and_back() {
+        let request = TaskCreateRequest {
+            name: "test-task".to_string(),
+            task_type: "reseed".to_string(),
+            trigger_type: "cron".to_string(),
+            cron_expression: Some("0 0 * * *".to_string()),
+            downloader_pair_id: Some(42),
+            config_json: Some(r#"{"key":"value"}"#.to_string()),
+            folder_ids: vec![1, 2, 3],
+            site_ids: vec![10, 20],
+        };
+
+        let json = serde_json::to_string(&request).expect("should serialize to JSON");
+        let deserialized: TaskCreateRequest =
+            serde_json::from_str(&json).expect("should deserialize from JSON");
+
+        assert_eq!(deserialized.name, request.name);
+        assert_eq!(deserialized.task_type, request.task_type);
+        assert_eq!(deserialized.trigger_type, request.trigger_type);
+        assert_eq!(deserialized.cron_expression, request.cron_expression);
+        assert_eq!(deserialized.downloader_pair_id, request.downloader_pair_id);
+        assert_eq!(deserialized.config_json, request.config_json);
+        assert_eq!(deserialized.folder_ids, request.folder_ids);
+        assert_eq!(deserialized.site_ids, request.site_ids);
+    }
+}

@@ -279,6 +279,12 @@ a:hover {
     color: var(--text);
 }
 
+.app-topbar__left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
 .app-topbar__user {
     display: flex;
     align-items: center;
@@ -952,17 +958,230 @@ button:disabled {
     border-color: var(--border-strong);
 }
 
+// ── 徽章颜色变体 ────────────────────────────────────────────────────────────
+.badge--yellow {
+    background: rgba(245, 158, 11, 0.15);
+    color: var(--amber);
+}
+
+.badge--green {
+    background: rgba(34, 197, 94, 0.15);
+    color: var(--green);
+}
+
+.badge--red {
+    background: rgba(239, 68, 68, 0.15);
+    color: var(--red);
+}
+
+.badge--gray {
+    background: var(--bg-muted);
+    color: var(--text-muted);
+}
+
+.text-yellow {
+    color: var(--amber);
+    font-weight: 500;
+}
+
+// ── 移动端菜单按钮 ──────────────────────────────────────────────────────────
+.mobile-menu-toggle {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--bg-muted);
+    color: var(--text);
+    font-size: 18px;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+// ── 删除确认弹窗 ────────────────────────────────────────────────────────────
+.confirm-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+}
+
+.confirm-dialog {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px;
+    min-width: 320px;
+    max-width: 420px;
+    box-shadow: var(--shadow-lg);
+}
+
+.confirm-dialog h3 {
+    margin-bottom: 12px;
+}
+
+.confirm-dialog p {
+    color: var(--text-muted);
+    margin-bottom: 20px;
+}
+
+.confirm-dialog .form-actions {
+    margin-top: 0;
+    justify-content: flex-end;
+}
+
 // ── 响应式 ─────────────────────────────────────────────────────────────────
+
+// Tablet
+@media (max-width: 1023px) {
+    .stat-cards {
+        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    }
+    .form-grid {
+        grid-template-columns: 1fr 1fr;
+    }
+    .app-content {
+        padding: 20px;
+    }
+}
+
+// Mobile
 @media (max-width: 768px) {
     :root {
-        --sidebar-w: 64px;
+        --sidebar-w: 0px;
     }
-    .app-sidebar__title,
-    .app-sidebar__section,
-    .app-nav-link span:not(.app-nav-link__icon) {
-        display: none;
+    .app-shell {
+        grid-template-columns: 1fr;
+        grid-template-areas:
+            "topbar"
+            "content";
+    }
+    .app-sidebar {
+        position: fixed;
+        left: -280px;
+        width: 280px;
+        z-index: 50;
+        transition: left 0.25s ease;
+    }
+    .app-sidebar.open {
+        left: 0;
+    }
+    .mobile-menu-toggle {
+        display: flex;
     }
     .app-content {
         padding: 16px;
     }
+    .stat-cards {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    .form-grid {
+        grid-template-columns: 1fr;
+    }
+    .inline-form {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .dashboard-header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    // 表格水平滚动
+    .table-wrap {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+    // 确认弹窗接近全屏
+    .confirm-dialog {
+        min-width: auto;
+        max-width: calc(100vw - 32px);
+        margin: 16px;
+    }
+    .confirm-overlay {
+        padding: 16px;
+    }
+    // 表单行内布局纵向堆叠
+    .form-row {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .form-actions {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .form-actions .btn {
+        width: 100%;
+    }
+    // 操作单元格换行
+    .actions-cell,
+    .action-cell {
+        white-space: normal;
+    }
+    // 按钮组纵向堆叠
+    .btn-group {
+        flex-direction: column;
+    }
+    // 趋势图选择器
+    .trend-selector {
+        width: 100%;
+        justify-content: center;
+    }
+    // 设置值输入行
+    .setting-value {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .setting-value .input {
+        width: 100%;
+    }
+    // section-header 堆叠
+    .section-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 10px;
+    }
+}
+
+// Small mobile
+@media (max-width: 480px) {
+    .stat-cards {
+        grid-template-columns: 1fr;
+    }
+    .login-card {
+        margin: 16px;
+        padding: 32px 24px;
+    }
+    .btn-group {
+        flex-direction: column;
+    }
+    h1 {
+        font-size: 18px;
+    }
+    .stat-card__value {
+        font-size: 20px;
+    }
+    .app-topbar {
+        padding: 0 12px;
+    }
+    .app-topbar__user span {
+        display: none;
+    }
+}
+
+// Sidebar backdrop for mobile
+.sidebar-backdrop {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.4);
+    z-index: 49;
+}
+
+.sidebar-backdrop.visible {
+    display: block;
 }

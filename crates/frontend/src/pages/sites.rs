@@ -3,6 +3,7 @@ use leptos::prelude::*;
 #[component]
 pub fn SitesPage() -> impl IntoView {
     let (show_form, set_show_form) = signal(false);
+    let (confirm_delete_id, set_confirm_delete_id) = signal(None::<i64>);
 
     // Form field signals
     let (name, set_name) = signal(String::new());
@@ -304,14 +305,14 @@ pub fn SitesPage() -> impl IntoView {
                                                                         </td>
                                                                         <td class="actions-cell">
                                                                             <button
-                                                                                class="btn btn-sm btn-outline"
+                                                                                class="btn btn--sm btn--outline"
                                                                                 on:click=move |_| { probe_action.dispatch(site_id); }
                                                                             >
                                                                                 "连通测试"
                                                                             </button>
                                                                             <button
-                                                                                class="btn btn-sm btn-danger"
-                                                                                on:click=move |_| { delete_action.dispatch(site_id); }
+                                                                                class="btn btn--sm btn--danger"
+                                                                                on:click=move |_| { set_confirm_delete_id.set(Some(site_id)); }
                                                                             >
                                                                                 "删除"
                                                                             </button>
@@ -337,6 +338,37 @@ pub fn SitesPage() -> impl IntoView {
                         })
                 }}
             </Suspense>
+
+            // Delete confirmation dialog
+            {move || {
+                confirm_delete_id.get().map(|del_id| {
+                    view! {
+                        <div class="confirm-overlay">
+                            <div class="confirm-dialog">
+                                <h3>"确认删除"</h3>
+                                <p>"确定要删除该站点吗？此操作不可撤销。"</p>
+                                <div class="form-actions">
+                                    <button
+                                        class="btn btn--outline"
+                                        on:click=move |_| set_confirm_delete_id.set(None)
+                                    >
+                                        "取消"
+                                    </button>
+                                    <button
+                                        class="btn btn--danger"
+                                        on:click=move |_| {
+                                            delete_action.dispatch(del_id);
+                                            set_confirm_delete_id.set(None);
+                                        }
+                                    >
+                                        "确认删除"
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                })
+            }}
         </div>
     }
 }

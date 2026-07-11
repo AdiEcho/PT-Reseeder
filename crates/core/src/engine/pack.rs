@@ -273,4 +273,197 @@ mod tests {
         let meta = make_meta(files, 11_000_000_000);
         assert!(!is_pack(&meta)); // Only 1 top-level dir
     }
+
+    #[test]
+    fn test_is_pack_boundary_exactly_10gb_two_dirs() {
+        let files = vec![
+            TorrentFile {
+                path: vec!["DirA".into(), "file1.mkv".into()],
+                length: 5 * 1024 * 1024 * 1024,
+            },
+            TorrentFile {
+                path: vec!["DirB".into(), "file2.mkv".into()],
+                length: 5 * 1024 * 1024 * 1024,
+            },
+        ];
+        let meta = make_meta(files, 10 * 1024 * 1024 * 1024);
+        assert!(is_pack(&meta));
+    }
+
+    #[test]
+    fn test_is_pack_false_no_files() {
+        let meta = make_meta(vec![], 0);
+        assert!(!is_pack(&meta));
+    }
+
+    #[test]
+    fn test_is_pack_false_flat_files() {
+        // Files with single-component paths (no subdirectory structure)
+        let files = vec![
+            TorrentFile {
+                path: vec!["file1.mkv".into()],
+                length: 6_000_000_000,
+            },
+            TorrentFile {
+                path: vec!["file2.mkv".into()],
+                length: 6_000_000_000,
+            },
+        ];
+        let meta = make_meta(files, 12_000_000_000);
+        assert!(!is_pack(&meta));
+    }
+
+    #[test]
+    fn test_is_pack_true_three_dirs() {
+        let files = vec![
+            TorrentFile {
+                path: vec!["Movie.A".into(), "movie.mkv".into()],
+                length: 4_000_000_000,
+            },
+            TorrentFile {
+                path: vec!["Movie.B".into(), "movie.mkv".into()],
+                length: 4_000_000_000,
+            },
+            TorrentFile {
+                path: vec!["Movie.C".into(), "movie.mkv".into()],
+                length: 4_000_000_000,
+            },
+        ];
+        let meta = make_meta(files, 12_000_000_000);
+        assert!(is_pack(&meta));
+    }
+
+    #[test]
+    fn test_extract_components_groups_by_top_dir() {
+        let files = vec![
+            TorrentFile {
+                path: vec!["Album1".into(), "track1.flac".into()],
+                length: 30_000_000,
+            },
+            TorrentFile {
+                path: vec!["Album1".into(), "track2.flac".into()],
+                length: 25_000_000,
+            },
+            TorrentFile {
+                path: vec!["Album2".into(), "track1.flac".into()],
+                length: 40_000_000,
+            },
+        ];
+        let meta = make_meta(files, 95_000_000);
+        let components = extract_components(&meta);
+
+        assert_eq!(components.len(), 2);
+
+        // Sort by name for deterministic assertions
+        let mut components = components;
+        components.sort_by(|a, b| a.name.cmp(&b.name));
+
+        assert_eq!(components[0].name, "Album1");
+        assert_eq!(components[0].size, 55_000_000);
+        assert_eq!(components[0].files.len(), 2);
+
+        assert_eq!(components[1].name, "Album2");
+        assert_eq!(components[1].size, 40_000_000);
+        assert_eq!(components[1].files.len(), 1);
+    }
+
+    #[test]
+    fn test_extract_components_empty_files() {
+        let meta = make_meta(vec![], 0);
+        let components = extract_components(&meta);
+        assert!(components.is_empty());
+    }
+
+    #[test]
+    fn test_normalize_path_lowercases_and_joins() {
+        let parts: Vec<String> = vec!["SubDir".into(), "MyFile.MKV".into()];
+        assert_eq!(normalize_path(&parts), "subdir/myfile.mkv");
+
+        let single: Vec<String> = vec!["HELLO.TXT".into()];
+        assert_eq!(normalize_path(&single), "hello.txt");
+
+        let empty: Vec<String> = vec![];
+        assert_eq!(normalize_path(&empty), "");
+    }
+
+    #[test]
+    fn test_component_overlaps_matching_size_and_files() {
+        let component = PackComponent {
+            name: "Album1".into(),
+            size: 100_000_000,
+            files: vec![
+                ("track1.flac".into(), 50_000_000),
+                ("track2.flac".into(), 50_000_000),
+            ],
+        };
+        // Candidate torrent whose files match the component exactly
+        let candidate = make_meta(
+            vec![
+                TorrentFile {
+                    path: vec!["Album1".into(), "track1.flac".into()],
+                    length: 50_000_000,
+                },
+                TorrentFile {
+                    path: vec!["Album1".into(), "track2.flac".into()],
+                    length: 50_000_000,
+                },
+            ],
+            100_000_000,
+        );
+        assert!(component_overlaps(&component, &candidate));
+    }
+
+    #[test]
+    fn test_component_overlaps_rejects_size_mismatch() {
+        let component = PackComponent {
+            name: "Album1".into(),
+            size: 100_000_000,
+            files: vec![
+                ("track1.flac".into(), 50_000_000),
+                ("track2.flac".into(), 50_000_000),
+            ],
+        };
+        // Candidate with vastly different total size
+        let candidate = make_meta(
+            vec![
+                TorrentFile {
+                    path: vec!["Album1".into(), "track1.flac".into()],
+                    length: 50_000_000,
+                },
+                TorrentFile {
+                    path: vec!["Album1".into(), "track2.flac".into()],
+                    length: 50_000_000,
+                },
+            ],
+            500_000_000, // way larger than component size
+        );
+        assert!(!component_overlaps(&component, &candidate));
+    }
+
+    #[test]
+    fn test_component_overlaps_rejects_no_file_match() {
+        let component = PackComponent {
+            name: "Album1".into(),
+            size: 100_000_000,
+            files: vec![
+                ("track1.flac".into(), 50_000_000),
+                ("track2.flac".into(), 50_000_000),
+            ],
+        };
+        // Candidate with same size but completely different files
+        let candidate = make_meta(
+            vec![
+                TorrentFile {
+                    path: vec!["Album1".into(), "other1.flac".into()],
+                    length: 50_000_000,
+                },
+                TorrentFile {
+                    path: vec!["Album1".into(), "other2.flac".into()],
+                    length: 50_000_000,
+                },
+            ],
+            100_000_000,
+        );
+        assert!(!component_overlaps(&component, &candidate));
+    }
 }

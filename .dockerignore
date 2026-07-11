@@ -1,0 +1,13 @@
+target/
+.git/
+.omc/
+.claude/
+.agents/
+.idea/
+research/
+node_modules/
+dist/
+pt-reseeder.db*
+skills-lock.json
+*.md
+!README.md

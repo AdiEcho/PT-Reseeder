@@ -962,3 +962,474 @@ impl Repository {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::init_db;
+
+    async fn setup_repo() -> Repository {
+        let pool = init_db("sqlite::memory:").await.unwrap();
+        Repository::new(pool)
+    }
+
+    #[tokio::test]
+    async fn create_and_find_user_by_username() {
+        let repo = setup_repo().await;
+        let id = repo
+            .create_user("alice", "hash123", b"salt", b"wdek", b"nonce")
+            .await
+            .unwrap();
+        assert!(id > 0);
+
+        let user = repo.find_user_by_username("alice").await.unwrap().unwrap();
+        assert_eq!(user.username, "alice");
+        assert_eq!(user.password_hash, "hash123");
+        assert_eq!(user.kdf_salt, b"salt");
+    }
+
+    #[tokio::test]
+    async fn find_user_by_username_returns_none_when_missing() {
+        let repo = setup_repo().await;
+        let user = repo.find_user_by_username("nobody").await.unwrap();
+        assert!(user.is_none());
+    }
+
+    #[tokio::test]
+    async fn update_last_login_sets_timestamp() {
+        let repo = setup_repo().await;
+        let id = repo
+            .create_user("bob", "hash", b"s", b"w", b"n")
+            .await
+            .unwrap();
+        repo.update_last_login(id).await.unwrap();
+        let user = repo.find_user_by_username("bob").await.unwrap().unwrap();
+        assert!(user.last_login_at.is_some());
+    }
+
+    #[tokio::test]
+    async fn update_password_crypto_changes_fields() {
+        let repo = setup_repo().await;
+        let id = repo
+            .create_user("carol", "old_hash", b"old_salt", b"old_dek", b"old_nonce")
+            .await
+            .unwrap();
+        repo.update_password_crypto(id, "new_hash", b"new_salt", b"new_dek", b"new_nonce")
+            .await
+            .unwrap();
+        let user = repo.find_user_by_username("carol").await.unwrap().unwrap();
+        assert_eq!(user.password_hash, "new_hash");
+        assert_eq!(user.kdf_salt, b"new_salt");
+    }
+
+    #[tokio::test]
+    async fn create_and_find_session() {
+        let repo = setup_repo().await;
+        let uid = repo
+            .create_user("u", "h", b"s", b"w", b"n")
+            .await
+            .unwrap();
+        let token_hash = b"session_token_hash";
+        let sid = repo
+            .create_session(uid, token_hash, "2099-01-01 00:00:00")
+            .await
+            .unwrap();
+        assert!(sid > 0);
+
+        let session = repo
+            .find_session_by_hash(token_hash)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(session.user_id, uid);
+    }
+
+    #[tokio::test]
+    async fn delete_session_removes_row() {
+        let repo = setup_repo().await;
+        let uid = repo
+            .create_user("u2", "h", b"s", b"w", b"n")
+            .await
+            .unwrap();
+        let sid = repo
+            .create_session(uid, b"tok", "2099-01-01 00:00:00")
+            .await
+            .unwrap();
+        repo.delete_session(sid).await.unwrap();
+        let found = repo.find_session_by_hash(b"tok").await.unwrap();
+        assert!(found.is_none());
+    }
+
+    #[tokio::test]
+    async fn set_and_get_config() {
+        let repo = setup_repo().await;
+        repo.set_config("theme", "dark").await.unwrap();
+        let val = repo.get_config("theme").await.unwrap().unwrap();
+        assert_eq!(val, "dark");
+    }
+
+    #[tokio::test]
+    async fn set_config_upserts_existing_key() {
+        let repo = setup_repo().await;
+        repo.set_config("k", "v1").await.unwrap();
+        repo.set_config("k", "v2").await.unwrap();
+        let val = repo.get_config("k").await.unwrap().unwrap();
+        assert_eq!(val, "v2");
+    }
+
+    #[tokio::test]
+    async fn get_config_returns_none_for_missing_key() {
+        let repo = setup_repo().await;
+        let val = repo.get_config("nonexistent").await.unwrap();
+        assert!(val.is_none());
+    }
+
+    #[tokio::test]
+    async fn create_and_get_site() {
+        let repo = setup_repo().await;
+        let id = repo
+            .create_site("HDSky", "https://hdsky.me", Some("https://hdsky.me/api"), "nexusphp", "cookie")
+            .await
+            .unwrap();
+        let site = repo.get_site(id).await.unwrap().unwrap();
+        assert_eq!(site.name, "HDSky");
+        assert_eq!(site.url, "https://hdsky.me");
+        assert_eq!(site.api_url, Some("https://hdsky.me/api".to_string()));
+        assert_eq!(site.adapter_type, "nexusphp");
+    }
+
+    #[tokio::test]
+    async fn list_sites_returns_all_sites() {
+        let repo = setup_repo().await;
+        repo.create_site("Site1", "http://1", None, "np", "cookie")
+            .await
+            .unwrap();
+        repo.create_site("Site2", "http://2", None, "np", "cookie")
+            .await
+            .unwrap();
+        let sites = repo.list_sites().await.unwrap();
+        assert_eq!(sites.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn delete_site_removes_row() {
+        let repo = setup_repo().await;
+        let id = repo
+            .create_site("ToDelete", "http://x", None, "np", "cookie")
+            .await
+            .unwrap();
+        repo.delete_site(id).await.unwrap();
+        let site = repo.get_site(id).await.unwrap();
+        assert!(site.is_none());
+    }
+
+    #[tokio::test]
+    async fn create_and_get_downloader() {
+        let repo = setup_repo().await;
+        let row = DownloaderRow {
+            id: 0,
+            name: "qb1".to_string(),
+            dl_type: "qbittorrent".to_string(),
+            host: "localhost".to_string(),
+            port: 8080,
+            encrypted_username: None,
+            username_nonce: None,
+            encrypted_password: None,
+            password_nonce: None,
+            role: "both".to_string(),
+            torrent_dir: None,
+            default_save_path: Some("/downloads".to_string()),
+            skip_hash_check: Some(true),
+            auto_start: Some(true),
+            tag: Some("PT-Reseeder".to_string()),
+            enabled: true,
+            created_at: String::new(),
+        };
+        let id = repo.create_downloader(&row).await.unwrap();
+        let fetched = repo.get_downloader(id).await.unwrap().unwrap();
+        assert_eq!(fetched.name, "qb1");
+        assert_eq!(fetched.host, "localhost");
+        assert_eq!(fetched.port, 8080);
+    }
+
+    #[tokio::test]
+    async fn list_downloaders_returns_all() {
+        let repo = setup_repo().await;
+        let row = DownloaderRow {
+            id: 0,
+            name: "dl".to_string(),
+            dl_type: "qbittorrent".to_string(),
+            host: "h".to_string(),
+            port: 1,
+            encrypted_username: None,
+            username_nonce: None,
+            encrypted_password: None,
+            password_nonce: None,
+            role: "both".to_string(),
+            torrent_dir: None,
+            default_save_path: None,
+            skip_hash_check: None,
+            auto_start: None,
+            tag: None,
+            enabled: true,
+            created_at: String::new(),
+        };
+        repo.create_downloader(&row).await.unwrap();
+        let list = repo.list_downloaders().await.unwrap();
+        assert_eq!(list.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn delete_downloader_removes_row() {
+        let repo = setup_repo().await;
+        let row = DownloaderRow {
+            id: 0,
+            name: "del".to_string(),
+            dl_type: "transmission".to_string(),
+            host: "h".to_string(),
+            port: 9091,
+            encrypted_username: None,
+            username_nonce: None,
+            encrypted_password: None,
+            password_nonce: None,
+            role: "source".to_string(),
+            torrent_dir: None,
+            default_save_path: None,
+            skip_hash_check: None,
+            auto_start: None,
+            tag: None,
+            enabled: true,
+            created_at: String::new(),
+        };
+        let id = repo.create_downloader(&row).await.unwrap();
+        repo.delete_downloader(id).await.unwrap();
+        let fetched = repo.get_downloader(id).await.unwrap();
+        assert!(fetched.is_none());
+    }
+
+    #[tokio::test]
+    async fn upsert_and_find_pieces_cache() {
+        let repo = setup_repo().await;
+        let entry = PiecesCacheEntry {
+            id: 0,
+            pieces_hash: "phash1".to_string(),
+            info_hash: "ihash1".to_string(),
+            torrent_name: Some("torrent.mkv".to_string()),
+            file_path: Some("/path/to/file".to_string()),
+            total_size: Some(1024),
+            announce_url: Some("http://tracker".to_string()),
+            cached_at: String::new(),
+        };
+        repo.upsert_pieces_cache(&entry).await.unwrap();
+
+        let found = repo.find_by_pieces_hash("phash1").await.unwrap();
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].info_hash, "ihash1");
+
+        let by_info = repo.find_by_info_hash("ihash1").await.unwrap().unwrap();
+        assert_eq!(by_info.pieces_hash, "phash1");
+    }
+
+    #[tokio::test]
+    async fn upsert_pieces_cache_updates_on_conflict() {
+        let repo = setup_repo().await;
+        let entry1 = PiecesCacheEntry {
+            id: 0,
+            pieces_hash: "ph_old".to_string(),
+            info_hash: "ih_same".to_string(),
+            torrent_name: Some("old.mkv".to_string()),
+            file_path: None,
+            total_size: Some(100),
+            announce_url: None,
+            cached_at: String::new(),
+        };
+        repo.upsert_pieces_cache(&entry1).await.unwrap();
+
+        let entry2 = PiecesCacheEntry {
+            id: 0,
+            pieces_hash: "ph_new".to_string(),
+            info_hash: "ih_same".to_string(),
+            torrent_name: Some("new.mkv".to_string()),
+            file_path: None,
+            total_size: Some(200),
+            announce_url: None,
+            cached_at: String::new(),
+        };
+        repo.upsert_pieces_cache(&entry2).await.unwrap();
+
+        let found = repo.find_by_info_hash("ih_same").await.unwrap().unwrap();
+        assert_eq!(found.pieces_hash, "ph_new");
+        assert_eq!(found.torrent_name, Some("new.mkv".to_string()));
+    }
+
+    #[tokio::test]
+    async fn insert_and_find_reseed_history() {
+        let repo = setup_repo().await;
+        let site_id = repo
+            .create_site("S", "http://s", None, "np", "cookie")
+            .await
+            .unwrap();
+        repo.insert_reseed_history("ph", site_id, Some(42), Some("ih"), "success", None)
+            .await
+            .unwrap();
+        let history = repo.find_reseed_history("ph", site_id).await.unwrap();
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0].status, "success");
+        assert_eq!(history[0].torrent_id, Some(42));
+    }
+
+    #[tokio::test]
+    async fn create_and_list_tasks() {
+        let repo = setup_repo().await;
+        repo.create_task("task1", "reseed", "cron", Some("0 * * * *"), None, None)
+            .await
+            .unwrap();
+        let tasks = repo.list_tasks().await.unwrap();
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].name, "task1");
+        assert_eq!(tasks[0].status, "idle");
+    }
+
+    #[tokio::test]
+    async fn try_mark_task_running_succeeds_when_idle() {
+        let repo = setup_repo().await;
+        let id = repo
+            .create_task("t", "reseed", "manual", None, None, None)
+            .await
+            .unwrap();
+        let marked = repo.try_mark_task_running(id).await.unwrap();
+        assert!(marked);
+
+        // Second attempt should fail (already running)
+        let marked2 = repo.try_mark_task_running(id).await.unwrap();
+        assert!(!marked2);
+    }
+
+    #[tokio::test]
+    async fn delete_task_removes_row() {
+        let repo = setup_repo().await;
+        let id = repo
+            .create_task("del", "reseed", "manual", None, None, None)
+            .await
+            .unwrap();
+        repo.delete_task(id).await.unwrap();
+        let fetched = repo.get_task(id).await.unwrap();
+        assert!(fetched.is_none());
+    }
+
+    #[tokio::test]
+    async fn insert_and_get_task_logs() {
+        let repo = setup_repo().await;
+        let task_id = repo
+            .create_task("logged", "reseed", "manual", None, None, None)
+            .await
+            .unwrap();
+        repo.insert_task_log(task_id, "success", 10, 8, 2, Some(500), Some("log text"))
+            .await
+            .unwrap();
+
+        let logs = repo.get_task_logs(task_id, 10).await.unwrap();
+        assert_eq!(logs.len(), 1);
+        assert_eq!(logs[0].matched_count, Some(10));
+        assert_eq!(logs[0].succeeded_count, Some(8));
+        assert_eq!(logs[0].failed_count, Some(2));
+    }
+
+    #[tokio::test]
+    async fn create_and_list_folders() {
+        let repo = setup_repo().await;
+        repo.create_folder("/data/torrents", "local", None)
+            .await
+            .unwrap();
+        let folders = repo.list_folders().await.unwrap();
+        assert_eq!(folders.len(), 1);
+        assert_eq!(folders[0].path, "/data/torrents");
+        assert_eq!(folders[0].scan_mode, "local");
+    }
+
+    #[tokio::test]
+    async fn delete_folder_removes_row() {
+        let repo = setup_repo().await;
+        let id = repo
+            .create_folder("/tmp/fold", "local", None)
+            .await
+            .unwrap();
+        repo.delete_folder(id).await.unwrap();
+        let fetched = repo.get_folder(id).await.unwrap();
+        assert!(fetched.is_none());
+    }
+
+    #[tokio::test]
+    async fn set_and_get_task_folders() {
+        let repo = setup_repo().await;
+        let tid = repo
+            .create_task("tf", "reseed", "manual", None, None, None)
+            .await
+            .unwrap();
+        let f1 = repo.create_folder("/a", "local", None).await.unwrap();
+        let f2 = repo.create_folder("/b", "local", None).await.unwrap();
+
+        repo.set_task_folders(tid, &[f1, f2]).await.unwrap();
+        let mut folders = repo.get_task_folders(tid).await.unwrap();
+        folders.sort();
+        assert_eq!(folders, vec![f1, f2]);
+    }
+
+    #[tokio::test]
+    async fn set_and_get_task_sites() {
+        let repo = setup_repo().await;
+        let tid = repo
+            .create_task("ts", "reseed", "manual", None, None, None)
+            .await
+            .unwrap();
+        let s1 = repo
+            .create_site("S1", "http://1", None, "np", "cookie")
+            .await
+            .unwrap();
+        let s2 = repo
+            .create_site("S2", "http://2", None, "np", "cookie")
+            .await
+            .unwrap();
+
+        repo.set_task_sites(tid, &[s1, s2]).await.unwrap();
+        let mut sites = repo.get_task_sites(tid).await.unwrap();
+        sites.sort();
+        assert_eq!(sites, vec![s1, s2]);
+    }
+
+    #[tokio::test]
+    async fn create_downloader_pair_and_list() {
+        let repo = setup_repo().await;
+        let make_dl = |name: &str| DownloaderRow {
+            id: 0,
+            name: name.to_string(),
+            dl_type: "qbittorrent".to_string(),
+            host: "h".to_string(),
+            port: 1,
+            encrypted_username: None,
+            username_nonce: None,
+            encrypted_password: None,
+            password_nonce: None,
+            role: "both".to_string(),
+            torrent_dir: None,
+            default_save_path: None,
+            skip_hash_check: None,
+            auto_start: None,
+            tag: None,
+            enabled: true,
+            created_at: String::new(),
+        };
+        let src = repo.create_downloader(&make_dl("src")).await.unwrap();
+        let dst = repo.create_downloader(&make_dl("dst")).await.unwrap();
+        let pair_id = repo
+            .create_downloader_pair("pair1", src, dst)
+            .await
+            .unwrap();
+        assert!(pair_id > 0);
+
+        let pairs = repo.list_downloader_pairs().await.unwrap();
+        assert_eq!(pairs.len(), 1);
+        assert_eq!(pairs[0].source_id, src);
+        assert_eq!(pairs[0].destination_id, dst);
+    }
+}

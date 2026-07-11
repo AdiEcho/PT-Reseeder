@@ -383,3 +383,125 @@ impl Downloader for TransmissionClient {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rpc_url_prepends_http_when_no_scheme() {
+        let client = TransmissionClient::new("192.168.1.1", 9091, None, None);
+        assert_eq!(client.rpc_url(), "http://192.168.1.1:9091/transmission/rpc");
+    }
+
+    #[test]
+    fn rpc_url_preserves_http_scheme() {
+        let client = TransmissionClient::new("http://myhost", 9091, None, None);
+        assert_eq!(client.rpc_url(), "http://myhost:9091/transmission/rpc");
+    }
+
+    #[test]
+    fn rpc_url_preserves_https_scheme() {
+        let client = TransmissionClient::new("https://secure.host", 443, None, None);
+        assert_eq!(
+            client.rpc_url(),
+            "https://secure.host:443/transmission/rpc"
+        );
+    }
+
+    #[test]
+    fn new_client_starts_disconnected() {
+        let client = TransmissionClient::new("host", 9091, Some("user"), Some("pass"));
+        assert!(!client.connected);
+    }
+
+    #[test]
+    fn new_client_stores_credentials() {
+        let client = TransmissionClient::new("h", 9091, Some("u"), Some("p"));
+        assert_eq!(client.username, Some("u".to_string()));
+        assert_eq!(client.password, Some("p".to_string()));
+    }
+
+    #[test]
+    fn new_client_without_credentials() {
+        let client = TransmissionClient::new("h", 9091, None, None);
+        assert!(client.username.is_none());
+        assert!(client.password.is_none());
+    }
+
+    #[test]
+    fn tr_torrent_info_status_string_maps_correctly() {
+        let cases = vec![
+            (0, "stopped"),
+            (1, "check_pending"),
+            (2, "checking"),
+            (3, "download_pending"),
+            (4, "downloading"),
+            (5, "seed_pending"),
+            (6, "seeding"),
+            (7, "unknown"),
+            (99, "unknown"),
+        ];
+        for (status, expected) in cases {
+            let info = TrTorrentInfo {
+                hash_string: String::new(),
+                name: String::new(),
+                status,
+                total_size: 0,
+                percent_done: 0.0,
+                download_dir: String::new(),
+            };
+            assert_eq!(info.status_string(), expected, "status {} should map to {}", status, expected);
+        }
+    }
+
+    #[test]
+    fn tr_torrent_info_converts_to_torrent_info() {
+        let tr = TrTorrentInfo {
+            hash_string: "abc123".to_string(),
+            name: "test.mkv".to_string(),
+            status: 6,
+            total_size: 2048,
+            percent_done: 1.0,
+            download_dir: "/downloads".to_string(),
+        };
+        let info: TorrentInfo = tr.into();
+        assert_eq!(info.info_hash, "abc123");
+        assert_eq!(info.name, "test.mkv");
+        assert_eq!(info.state, "seeding");
+        assert_eq!(info.total_size, 2048);
+        assert_eq!(info.progress, 1.0);
+        assert_eq!(info.save_path, "/downloads");
+        assert!(info.added_on.is_none()); // Transmission doesn't provide this
+    }
+
+    #[test]
+    fn tr_torrent_info_clamps_negative_size_to_zero() {
+        let tr = TrTorrentInfo {
+            hash_string: "h".to_string(),
+            name: "n".to_string(),
+            status: 0,
+            total_size: -500,
+            percent_done: 0.0,
+            download_dir: "/d".to_string(),
+        };
+        let info: TorrentInfo = tr.into();
+        assert_eq!(info.total_size, 0);
+    }
+
+    #[test]
+    fn base64_encode_empty_input() {
+        assert_eq!(base64_encode(b""), "");
+    }
+
+    #[test]
+    fn base64_encode_standard_vectors() {
+        // Standard base64 test vectors
+        assert_eq!(base64_encode(b"f"), "Zg==");
+        assert_eq!(base64_encode(b"fo"), "Zm8=");
+        assert_eq!(base64_encode(b"foo"), "Zm9v");
+        assert_eq!(base64_encode(b"foob"), "Zm9vYg==");
+        assert_eq!(base64_encode(b"fooba"), "Zm9vYmE=");
+        assert_eq!(base64_encode(b"foobar"), "Zm9vYmFy");
+    }
+}

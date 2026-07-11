@@ -255,3 +255,116 @@ pub async fn probe_site(
 
     result
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn probe_status_display_returns_lowercase() {
+        assert_eq!(ProbeStatus::Ok.to_string(), "ok");
+        assert_eq!(ProbeStatus::Partial.to_string(), "partial");
+        assert_eq!(ProbeStatus::Failed.to_string(), "failed");
+        assert_eq!(ProbeStatus::Unknown.to_string(), "unknown");
+    }
+
+    #[test]
+    fn probe_status_from_str_parses_valid_strings() {
+        assert_eq!("ok".parse::<ProbeStatus>().unwrap(), ProbeStatus::Ok);
+        assert_eq!(
+            "partial".parse::<ProbeStatus>().unwrap(),
+            ProbeStatus::Partial
+        );
+        assert_eq!(
+            "failed".parse::<ProbeStatus>().unwrap(),
+            ProbeStatus::Failed
+        );
+        assert_eq!(
+            "unknown".parse::<ProbeStatus>().unwrap(),
+            ProbeStatus::Unknown
+        );
+    }
+
+    #[test]
+    fn probe_status_from_str_returns_err_for_unknown() {
+        assert!("invalid".parse::<ProbeStatus>().is_err());
+        assert!("OK".parse::<ProbeStatus>().is_err());
+        assert!("".parse::<ProbeStatus>().is_err());
+    }
+
+    fn make_probe_result(status: ProbeStatus) -> ProbeResult {
+        ProbeResult {
+            overall_status: status,
+            api_reachable: None,
+            user_info_fields: Vec::new(),
+            passkey_available: None,
+        }
+    }
+
+    #[test]
+    fn probe_result_status_str_matches_display() {
+        let cases = vec![
+            (ProbeStatus::Ok, "ok"),
+            (ProbeStatus::Partial, "partial"),
+            (ProbeStatus::Failed, "failed"),
+            (ProbeStatus::Unknown, "unknown"),
+        ];
+        for (status, expected) in cases {
+            let result = make_probe_result(status);
+            assert_eq!(result.status_str(), expected);
+        }
+    }
+
+    #[test]
+    fn probe_result_to_json_returns_valid_json() {
+        let result = make_probe_result(ProbeStatus::Ok);
+        let json = result.to_json();
+        let parsed: serde_json::Value = serde_json::from_str(&json).expect("should be valid JSON");
+        assert_eq!(parsed["overall_status"], "Ok");
+    }
+
+    #[test]
+    fn format_bytes_preview_shows_bytes_for_small_values() {
+        assert_eq!(format_bytes_preview(0), "0 B");
+        assert_eq!(format_bytes_preview(500), "500 B");
+        assert_eq!(format_bytes_preview(1023), "1023 B");
+    }
+
+    #[test]
+    fn format_bytes_preview_shows_kb() {
+        assert_eq!(format_bytes_preview(1024), "1.00 KB");
+        assert_eq!(format_bytes_preview(2048), "2.00 KB");
+    }
+
+    #[test]
+    fn format_bytes_preview_shows_mb() {
+        assert_eq!(format_bytes_preview(1_048_576), "1.00 MB");
+    }
+
+    #[test]
+    fn format_bytes_preview_shows_gb() {
+        assert_eq!(format_bytes_preview(1_073_741_824), "1.00 GB");
+    }
+
+    #[test]
+    fn format_bytes_preview_shows_tb() {
+        assert_eq!(format_bytes_preview(1_099_511_627_776), "1.00 TB");
+    }
+
+    #[test]
+    fn field_probe_result_serializes_to_json() {
+        let field = FieldProbeResult {
+            field_name: "uploaded".to_string(),
+            success: true,
+            value_preview: Some("1.00 GB".to_string()),
+            error: None,
+        };
+        let json = serde_json::to_string(&field).expect("serialize should succeed");
+        let deserialized: FieldProbeResult =
+            serde_json::from_str(&json).expect("deserialize should succeed");
+        assert_eq!(deserialized.field_name, "uploaded");
+        assert!(deserialized.success);
+        assert_eq!(deserialized.value_preview.as_deref(), Some("1.00 GB"));
+        assert!(deserialized.error.is_none());
+    }
+}

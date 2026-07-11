@@ -283,3 +283,66 @@ impl Downloader for QBittorrentClient {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn base_url_prepends_http_when_no_scheme() {
+        let client = QBittorrentClient::new("192.168.1.1", 8080, "admin", "pw");
+        assert_eq!(client.base_url(), "http://192.168.1.1:8080");
+    }
+
+    #[test]
+    fn base_url_preserves_http_scheme() {
+        let client = QBittorrentClient::new("http://myhost", 8080, "admin", "pw");
+        assert_eq!(client.base_url(), "http://myhost:8080");
+    }
+
+    #[test]
+    fn base_url_preserves_https_scheme() {
+        let client = QBittorrentClient::new("https://secure.host", 443, "admin", "pw");
+        assert_eq!(client.base_url(), "https://secure.host:443");
+    }
+
+    #[test]
+    fn new_client_starts_disconnected() {
+        let client = QBittorrentClient::new("host", 8080, "u", "p");
+        assert!(!client.connected);
+    }
+
+    #[test]
+    fn qb_torrent_info_converts_to_torrent_info() {
+        let qb = QBTorrentInfo {
+            hash: "abc123".to_string(),
+            name: "test.mkv".to_string(),
+            save_path: "/downloads".to_string(),
+            progress: 0.5,
+            state: "downloading".to_string(),
+            total_size: 1024,
+            added_on: Some(1700000000),
+        };
+        let info: TorrentInfo = qb.into();
+        assert_eq!(info.info_hash, "abc123");
+        assert_eq!(info.name, "test.mkv");
+        assert_eq!(info.save_path, "/downloads");
+        assert_eq!(info.progress, 0.5);
+        assert_eq!(info.total_size, 1024);
+    }
+
+    #[test]
+    fn qb_torrent_info_clamps_negative_size_to_zero() {
+        let qb = QBTorrentInfo {
+            hash: "h".to_string(),
+            name: "n".to_string(),
+            save_path: "/p".to_string(),
+            progress: 0.0,
+            state: "s".to_string(),
+            total_size: -100,
+            added_on: None,
+        };
+        let info: TorrentInfo = qb.into();
+        assert_eq!(info.total_size, 0);
+    }
+}

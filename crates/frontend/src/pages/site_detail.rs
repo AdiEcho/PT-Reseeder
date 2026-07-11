@@ -62,6 +62,9 @@ pub fn SiteDetailPage() -> impl IntoView {
         async move { crate::server_fns::probe_site(id).await }
     });
 
+    let refresh_pending = refresh_action.pending();
+    let probe_pending = probe_action.pending();
+
     // Refetch detail after refresh or probe
     Effect::new(move |_| {
         if refresh_action.value().get().is_some() {
@@ -95,6 +98,17 @@ pub fn SiteDetailPage() -> impl IntoView {
                     })
             }}
             {move || {
+                refresh_action
+                    .value()
+                    .get()
+                    .and_then(|r| r.ok())
+                    .map(|_| {
+                        view! {
+                            <div class="form-alert form-alert--success">"统计数据已刷新"</div>
+                        }
+                    })
+            }}
+            {move || {
                 probe_action
                     .value()
                     .get()
@@ -102,6 +116,17 @@ pub fn SiteDetailPage() -> impl IntoView {
                     .map(|e| {
                         view! {
                             <p class="error">{format!("连通测试失败：{e}")}</p>
+                        }
+                    })
+            }}
+            {move || {
+                probe_action
+                    .value()
+                    .get()
+                    .and_then(|r| r.ok())
+                    .map(|_| {
+                        view! {
+                            <div class="form-alert form-alert--success">"连通测试完成"</div>
                         }
                     })
             }}
@@ -162,15 +187,17 @@ pub fn SiteDetailPage() -> impl IntoView {
                                         <div class="form-actions">
                                             <button
                                                 class="btn btn-primary"
+                                                disabled=move || refresh_pending.get()
                                                 on:click=move |_| { refresh_action.dispatch(()); }
                                             >
-                                                "刷新统计"
+                                                {move || if refresh_pending.get() { "刷新中..." } else { "刷新统计" }}
                                             </button>
                                             <button
                                                 class="btn btn-outline"
+                                                disabled=move || probe_pending.get()
                                                 on:click=move |_| { probe_action.dispatch(()); }
                                             >
-                                                "重新检测"
+                                                {move || if probe_pending.get() { "检测中..." } else { "重新检测" }}
                                             </button>
                                         </div>
 

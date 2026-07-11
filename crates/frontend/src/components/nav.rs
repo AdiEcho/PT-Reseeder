@@ -7,6 +7,38 @@ use leptos_router::{
     hooks::use_navigate,
 };
 
+#[cfg(target_arch = "wasm32")]
+fn toggle_sidebar() {
+    let Some(document) = web_sys::window().and_then(|w| w.document()) else {
+        return;
+    };
+    if let Some(sidebar) = document.query_selector(".app-sidebar").ok().flatten() {
+        let _ = sidebar.class_list().toggle("open");
+    }
+    if let Some(backdrop) = document.query_selector(".sidebar-backdrop").ok().flatten() {
+        let _ = backdrop.class_list().toggle("visible");
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn toggle_sidebar() {}
+
+#[cfg(target_arch = "wasm32")]
+fn close_sidebar() {
+    let Some(document) = web_sys::window().and_then(|w| w.document()) else {
+        return;
+    };
+    if let Some(sidebar) = document.query_selector(".app-sidebar").ok().flatten() {
+        let _ = sidebar.class_list().remove_1("open");
+    }
+    if let Some(backdrop) = document.query_selector(".sidebar-backdrop").ok().flatten() {
+        let _ = backdrop.class_list().remove_1("visible");
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn close_sidebar() {}
+
 /// A single entry in the sidebar navigation.
 struct NavEntry {
     label: &'static str,
@@ -107,6 +139,7 @@ fn Shell(user: UserInfo) -> impl IntoView {
 
     view! {
         <div class="app-shell">
+            <div class="sidebar-backdrop" on:click=move |_| close_sidebar()></div>
             <Sidebar on_logout=on_logout />
             <Topbar username=username.clone() initial=initial />
             <main class="app-content">
@@ -133,7 +166,13 @@ where
                     .iter()
                     .map(|entry| {
                         view! {
-                            <A href=entry.href exact=entry.exact {..} attr:class="app-nav-link">
+                            <A
+                                href=entry.href
+                                exact=entry.exact
+                                {..}
+                                attr:class="app-nav-link"
+                                on:click=move |_| close_sidebar()
+                            >
                                 <span class="app-nav-link__icon">{entry.icon}</span>
                                 <span>{entry.label}</span>
                             </A>
@@ -155,7 +194,17 @@ where
 fn Topbar(username: String, initial: String) -> impl IntoView {
     view! {
         <header class="app-topbar">
-            <div class="app-topbar__title">"PT-Reseeder"</div>
+            <div class="app-topbar__left">
+                <button
+                    class="mobile-menu-toggle"
+                    type="button"
+                    aria-label="打开菜单"
+                    on:click=move |_| toggle_sidebar()
+                >
+                    "☰"
+                </button>
+                <div class="app-topbar__title">"PT-Reseeder"</div>
+            </div>
             <div class="app-topbar__user">
                 <ThemeToggle />
                 <span>{username}</span>

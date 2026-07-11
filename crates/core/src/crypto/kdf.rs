@@ -42,3 +42,97 @@ pub fn generate_salt() -> [u8; 16] {
     rand::thread_rng().fill_bytes(&mut salt);
     salt
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn generate_salt_returns_16_bytes() {
+        let salt = generate_salt();
+        assert_eq!(salt.len(), 16);
+    }
+
+    #[test]
+    fn generate_salt_produces_unique_values() {
+        let salt1 = generate_salt();
+        let salt2 = generate_salt();
+        assert_ne!(salt1, salt2, "two consecutive salts should differ");
+    }
+
+    #[test]
+    fn derive_kek_returns_32_byte_key() {
+        let salt = generate_salt();
+        let kek = derive_kek(b"test-password", &salt).unwrap();
+        assert_eq!(kek.len(), 32);
+    }
+
+    #[test]
+    fn derive_kek_is_deterministic_for_same_inputs() {
+        let salt = generate_salt();
+        let kek1 = derive_kek(b"password", &salt).unwrap();
+        let kek2 = derive_kek(b"password", &salt).unwrap();
+        assert_eq!(kek1, kek2);
+    }
+
+    #[test]
+    fn derive_kek_differs_for_different_passwords() {
+        let salt = generate_salt();
+        let kek1 = derive_kek(b"password-a", &salt).unwrap();
+        let kek2 = derive_kek(b"password-b", &salt).unwrap();
+        assert_ne!(kek1, kek2);
+    }
+
+    #[test]
+    fn derive_kek_differs_for_different_salts() {
+        let salt1 = generate_salt();
+        let salt2 = generate_salt();
+        let kek1 = derive_kek(b"same-password", &salt1).unwrap();
+        let kek2 = derive_kek(b"same-password", &salt2).unwrap();
+        assert_ne!(kek1, kek2);
+    }
+
+    #[test]
+    fn hash_password_produces_phc_format_string() {
+        let hash = hash_password("my-password").unwrap();
+        // PHC format starts with $argon2id$
+        assert!(
+            hash.starts_with("$argon2id$"),
+            "expected PHC format, got: {}",
+            hash
+        );
+    }
+
+    #[test]
+    fn hash_password_produces_unique_hashes_for_same_input() {
+        let hash1 = hash_password("same-password").unwrap();
+        let hash2 = hash_password("same-password").unwrap();
+        // Different salts should produce different hashes
+        assert_ne!(hash1, hash2);
+    }
+
+    #[test]
+    fn verify_password_returns_true_for_correct_password() {
+        let hash = hash_password("correct").unwrap();
+        assert!(verify_password("correct", &hash).unwrap());
+    }
+
+    #[test]
+    fn verify_password_returns_false_for_wrong_password() {
+        let hash = hash_password("correct").unwrap();
+        assert!(!verify_password("wrong", &hash).unwrap());
+    }
+
+    #[test]
+    fn verify_password_returns_error_for_invalid_hash_string() {
+        let result = verify_password("any", "not-a-valid-phc-string");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn derive_kek_works_with_empty_password() {
+        let salt = generate_salt();
+        let kek = derive_kek(b"", &salt).unwrap();
+        assert_eq!(kek.len(), 32);
+    }
+}

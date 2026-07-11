@@ -126,3 +126,117 @@ fn parse_jackett_item(item: &serde_json::Value) -> Option<JackettResult> {
             .unwrap_or_default(),
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn jackett_config_serializes_to_json_and_back() {
+        let config = JackettConfig {
+            url: "http://localhost:9117".to_string(),
+            api_key: "test-api-key".to_string(),
+        };
+        let json_str = serde_json::to_string(&config).unwrap();
+        let deserialized: JackettConfig = serde_json::from_str(&json_str).unwrap();
+        assert_eq!(deserialized.url, config.url);
+        assert_eq!(deserialized.api_key, config.api_key);
+    }
+
+    #[test]
+    fn jackett_result_serializes_to_json_and_back() {
+        let result = JackettResult {
+            title: "Test Torrent".to_string(),
+            size: 1073741824,
+            tracker: "TestTracker".to_string(),
+            download_url: "http://example.com/download".to_string(),
+            info_hash: Some("abc123def456".to_string()),
+            seeders: 42,
+            category: vec!["2000".to_string(), "2010".to_string()],
+        };
+        let json_str = serde_json::to_string(&result).unwrap();
+        let deserialized: JackettResult = serde_json::from_str(&json_str).unwrap();
+        assert_eq!(deserialized.title, result.title);
+        assert_eq!(deserialized.size, result.size);
+        assert_eq!(deserialized.tracker, result.tracker);
+        assert_eq!(deserialized.download_url, result.download_url);
+        assert_eq!(deserialized.info_hash, result.info_hash);
+        assert_eq!(deserialized.seeders, result.seeders);
+        assert_eq!(deserialized.category, result.category);
+    }
+
+    #[test]
+    fn parse_jackett_item_full_item() {
+        let item = json!({
+            "Title": "Ubuntu 22.04 LTS",
+            "Size": 3_000_000_000u64,
+            "Tracker": "LinuxTracker",
+            "Link": "http://example.com/dl/ubuntu.torrent",
+            "InfoHash": "deadbeef1234",
+            "Seeders": 100,
+            "Category": [2000, 2020]
+        });
+        let result = parse_jackett_item(&item).unwrap();
+        assert_eq!(result.title, "Ubuntu 22.04 LTS");
+        assert_eq!(result.size, 3_000_000_000);
+        assert_eq!(result.tracker, "LinuxTracker");
+        assert_eq!(result.download_url, "http://example.com/dl/ubuntu.torrent");
+        assert_eq!(result.info_hash, Some("deadbeef1234".to_string()));
+        assert_eq!(result.seeders, 100);
+        assert_eq!(result.category, vec!["2000", "2020"]);
+    }
+
+    #[test]
+    fn parse_jackett_item_missing_title_returns_none() {
+        let item = json!({
+            "Size": 1000,
+            "Link": "http://example.com/dl.torrent"
+        });
+        assert!(parse_jackett_item(&item).is_none());
+    }
+
+    #[test]
+    fn parse_jackett_item_missing_size_returns_none() {
+        let item = json!({
+            "Title": "Test",
+            "Link": "http://example.com/dl.torrent"
+        });
+        assert!(parse_jackett_item(&item).is_none());
+    }
+
+    #[test]
+    fn parse_jackett_item_missing_link_returns_none() {
+        let item = json!({
+            "Title": "Test",
+            "Size": 1000
+        });
+        assert!(parse_jackett_item(&item).is_none());
+    }
+
+    #[test]
+    fn parse_jackett_item_optional_fields_default() {
+        let item = json!({
+            "Title": "Minimal",
+            "Size": 500,
+            "Link": "http://example.com/minimal.torrent"
+        });
+        let result = parse_jackett_item(&item).unwrap();
+        assert_eq!(result.tracker, "");
+        assert_eq!(result.info_hash, None);
+        assert_eq!(result.seeders, 0);
+        assert!(result.category.is_empty());
+    }
+
+    #[test]
+    fn parse_jackett_item_with_categories() {
+        let item = json!({
+            "Title": "Categorized",
+            "Size": 1000,
+            "Link": "http://example.com/cat.torrent",
+            "Category": [2000, 2010, 2030, 2045]
+        });
+        let result = parse_jackett_item(&item).unwrap();
+        assert_eq!(result.category, vec!["2000", "2010", "2030", "2045"]);
+    }
+}

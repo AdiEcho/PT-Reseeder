@@ -1,0 +1,8 @@
+[site]
+id = "orpheus"
+name = "Orpheus"
+url = "https://orpheus.network"
+adapter = "gazelle"
+rate_limit_interval_ms = 10000
+rate_limit_burst = 1
+batch_size = 500

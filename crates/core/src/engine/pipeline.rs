@@ -415,3 +415,111 @@ fn update_progress(
         finished: false,
     });
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reseed_config_serializes_to_json_and_back() {
+        let config = ReseedConfig {
+            scan_folders: vec![PathBuf::from("/data/torrents"), PathBuf::from("/mnt/seed")],
+            target_site_ids: vec![SiteId(1), SiteId(2)],
+            default_save_path: "/downloads".to_string(),
+            skip_hash_check: true,
+            auto_start: false,
+            tag: Some("reseed".to_string()),
+            jackett_config: Some(super::super::jackett::JackettConfig {
+                url: "http://localhost:9117".to_string(),
+                api_key: "abc123".to_string(),
+            }),
+        };
+
+        let json = serde_json::to_string(&config).expect("serialize to JSON");
+        let deserialized: ReseedConfig =
+            serde_json::from_str(&json).expect("deserialize from JSON");
+
+        assert_eq!(deserialized.scan_folders.len(), 2);
+        assert_eq!(deserialized.scan_folders[0], PathBuf::from("/data/torrents"));
+        assert_eq!(deserialized.target_site_ids.len(), 2);
+        assert_eq!(deserialized.target_site_ids[0], SiteId(1));
+        assert_eq!(deserialized.default_save_path, "/downloads");
+        assert!(deserialized.skip_hash_check);
+        assert!(!deserialized.auto_start);
+        assert_eq!(deserialized.tag, Some("reseed".to_string()));
+        assert!(deserialized.jackett_config.is_some());
+    }
+
+    #[test]
+    fn reseed_config_with_none_optionals_serializes() {
+        let config = ReseedConfig {
+            scan_folders: vec![PathBuf::from("/tmp")],
+            target_site_ids: vec![SiteId(10)],
+            default_save_path: "/save".to_string(),
+            skip_hash_check: false,
+            auto_start: true,
+            tag: None,
+            jackett_config: None,
+        };
+
+        let json = serde_json::to_string(&config).expect("serialize to JSON");
+        let deserialized: ReseedConfig =
+            serde_json::from_str(&json).expect("deserialize from JSON");
+
+        assert!(deserialized.tag.is_none());
+        assert!(deserialized.jackett_config.is_none());
+        assert!(deserialized.auto_start);
+        assert!(!deserialized.skip_hash_check);
+    }
+
+    #[test]
+    fn reseed_progress_serializes_to_json_and_back() {
+        let progress = ReseedProgress {
+            phase: "scanning".to_string(),
+            stats: ReseedStatsSnapshot {
+                scanned: 0,
+                cached_skip: 0,
+                matched: 0,
+                added: 0,
+                failed: 0,
+                skipped_tracker: 0,
+                skipped_history: 0,
+                skipped_exists: 0,
+            },
+            elapsed_secs: 5,
+            finished: false,
+        };
+
+        let json = serde_json::to_string(&progress).expect("serialize to JSON");
+        let deserialized: ReseedProgress =
+            serde_json::from_str(&json).expect("deserialize from JSON");
+
+        assert_eq!(deserialized.phase, "scanning");
+        assert_eq!(deserialized.elapsed_secs, 5);
+        assert!(!deserialized.finished);
+        assert_eq!(deserialized.stats.scanned, 0);
+    }
+
+    #[test]
+    fn extract_domain_strips_https() {
+        assert_eq!(extract_domain("https://hdsky.me/announce"), "hdsky.me");
+    }
+
+    #[test]
+    fn extract_domain_strips_http() {
+        assert_eq!(
+            extract_domain("http://tracker.mteam.cc:8080/announce"),
+            "tracker.mteam.cc"
+        );
+    }
+
+    #[test]
+    fn extract_domain_no_protocol() {
+        assert_eq!(extract_domain("example.com/path"), "example.com");
+    }
+
+    #[test]
+    fn extract_domain_empty_string() {
+        assert_eq!(extract_domain(""), "");
+    }
+}

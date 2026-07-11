@@ -1,6 +1,7 @@
 use crate::server_fns::{
     create_task, delete_task, get_task_logs, get_tasks, trigger_task, TaskInfo, TaskLogInfo,
 };
+use leptos::ev;
 use leptos::prelude::*;
 
 fn status_class(status: &str) -> &'static str {
@@ -209,6 +210,7 @@ fn TaskRow(task: TaskInfo, on_change: impl Fn() + Copy + Send + Sync + 'static) 
     let task_id = task.id;
     let (expanded, set_expanded) = signal(false);
     let (acting, set_acting) = signal(false);
+    let (confirm_delete, set_confirm_delete) = signal(false);
 
     let logs = Resource::new(
         move || expanded.get(),
@@ -230,8 +232,13 @@ fn TaskRow(task: TaskInfo, on_change: impl Fn() + Copy + Send + Sync + 'static) 
         });
     };
 
-    let on_delete = move |_| {
+    let on_delete = move |_: ev::MouseEvent| {
+        set_confirm_delete.set(true);
+    };
+
+    let do_delete = move |_: ev::MouseEvent| {
         set_acting.set(true);
+        set_confirm_delete.set(false);
         leptos::task::spawn_local(async move {
             let _ = delete_task(task_id).await;
             set_acting.set(false);
@@ -276,14 +283,14 @@ fn TaskRow(task: TaskInfo, on_change: impl Fn() + Copy + Send + Sync + 'static) 
                 <td>{task.run_count}</td>
                 <td class="action-cell">
                     <button
-                        class="btn-sm btn-blue"
+                        class="btn btn--sm btn--primary"
                         disabled=move || acting.get()
                         on:click=on_trigger
                     >
                         "立即运行"
                     </button>
                     <button
-                        class="btn-sm btn-red"
+                        class="btn btn--sm btn--danger"
                         disabled=move || acting.get()
                         on:click=on_delete
                     >
@@ -291,6 +298,24 @@ fn TaskRow(task: TaskInfo, on_change: impl Fn() + Copy + Send + Sync + 'static) 
                     </button>
                 </td>
             </tr>
+            // Delete confirmation dialog
+            {move || {
+                if confirm_delete.get() {
+                    Some(view! {
+                        <tr class="expand-row">
+                            <td colspan="9">
+                                <div class="inline-form">
+                                    <span class="text-red">"确定要删除该任务吗？"</span>
+                                    <button class="btn btn--sm btn--danger" on:click=do_delete>"确认删除"</button>
+                                    <button class="btn btn--sm btn--outline" on:click=move |_| set_confirm_delete.set(false)>"取消"</button>
+                                </div>
+                            </td>
+                        </tr>
+                    })
+                } else {
+                    None
+                }
+            }}
             {move || {
                 if expanded.get() {
                     Some(

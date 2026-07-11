@@ -5,17 +5,7 @@
   "identifier": "com.pt-reseeder.app",
   "build": {},
   "app": {
-    "withGlobalTauri": true,
-    "windows": [
-      {
-        "label": "main",
-        "title": "PT-Reseeder",
-        "width": 1280,
-        "height": 800,
-        "resizable": true,
-        "fullscreen": false
-      }
-    ]
+    "withGlobalTauri": true
   },
   "bundle": {
     "active": true,

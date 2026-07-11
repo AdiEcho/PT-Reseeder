@@ -31,6 +31,11 @@ tokio-cron-scheduler = "0.13"
 croner = "2.2"
 notify = "7"
 uuid = "1"
+chromiumoxide = { version = "0.7", features = ["tokio-runtime"], optional = true }
+
+[features]
+headless-browser = ["chromiumoxide"]
 
 [dev-dependencies]
 tempfile = "3"
+boa_engine = "0.21"

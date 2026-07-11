@@ -23,6 +23,7 @@ chrono = { version = "0.4", features = ["serde"] }
 [[workspace.metadata.leptos]]
 name = "pt-reseeder"
 bin-package = "pt-reseeder-server"
+bin-features = ["headless-browser"]
 lib-package = "pt-reseeder-frontend"
 lib-features = ["hydrate"]
 site-root = "target/site"

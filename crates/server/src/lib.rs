@@ -8,10 +8,43 @@ use pt_reseeder_core::config::AppConfig;
 use pt_reseeder_core::db;
 use pt_reseeder_core::site::registry::SiteRegistry;
 use std::net::SocketAddr;
+use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
 
 pub struct BoundAddr(pub SocketAddr);
+
+#[cfg(feature = "headless-browser")]
+async fn initialize_repost_autofiller() -> (
+    Option<Arc<dyn pt_reseeder_core::browser::RepostAutoFiller>>,
+    Option<String>,
+) {
+    let chrome_path = std::env::var("CHROME_PATH")
+        .ok()
+        .filter(|path| !path.trim().is_empty());
+    match pt_reseeder_core::browser::headless::HeadlessBrowser::from_env(chrome_path).await {
+        Ok(browser) => {
+            tracing::info!("headless repost autofill is available");
+            (Some(Arc::new(browser)), None)
+        }
+        Err(error) => {
+            let message = format!("headless browser unavailable: {error}");
+            tracing::warn!(%message);
+            (None, Some(message))
+        }
+    }
+}
+
+#[cfg(not(feature = "headless-browser"))]
+async fn initialize_repost_autofiller() -> (
+    Option<Arc<dyn pt_reseeder_core::browser::RepostAutoFiller>>,
+    Option<String>,
+) {
+    (
+        None,
+        Some("server was built without the headless-browser feature".to_string()),
+    )
+}
 
 pub async fn run_server(
     config: AppConfig,
@@ -25,12 +58,15 @@ pub async fn run_server(
 
     // Build state
     let site_registry = SiteRegistry::new();
+    let (repost_autofiller, repost_autofiller_error) = initialize_repost_autofiller().await;
     let state = state::AppState::new(
         pool,
         db_writer,
         config.clone(),
         cancel_token.clone(),
         site_registry,
+        repost_autofiller,
+        repost_autofiller_error,
     );
     state.start_task_runtime().await?;
 

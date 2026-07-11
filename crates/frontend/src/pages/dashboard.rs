@@ -24,6 +24,18 @@ fn format_bytes(bytes: i64) -> String {
     }
 }
 
+fn format_duration(seconds: i64) -> String {
+    let days = seconds / 86400;
+    let hours = (seconds % 86400) / 3600;
+    if days > 0 {
+        format!("{}d {}h", days, hours)
+    } else if hours > 0 {
+        format!("{}h", hours)
+    } else {
+        format!("{}m", seconds / 60)
+    }
+}
+
 #[component]
 pub fn DashboardPage() -> impl IntoView {
     let (days, set_days) = signal(7i64);
@@ -433,7 +445,9 @@ fn UserInfoTable(info: UserInfoAggregate) -> impl IntoView {
                                     <th>"积分"</th>
                                     <th>"等级"</th>
                                     <th>"做种数"</th>
-                                    <th>"下载中"</th>
+                                    <th>"吸血数"</th>
+                                    <th>"做种体积"</th>
+                                    <th>"上传时间统计"</th>
                                     <th>"更新时间"</th>
                                 </tr>
                             </thead>
@@ -479,6 +493,18 @@ fn UserInfoTable(info: UserInfoAggregate) -> impl IntoView {
                                                     {s
                                                         .leeching_count
                                                         .map(|c: i64| c.to_string())
+                                                        .unwrap_or_else(|| "-".into())}
+                                                </td>
+                                                <td>
+                                                    {s
+                                                        .seeding_size
+                                                        .map(format_bytes)
+                                                        .unwrap_or_else(|| "-".into())}
+                                                </td>
+                                                <td>
+                                                    {s
+                                                        .upload_time_seconds
+                                                        .map(format_duration)
                                                         .unwrap_or_else(|| "-".into())}
                                                 </td>
                                                 <td class="text-muted">

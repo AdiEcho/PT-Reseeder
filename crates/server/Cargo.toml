@@ -31,3 +31,6 @@ rand = "0.8"
 sha2 = "0.10"
 hex = "0.4"
 time = "0.3"
+
+[features]
+headless-browser = ["pt-reseeder-core/headless-browser"]

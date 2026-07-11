@@ -403,10 +403,7 @@ mod tests {
     #[test]
     fn rpc_url_preserves_https_scheme() {
         let client = TransmissionClient::new("https://secure.host", 443, None, None);
-        assert_eq!(
-            client.rpc_url(),
-            "https://secure.host:443/transmission/rpc"
-        );
+        assert_eq!(client.rpc_url(), "https://secure.host:443/transmission/rpc");
     }
 
     #[test]
@@ -451,7 +448,13 @@ mod tests {
                 percent_done: 0.0,
                 download_dir: String::new(),
             };
-            assert_eq!(info.status_string(), expected, "status {} should map to {}", status, expected);
+            assert_eq!(
+                info.status_string(),
+                expected,
+                "status {} should map to {}",
+                status,
+                expected
+            );
         }
     }
 

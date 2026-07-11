@@ -440,7 +440,10 @@ mod tests {
             serde_json::from_str(&json).expect("deserialize from JSON");
 
         assert_eq!(deserialized.scan_folders.len(), 2);
-        assert_eq!(deserialized.scan_folders[0], PathBuf::from("/data/torrents"));
+        assert_eq!(
+            deserialized.scan_folders[0],
+            PathBuf::from("/data/torrents")
+        );
         assert_eq!(deserialized.target_site_ids.len(), 2);
         assert_eq!(deserialized.target_site_ids[0], SiteId(1));
         assert_eq!(deserialized.default_save_path, "/downloads");

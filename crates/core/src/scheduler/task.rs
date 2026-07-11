@@ -181,12 +181,9 @@ mod tests {
         let result = next_run_at_for(Some("0 0 * * *")).unwrap();
         assert!(result.is_some(), "expected Some for valid cron");
         let time_str = result.unwrap();
-        let parsed = DateTime::parse_from_rfc3339(&time_str)
-            .expect("should be a valid RFC 3339 datetime");
-        assert!(
-            parsed > Utc::now(),
-            "next run time should be in the future"
-        );
+        let parsed =
+            DateTime::parse_from_rfc3339(&time_str).expect("should be a valid RFC 3339 datetime");
+        assert!(parsed > Utc::now(), "next run time should be in the future");
     }
 
     #[test]
@@ -195,8 +192,8 @@ mod tests {
         let result = next_run_at_for(Some("* * * * *")).unwrap();
         assert!(result.is_some(), "expected Some for every-minute cron");
         let time_str = result.unwrap();
-        let parsed = DateTime::parse_from_rfc3339(&time_str)
-            .expect("should be a valid RFC 3339 datetime");
+        let parsed =
+            DateTime::parse_from_rfc3339(&time_str).expect("should be a valid RFC 3339 datetime");
         let upper_bound = now + Duration::minutes(2);
         assert!(
             parsed <= upper_bound,

@@ -254,7 +254,11 @@ mod tests {
             let def = definitions
                 .get(*site_id)
                 .unwrap_or_else(|| panic!("Missing site: {}", site_id));
-            assert_eq!(def.site.adapter, "nexusphp", "{} should use nexusphp adapter", site_id);
+            assert_eq!(
+                def.site.adapter, "nexusphp",
+                "{} should use nexusphp adapter",
+                site_id
+            );
             assert!(
                 def.user_info.is_some(),
                 "{} should have user_info selectors",
@@ -310,13 +314,19 @@ mod tests {
             assert!(!def.site.id.is_empty(), "site {} has empty id", key);
             assert!(!def.site.name.is_empty(), "site {} has empty name", key);
             assert!(!def.site.url.is_empty(), "site {} has empty url", key);
-            assert!(!def.site.adapter.is_empty(), "site {} has empty adapter", key);
+            assert!(
+                !def.site.adapter.is_empty(),
+                "site {} has empty adapter",
+                key
+            );
         }
     }
 
     #[test]
     fn load_user_definitions_returns_empty_for_nonexistent_dir() {
-        let defs = load_user_definitions(std::path::Path::new("/tmp/nonexistent-pt-reseeder-test-dir-xyz"));
+        let defs = load_user_definitions(std::path::Path::new(
+            "/tmp/nonexistent-pt-reseeder-test-dir-xyz",
+        ));
         assert!(defs.is_empty());
     }
 

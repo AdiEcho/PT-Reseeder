@@ -75,7 +75,11 @@ mod tests {
 
     #[test]
     fn downloader_role_serializes_to_json_and_back() {
-        for role in [DownloaderRole::Source, DownloaderRole::Destination, DownloaderRole::Both] {
+        for role in [
+            DownloaderRole::Source,
+            DownloaderRole::Destination,
+            DownloaderRole::Both,
+        ] {
             let json = serde_json::to_string(&role).unwrap();
             let _deserialized: DownloaderRole = serde_json::from_str(&json).unwrap();
         }

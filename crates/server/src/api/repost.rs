@@ -7,6 +7,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use tracing::info;
 
+use pt_reseeder_core::browser::AutofillResult;
 use pt_reseeder_core::db::models::RepostQueueEntry;
 use pt_reseeder_core::repost::adapter::adapt_torrent_info;
 use pt_reseeder_core::repost::extractor;
@@ -64,6 +65,17 @@ pub struct RepostEntryResponse {
     pub review_notes: Option<String>,
     pub submitted_at: Option<String>,
     pub created_at: String,
+}
+
+#[derive(Serialize)]
+pub struct AutofillResponse {
+    pub entry_id: i64,
+    pub success: bool,
+    pub filled: Vec<String>,
+    pub skipped: Vec<String>,
+    pub message: String,
+    pub target_site: String,
+    pub confirmation_required: bool,
 }
 
 #[derive(Serialize)]
@@ -310,6 +322,87 @@ async fn review_entry(
     Ok(Json(entry_to_response(&updated)))
 }
 
+/// POST /repost/queue/:id/autofill -- open and fill the target upload form without submitting it
+async fn autofill_entry(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> Result<Json<AutofillResponse>, (StatusCode, Json<ApiError>)> {
+    let autofiller = state.inner.repost_autofiller.as_ref().ok_or_else(|| {
+        api_err(
+            StatusCode::SERVICE_UNAVAILABLE,
+            state
+                .inner
+                .repost_autofiller_error
+                .clone()
+                .unwrap_or_else(|| "headless repost autofill is unavailable".to_string()),
+        )
+    })?;
+
+    let entry = review::get_entry(&state.inner.repo, id)
+        .await
+        .map_err(|e| api_err(core_error_status(&e), format!("{}", e)))?;
+    if entry.status != "approved" {
+        return Err(api_err(
+            StatusCode::CONFLICT,
+            format!(
+                "entry must be approved before autofill; current status: '{}'",
+                entry.status
+            ),
+        ));
+    }
+
+    let adapted_json = entry.adapted_info_json.as_deref().ok_or_else(|| {
+        api_err(
+            StatusCode::CONFLICT,
+            "entry has no adapted info; approve it first",
+        )
+    })?;
+    let adapted: pt_reseeder_core::site::models::AdaptedTorrentInfo =
+        serde_json::from_str(adapted_json).map_err(|e| {
+            api_err(
+                StatusCode::BAD_REQUEST,
+                format!("failed to parse adapted info: {e}"),
+            )
+        })?;
+    let target_site = state
+        .inner
+        .repo
+        .get_site(entry.target_site_id)
+        .await
+        .map_err(|e| {
+            api_err(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("database error: {e}"),
+            )
+        })?
+        .ok_or_else(|| api_err(StatusCode::NOT_FOUND, "target site not found"))?;
+
+    let AutofillResult {
+        entry_id,
+        success,
+        filled,
+        skipped,
+        message,
+    } = submitter::autofill_upload_page(autofiller.as_ref(), &target_site.url, id, &adapted)
+        .await
+        .map_err(|e| {
+            api_err(
+                StatusCode::SERVICE_UNAVAILABLE,
+                format!("autofill failed: {e}"),
+            )
+        })?;
+
+    Ok(Json(AutofillResponse {
+        entry_id,
+        success,
+        filled,
+        skipped,
+        message,
+        target_site: target_site.name,
+        confirmation_required: true,
+    }))
+}
+
 /// POST /repost/queue/:id/submit -- submit an approved entry to the target site
 async fn submit_entry(
     State(state): State<AppState>,
@@ -392,6 +485,7 @@ pub fn router() -> Router<AppState> {
         .route("/repost/queue", get(list_queue))
         .route("/repost/queue/{id}", get(get_queue_entry))
         .route("/repost/queue/{id}/review", post(review_entry))
+        .route("/repost/queue/{id}/autofill", post(autofill_entry))
         .route("/repost/queue/{id}/submit", post(submit_entry))
         .route("/repost/queue/{id}/retry", post(retry_entry))
         .route("/repost/submit", post(submit_batch))

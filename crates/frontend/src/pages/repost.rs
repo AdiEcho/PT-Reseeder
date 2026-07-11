@@ -1,9 +1,26 @@
-use crate::server_fns::{
-    delete_repost, get_repost_queue, review_repost, submit_repost, RepostEntry,
-};
+use crate::server_fns::{delete_repost, get_repost_queue, RepostEntry};
+#[cfg(not(target_arch = "wasm32"))]
+use crate::server_fns::{review_repost, submit_repost};
 use leptos::prelude::*;
+use serde::Deserialize;
 #[cfg(target_arch = "wasm32")]
 use serde_json::json;
+
+#[derive(Debug, Clone, Deserialize)]
+struct AutofillResponse {
+    success: bool,
+    filled: Vec<String>,
+    skipped: Vec<String>,
+    message: String,
+    target_site: String,
+    confirmation_required: bool,
+}
+
+#[cfg(target_arch = "wasm32")]
+#[derive(Debug, Deserialize)]
+struct ApiErrorResponse {
+    error: String,
+}
 
 const STATUSES: &[(&str, Option<&str>)] = &[
     ("全部", None),
@@ -111,6 +128,74 @@ async fn post_json(path: &str, body: String) -> Result<(), String> {
     } else {
         Err(format!("request failed with HTTP {}", response.status()))
     }
+}
+
+#[cfg(target_arch = "wasm32")]
+async fn post_json_response<T>(path: &str, body: String) -> Result<T, String>
+where
+    T: for<'de> Deserialize<'de>,
+{
+    use wasm_bindgen::JsCast;
+    use wasm_bindgen::JsValue;
+    use wasm_bindgen_futures::JsFuture;
+    use web_sys::{Headers, Request, RequestCredentials, RequestInit, RequestMode, Response};
+
+    let headers = Headers::new().map_err(|e| format!("headers error: {e:?}"))?;
+    headers
+        .set("Content-Type", "application/json")
+        .map_err(|e| format!("headers error: {e:?}"))?;
+    headers
+        .set("X-PT-Reseeder", "1")
+        .map_err(|e| format!("headers error: {e:?}"))?;
+
+    let opts = RequestInit::new();
+    opts.set_method("POST");
+    opts.set_mode(RequestMode::SameOrigin);
+    opts.set_credentials(RequestCredentials::SameOrigin);
+    opts.set_headers(&headers);
+    opts.set_body(&JsValue::from_str(&body));
+
+    let request =
+        Request::new_with_str_and_init(path, &opts).map_err(|e| format!("request error: {e:?}"))?;
+    let window = web_sys::window().ok_or_else(|| "window unavailable".to_string())?;
+    let response_value = JsFuture::from(window.fetch_with_request(&request))
+        .await
+        .map_err(|e| format!("fetch error: {e:?}"))?;
+    let response: Response = response_value
+        .dyn_into()
+        .map_err(|_| "fetch did not return a Response".to_string())?;
+    let response_text = JsFuture::from(
+        response
+            .text()
+            .map_err(|e| format!("response body error: {e:?}"))?,
+    )
+    .await
+    .map_err(|e| format!("response body error: {e:?}"))?
+    .as_string()
+    .unwrap_or_default();
+
+    if response.ok() {
+        serde_json::from_str(&response_text).map_err(|e| format!("invalid response: {e}"))
+    } else {
+        let error = serde_json::from_str::<ApiErrorResponse>(&response_text)
+            .map(|body| body.error)
+            .unwrap_or_else(|_| format!("request failed with HTTP {}", response.status()));
+        Err(error)
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+async fn request_headless_autofill(id: i64) -> Result<AutofillResponse, String> {
+    post_json_response(
+        &format!("/api/repost/queue/{id}/autofill"),
+        "{}".to_string(),
+    )
+    .await
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+async fn request_headless_autofill(_id: i64) -> Result<AutofillResponse, String> {
+    Err("headless autofill is available after the page hydrates".to_string())
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -333,7 +418,7 @@ where
                 >
                     "提交"
                 </button>
-                <DesktopAutofillAction id=id />
+                <AutofillAction id=id />
             </div>
         }
         .into_any(),
@@ -371,9 +456,10 @@ where
 }
 
 #[component]
-fn DesktopAutofillAction(id: i64) -> impl IntoView {
+fn AutofillAction(id: i64) -> impl IntoView {
     let (is_desktop, set_is_desktop) = signal(false);
     let (message, set_message) = signal(None::<String>);
+    let (busy, set_busy) = signal(false);
 
     #[cfg(target_arch = "wasm32")]
     Effect::new(move |_| {
@@ -384,37 +470,66 @@ fn DesktopAutofillAction(id: i64) -> impl IntoView {
     let _ = set_is_desktop;
 
     view! {
-        {move || {
-            if is_desktop.get() {
-                view! {
-                    <span class="desktop-autofill">
-                        <button
-                            class="btn btn--blue btn--sm"
-                            title="桌面端 WebView 自动填表"
-                            on:click=move |_| {
-                                leptos::task::spawn_local(async move {
-                                    match inject_desktop_autofill(id).await {
-                                        Ok(()) => set_message.set(Some("自动填表事件已发送".to_string())),
-                                        Err(e) => set_message.set(Some(format!("自动填表不可用：{e}"))),
-                                    }
-                                });
-                            }
-                        >
-                            "自动填表"
-                        </button>
-                        <span class="badge badge--blue">"桌面端"</span>
-                        {move || {
-                            message
-                                .get()
-                                .map(|msg| view! { <span class="text-muted">{msg}</span> })
-                        }}
-                    </span>
+        <span class="desktop-autofill">
+            <button
+                class="btn btn--blue btn--sm"
+                disabled=move || busy.get()
+                title=move || {
+                    if is_desktop.get() {
+                        "桌面端 WebView 自动填表"
+                    } else {
+                        "由服务器无头浏览器打开上传页并填表，不会自动提交"
+                    }
                 }
-                    .into_any()
-            } else {
-                view! {}.into_any()
-            }
-        }}
+                on:click=move |_| {
+                    set_busy.set(true);
+                    set_message.set(None);
+                    leptos::task::spawn_local(async move {
+                        let result = if is_desktop.get_untracked() {
+                            inject_desktop_autofill(id)
+                                .await
+                                .map(|_| "自动填表事件已发送，请在上传页确认后手动提交。".to_string())
+                        } else {
+                            request_headless_autofill(id).await.map(|result| {
+                                let status = if result.success { "自动填表完成" } else { "自动填表未完成" };
+                                let confirmation = if result.confirmation_required {
+                                    "请在目标站上传页确认后手动提交。"
+                                } else {
+                                    ""
+                                };
+                                format!(
+                                    "{status}（{}）：已填 {} 项，跳过 {} 项。{} {}",
+                                    result.target_site,
+                                    result.filled.len(),
+                                    result.skipped.len(),
+                                    result.message,
+                                    confirmation
+                                )
+                            })
+                        };
+                        match result {
+                            Ok(msg) => set_message.set(Some(msg)),
+                            Err(e) => set_message.set(Some(format!("自动填表不可用：{e}"))),
+                        }
+                        set_busy.set(false);
+                    });
+                }
+            >
+                {move || if busy.get() { "填表中..." } else { "自动填表" }}
+            </button>
+            {move || {
+                if is_desktop.get() {
+                    view! { <span class="badge badge--blue">"桌面端"</span> }.into_any()
+                } else {
+                    view! { <span class="badge badge--blue">"无头浏览器"</span> }.into_any()
+                }
+            }}
+            {move || {
+                message
+                    .get()
+                    .map(|msg| view! { <span class="text-muted">{msg}</span> })
+            }}
+        </span>
     }
 }
 

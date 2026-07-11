@@ -129,10 +129,22 @@ mod tests {
 
     #[test]
     fn repost_status_from_str_parses_valid_strings() {
-        assert_eq!(RepostStatus::from_str("pending"), Some(RepostStatus::Pending));
-        assert_eq!(RepostStatus::from_str("approved"), Some(RepostStatus::Approved));
-        assert_eq!(RepostStatus::from_str("rejected"), Some(RepostStatus::Rejected));
-        assert_eq!(RepostStatus::from_str("submitted"), Some(RepostStatus::Submitted));
+        assert_eq!(
+            RepostStatus::from_str("pending"),
+            Some(RepostStatus::Pending)
+        );
+        assert_eq!(
+            RepostStatus::from_str("approved"),
+            Some(RepostStatus::Approved)
+        );
+        assert_eq!(
+            RepostStatus::from_str("rejected"),
+            Some(RepostStatus::Rejected)
+        );
+        assert_eq!(
+            RepostStatus::from_str("submitted"),
+            Some(RepostStatus::Submitted)
+        );
         assert_eq!(RepostStatus::from_str("failed"), Some(RepostStatus::Failed));
     }
 

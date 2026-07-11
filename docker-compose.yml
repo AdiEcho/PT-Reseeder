@@ -1,23 +1,40 @@
-version: "3.8"
-
 services:
   pt-reseeder:
-    build: .
+    build:
+      context: .
+      args:
+        PT_RESEEDER_UID: "10001"
+        PT_RESEEDER_GID: "10001"
     container_name: pt-reseeder
     restart: unless-stopped
     ports:
       - "3000:3000"
+    # A named volume inherits the image's /data ownership (UID/GID 10001),
+    # avoiding an unwritable root-owned host bind directory.
     volumes:
-      - ./data:/data
+      - pt-reseeder-data:/data
     environment:
       - LEPTOS_SITE_ROOT=/opt/pt-reseeder/site
       - LEPTOS_SITE_ADDR=0.0.0.0:3000
       - DATABASE_URL=sqlite:///data/pt-reseeder.db
-      - PT_RESEEDER_DATA_DIR=/data
+      - DATA_DIR=/data
+      - CHROME_PATH=/usr/bin/chromium
+      - PT_RESEEDER_CHROME_NO_SANDBOX=false
       - RUST_LOG=info,pt_reseeder=debug
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,noexec,mode=1777
+      - /home/pt-reseeder/.cache/chromium:rw,nosuid,nodev,noexec,uid=10001,gid=10001,mode=0700
+      - /home/pt-reseeder/.config/chromium:rw,nosuid,nodev,noexec,uid=10001,gid=10001,mode=0700
     healthcheck:
       test: ["CMD", "pt-reseeder-server", "--healthcheck"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 10s
+
+volumes:
+  pt-reseeder-data:

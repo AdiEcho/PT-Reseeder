@@ -2,6 +2,7 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 
+use crate::browser::{AutofillResult, RepostAutoFiller};
 use crate::db::models::RepostQueueEntry;
 use crate::db::repo::Repository;
 use crate::error::{CoreError, RepostError};
@@ -80,6 +81,22 @@ pub async fn submit_torrent(
     );
 
     Ok(result_id)
+}
+
+pub async fn autofill_upload_page(
+    autofiller: &dyn RepostAutoFiller,
+    site_url: &str,
+    entry_id: i64,
+    adapted: &AdaptedTorrentInfo,
+) -> Result<AutofillResult, CoreError> {
+    if !autofiller.is_available() {
+        return Err(CoreError::Repost(RepostError::SubmissionFailed(
+            "repost autofill backend is unavailable".to_string(),
+        )));
+    }
+
+    autofiller.open_upload_page(site_url, entry_id).await?;
+    autofiller.inject_autofill(entry_id, adapted).await
 }
 
 /// Submit a single approved repost queue entry and persist the state transition.
@@ -222,6 +239,104 @@ pub async fn submit_batch(
             }
         }
     }
-
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Mutex;
+
+    use async_trait::async_trait;
+
+    use super::*;
+
+    struct MockAutoFiller {
+        calls: Mutex<Vec<String>>,
+        available: bool,
+    }
+
+    #[async_trait]
+    impl RepostAutoFiller for MockAutoFiller {
+        async fn open_upload_page(&self, site_url: &str, entry_id: i64) -> Result<(), CoreError> {
+            self.calls
+                .lock()
+                .unwrap()
+                .push(format!("open:{site_url}:{entry_id}"));
+            Ok(())
+        }
+
+        async fn inject_autofill(
+            &self,
+            entry_id: i64,
+            _adapted_info: &AdaptedTorrentInfo,
+        ) -> Result<AutofillResult, CoreError> {
+            self.calls
+                .lock()
+                .unwrap()
+                .push(format!("inject:{entry_id}"));
+            Ok(AutofillResult {
+                entry_id,
+                success: true,
+                filled: vec!["name".to_string()],
+                skipped: Vec::new(),
+                message: "filled".to_string(),
+            })
+        }
+
+        fn is_available(&self) -> bool {
+            self.available
+        }
+    }
+
+    fn adapted_info() -> AdaptedTorrentInfo {
+        AdaptedTorrentInfo {
+            name: "Test".to_string(),
+            small_descr: String::new(),
+            descr: String::new(),
+            imdb_url: None,
+            douban_url: None,
+            mediainfo: None,
+            images: Vec::new(),
+            category_id: None,
+            source_id: None,
+            codec_id: None,
+            resolution_id: None,
+            torrent_file_data: None,
+            target_site: "test".to_string(),
+        }
+    }
+
+    #[tokio::test]
+    async fn autofill_upload_page_opens_then_injects() {
+        let autofiller = MockAutoFiller {
+            calls: Mutex::new(Vec::new()),
+            available: true,
+        };
+
+        let result =
+            autofill_upload_page(&autofiller, "https://tracker.example", 7, &adapted_info())
+                .await
+                .unwrap();
+
+        assert!(result.success);
+        assert_eq!(result.entry_id, 7);
+        assert_eq!(
+            *autofiller.calls.lock().unwrap(),
+            ["open:https://tracker.example:7", "inject:7"]
+        );
+    }
+
+    #[tokio::test]
+    async fn autofill_upload_page_rejects_unavailable_backend() {
+        let autofiller = MockAutoFiller {
+            calls: Mutex::new(Vec::new()),
+            available: false,
+        };
+
+        let result =
+            autofill_upload_page(&autofiller, "https://tracker.example", 7, &adapted_info()).await;
+
+        assert!(result.is_err());
+        assert!(autofiller.calls.lock().unwrap().is_empty());
+    }
 }

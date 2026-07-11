@@ -124,10 +124,7 @@ mod tests {
     #[test]
     fn test_extract_domain_lowercases_output() {
         // extract_domain lowercases the result; protocol prefix stripping is case-sensitive
-        assert_eq!(
-            extract_domain("https://HDSky.ME/announce"),
-            "hdsky.me"
-        );
+        assert_eq!(extract_domain("https://HDSky.ME/announce"), "hdsky.me");
     }
 
     #[test]

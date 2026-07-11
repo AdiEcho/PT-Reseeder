@@ -192,7 +192,9 @@ mod tests {
     fn parse_bytes_single_file_torrent_populates_files_list() {
         let pieces = [1u8; 20];
         let mut data = Vec::new();
-        data.extend_from_slice(b"d4:infod6:lengthi500e4:name8:test.txt12:piece lengthi256e6:pieces20:");
+        data.extend_from_slice(
+            b"d4:infod6:lengthi500e4:name8:test.txt12:piece lengthi256e6:pieces20:",
+        );
         data.extend_from_slice(&pieces);
         data.extend_from_slice(b"ee");
 
@@ -222,7 +224,10 @@ mod tests {
         assert_eq!(meta.files[0].length, 100);
         assert_eq!(meta.files[0].path, vec!["a.txt".to_string()]);
         assert_eq!(meta.files[1].length, 200);
-        assert_eq!(meta.files[1].path, vec!["dir".to_string(), "b.txt".to_string()]);
+        assert_eq!(
+            meta.files[1].path,
+            vec!["dir".to_string(), "b.txt".to_string()]
+        );
     }
 
     #[test]
@@ -234,7 +239,10 @@ mod tests {
         data.extend_from_slice(b"ee");
 
         let meta = parse_bytes(&data).unwrap();
-        assert_eq!(meta.announce, Some("http://tracker.example.com/ann".to_string()));
+        assert_eq!(
+            meta.announce,
+            Some("http://tracker.example.com/ann".to_string())
+        );
     }
 
     #[test]
@@ -285,7 +293,9 @@ mod tests {
 
     #[test]
     fn parse_file_nonexistent_returns_error() {
-        let result = parse_file(std::path::Path::new("/tmp/nonexistent-torrent-file-xyz.torrent"));
+        let result = parse_file(std::path::Path::new(
+            "/tmp/nonexistent-torrent-file-xyz.torrent",
+        ));
         assert!(result.is_err());
     }
 }

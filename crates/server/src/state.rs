@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use pt_reseeder_core::browser::RepostAutoFiller;
 use pt_reseeder_core::config::AppConfig;
 use pt_reseeder_core::crypto::Vault;
 use pt_reseeder_core::db::models::SiteRow;
@@ -48,6 +49,8 @@ pub struct AppStateInner {
     pub site_registry: RwLock<SiteRegistry>,
     pub cron_scheduler: RwLock<Option<Arc<CronScheduler>>>,
     pub file_watcher: RwLock<Option<Arc<FileWatcher>>>,
+    pub repost_autofiller: Option<Arc<dyn RepostAutoFiller>>,
+    pub repost_autofiller_error: Option<String>,
 }
 
 impl AppState {
@@ -57,6 +60,8 @@ impl AppState {
         config: AppConfig,
         cancel_token: CancellationToken,
         site_registry: SiteRegistry,
+        repost_autofiller: Option<Arc<dyn RepostAutoFiller>>,
+        repost_autofiller_error: Option<String>,
     ) -> Self {
         let repo = Repository::new(db_pool.clone());
         let leptos_options = leptos::config::LeptosOptions::builder()
@@ -78,6 +83,8 @@ impl AppState {
                 site_registry: RwLock::new(site_registry),
                 cron_scheduler: RwLock::new(None),
                 file_watcher: RwLock::new(None),
+                repost_autofiller,
+                repost_autofiller_error,
             }),
         }
     }

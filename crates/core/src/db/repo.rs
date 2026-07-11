@@ -1025,10 +1025,7 @@ mod tests {
     #[tokio::test]
     async fn create_and_find_session() {
         let repo = setup_repo().await;
-        let uid = repo
-            .create_user("u", "h", b"s", b"w", b"n")
-            .await
-            .unwrap();
+        let uid = repo.create_user("u", "h", b"s", b"w", b"n").await.unwrap();
         let token_hash = b"session_token_hash";
         let sid = repo
             .create_session(uid, token_hash, "2099-01-01 00:00:00")
@@ -1047,10 +1044,7 @@ mod tests {
     #[tokio::test]
     async fn delete_session_removes_row() {
         let repo = setup_repo().await;
-        let uid = repo
-            .create_user("u2", "h", b"s", b"w", b"n")
-            .await
-            .unwrap();
+        let uid = repo.create_user("u2", "h", b"s", b"w", b"n").await.unwrap();
         let sid = repo
             .create_session(uid, b"tok", "2099-01-01 00:00:00")
             .await
@@ -1088,7 +1082,13 @@ mod tests {
     async fn create_and_get_site() {
         let repo = setup_repo().await;
         let id = repo
-            .create_site("HDSky", "https://hdsky.me", Some("https://hdsky.me/api"), "nexusphp", "cookie")
+            .create_site(
+                "HDSky",
+                "https://hdsky.me",
+                Some("https://hdsky.me/api"),
+                "nexusphp",
+                "cookie",
+            )
             .await
             .unwrap();
         let site = repo.get_site(id).await.unwrap().unwrap();

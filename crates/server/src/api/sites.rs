@@ -41,6 +41,17 @@ pub struct UpdateCredentialsRequest {
     pub cookie: Option<String>,
     pub passkey: Option<String>,
     pub token: Option<String>,
+    pub url: Option<String>,
+    pub api_url: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct SiteDefinitionResponse {
+    pub id: String,
+    pub name: String,
+    pub url: String,
+    pub api_url: Option<String>,
+    pub adapter: String,
 }
 
 #[derive(Deserialize)]
@@ -252,6 +263,25 @@ async fn run_probe(
 // ---------------------------------------------------------------------------
 // Handlers
 // ---------------------------------------------------------------------------
+
+/// GET /definitions -- list all available site definitions (builtin + user)
+async fn list_definitions(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<SiteDefinitionResponse>>, (StatusCode, Json<ApiError>)> {
+    let definitions = load_all_definitions(Some(&state.inner.config.data_dir));
+    let mut responses: Vec<SiteDefinitionResponse> = definitions
+        .into_values()
+        .map(|def| SiteDefinitionResponse {
+            id: def.site.id,
+            name: def.site.name,
+            url: def.site.url,
+            api_url: def.site.api_url,
+            adapter: def.site.adapter,
+        })
+        .collect();
+    responses.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(Json(responses))
+}
 
 /// POST /sites -- create a new site, encrypt credentials, auto-probe
 async fn create_site(
@@ -473,6 +503,26 @@ async fn update_site(
             )
         })?
         .ok_or_else(|| api_err(StatusCode::NOT_FOUND, "site not found"))?;
+
+    // Update URL fields if provided
+    if req.url.is_some() || req.api_url.is_some() {
+        let new_url = req.url.as_deref().unwrap_or(&site.url);
+        let new_api_url = req
+            .api_url
+            .as_deref()
+            .or(site.api_url.as_deref());
+        state
+            .inner
+            .repo
+            .update_site_url(id, new_url, new_api_url)
+            .await
+            .map_err(|e| {
+                api_err(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("failed to update URL: {}", e),
+                )
+            })?;
+    }
 
     // Keep existing encrypted values unless new ones are provided
     let mut enc_cookie = site.encrypted_cookie.clone();
@@ -738,6 +788,7 @@ async fn refresh_stats(
 
 pub fn router() -> Router<AppState> {
     Router::new()
+        .route("/definitions", get(list_definitions))
         .route("/sites", post(create_site))
         .route("/sites", get(list_sites))
         .route("/sites/{id}", get(get_site))

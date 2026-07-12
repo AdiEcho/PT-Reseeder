@@ -44,6 +44,11 @@ pub fn SiteDetailPage() -> impl IntoView {
             .unwrap_or(0)
     };
 
+    // Edit URL state
+    let (editing_url, set_editing_url) = signal(false);
+    let (edit_url, set_edit_url) = signal(String::new());
+    let (edit_api_url, set_edit_api_url) = signal(String::new());
+
     // Load site detail
     let detail = Resource::new(
         move || site_id(),
@@ -62,6 +67,12 @@ pub fn SiteDetailPage() -> impl IntoView {
         async move { crate::server_fns::probe_site(id).await }
     });
 
+    // Update URL action
+    let update_url_action = Action::new(move |args: &(i64, String, String)| {
+        let (id, u, au) = args.clone();
+        async move { crate::server_fns::update_site_url(id, u, au).await }
+    });
+
     let refresh_pending = refresh_action.pending();
     let probe_pending = probe_action.pending();
 
@@ -75,6 +86,13 @@ pub fn SiteDetailPage() -> impl IntoView {
     Effect::new(move |_| {
         if probe_action.value().get().is_some() {
             detail.refetch();
+        }
+    });
+
+    Effect::new(move |_| {
+        if update_url_action.value().get().is_some() {
+            detail.refetch();
+            set_editing_url.set(false);
         }
     });
 
@@ -130,6 +148,28 @@ pub fn SiteDetailPage() -> impl IntoView {
                         }
                     })
             }}
+            {move || {
+                update_url_action
+                    .value()
+                    .get()
+                    .and_then(|r| r.err())
+                    .map(|e| {
+                        view! {
+                            <p class="error">{format!("URL 更新失败：{e}")}</p>
+                        }
+                    })
+            }}
+            {move || {
+                update_url_action
+                    .value()
+                    .get()
+                    .and_then(|r| r.ok())
+                    .map(|_| {
+                        view! {
+                            <div class="form-alert form-alert--success">"站点 URL 已更新"</div>
+                        }
+                    })
+            }}
 
             <Suspense fallback=move || view! { <p>"正在加载站点详情..."</p> }>
                 {move || {
@@ -140,6 +180,9 @@ pub fn SiteDetailPage() -> impl IntoView {
                                 let site = data.site;
                                 let site_name = site.name.clone();
                                 let site_url = site.url.clone();
+                                let site_api_url_display = site.api_url.clone().unwrap_or_default();
+                                let site_url_for_edit = site.url.clone();
+                                let site_api_url_for_edit = site.api_url.clone().unwrap_or_default();
                                 let site_adapter = site.adapter_type.clone();
                                 let site_auth_type = site.auth_type.clone();
                                 let site_probe_status = site.probe_status.clone();
@@ -151,6 +194,7 @@ pub fn SiteDetailPage() -> impl IntoView {
                                     "pending" => ("text-muted", "检测中"),
                                     _ => ("text-muted", "未知"),
                                 };
+                                let current_site_id = site.id;
                                 view! {
                                     <div>
                                         // Site info cards
@@ -173,14 +217,77 @@ pub fn SiteDetailPage() -> impl IntoView {
                                             </div>
                                         </div>
 
-                                        // Site URL
+                                        // Site URL section with edit support
                                         <div class="stats-table-section">
                                             <h2>"站点 URL"</h2>
-                                            <p>
-                                                <a href=site_url.clone() target="_blank" rel="noopener">
-                                                    {site_url.clone()}
-                                                </a>
-                                            </p>
+                                            {move || {
+                                                if editing_url.get() {
+                                                    view! {
+                                                        <div class="form-grid">
+                                                            <div class="form-group">
+                                                                <label>"URL"</label>
+                                                                <input
+                                                                    type="text"
+                                                                    prop:value=move || edit_url.get()
+                                                                    on:input=move |ev| set_edit_url.set(event_target_value(&ev))
+                                                                />
+                                                            </div>
+                                                            <div class="form-group">
+                                                                <label>"API URL"</label>
+                                                                <input
+                                                                    type="text"
+                                                                    prop:value=move || edit_api_url.get()
+                                                                    on:input=move |ev| set_edit_api_url.set(event_target_value(&ev))
+                                                                />
+                                                            </div>
+                                                        </div>
+                                                        <div class="form-actions">
+                                                            <button
+                                                                class="btn btn--outline"
+                                                                on:click=move |_| set_editing_url.set(false)
+                                                            >
+                                                                "取消"
+                                                            </button>
+                                                            <button
+                                                                class="btn btn-primary"
+                                                                on:click=move |_| {
+                                                                    update_url_action.dispatch((current_site_id, edit_url.get_untracked(), edit_api_url.get_untracked()));
+                                                                }
+                                                            >
+                                                                "保存"
+                                                            </button>
+                                                        </div>
+                                                    }.into_any()
+                                                } else {
+                                                    let url_display = site_url.clone();
+                                                    let url_href = site_url.clone();
+                                                    let api_url_line = site_api_url_display.clone();
+                                                    let url_for_btn = site_url_for_edit.clone();
+                                                    let api_url_for_btn = site_api_url_for_edit.clone();
+                                                    view! {
+                                                        <p>
+                                                            <a href=url_href target="_blank" rel="noopener">
+                                                                {url_display}
+                                                            </a>
+                                                        </p>
+                                                        {if !api_url_line.is_empty() {
+                                                            Some(view! { <p class="text-muted">{format!("API: {}", api_url_line)}</p> })
+                                                        } else {
+                                                            None
+                                                        }}
+                                                        <button
+                                                            class="btn btn--sm btn--outline"
+                                                            on:click=move |_| {
+                                                                set_edit_url.set(url_for_btn.clone());
+                                                                set_edit_api_url.set(api_url_for_btn.clone());
+                                                                set_editing_url.set(true);
+                                                            }
+                                                        >
+                                                            "编辑 URL"
+                                                        </button>
+                                                    }.into_any()
+                                                }
+                                            }}
                                         </div>
 
                                         // Action buttons

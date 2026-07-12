@@ -244,6 +244,26 @@ impl Repository {
         Ok(())
     }
 
+    pub async fn update_site_url(
+        &self,
+        id: i64,
+        url: &str,
+        api_url: Option<&str>,
+    ) -> Result<(), CoreError> {
+        sqlx::query(
+            "UPDATE sites SET url = ?, api_url = ?, \
+             updated_at = datetime('now') \
+             WHERE id = ?",
+        )
+        .bind(url)
+        .bind(api_url)
+        .bind(id)
+        .execute(&self.pool)
+        .await
+        .map_err(DbError::Sqlx)?;
+        Ok(())
+    }
+
     pub async fn delete_site(&self, id: i64) -> Result<(), CoreError> {
         sqlx::query("DELETE FROM sites WHERE id = ?")
             .bind(id)

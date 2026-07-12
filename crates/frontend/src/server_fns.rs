@@ -338,6 +338,15 @@ pub struct ConfigEntry {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SiteDefinitionInfo {
+    pub id: String,
+    pub name: String,
+    pub url: String,
+    pub api_url: Option<String>,
+    pub adapter: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SiteInfo {
     pub id: i64,
     pub name: String,
@@ -439,6 +448,51 @@ pub async fn get_sites() -> Result<Vec<SiteInfo>, ServerFnError> {
             enabled: s.enabled,
         })
         .collect())
+}
+
+#[server]
+pub async fn get_site_definitions() -> Result<Vec<SiteDefinitionInfo>, ServerFnError> {
+    use pt_reseeder_core::site::definitions::load_all_definitions;
+
+    let context = server_context()?;
+    let definitions = load_all_definitions(Some(&context.data_dir));
+    let mut results: Vec<SiteDefinitionInfo> = definitions
+        .into_values()
+        .map(|def| SiteDefinitionInfo {
+            id: def.site.id,
+            name: def.site.name,
+            url: def.site.url,
+            api_url: def.site.api_url,
+            adapter: def.site.adapter,
+        })
+        .collect();
+    results.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(results)
+}
+
+#[server]
+pub async fn update_site_url(
+    id: i64,
+    url: String,
+    api_url: String,
+) -> Result<SiteInfo, ServerFnError> {
+    use pt_reseeder_core::db::repo::Repository;
+
+    let url = url.trim().to_string();
+    if url.is_empty() {
+        return Err(ServerFnError::new("URL 不能为空"));
+    }
+
+    let repo = Repository::new(server_pool()?);
+    let api_url_opt = if api_url.trim().is_empty() {
+        None
+    } else {
+        Some(api_url.trim().to_string())
+    };
+    repo.update_site_url(id, &url, api_url_opt.as_deref())
+        .await
+        .map_err(|e| ServerFnError::new(format!("{e}")))?;
+    get_site_info(id).await
 }
 
 #[server]

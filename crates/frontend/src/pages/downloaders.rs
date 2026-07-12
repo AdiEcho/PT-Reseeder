@@ -93,7 +93,7 @@ pub fn DownloadersPage() -> impl IntoView {
                     .get()
                     .and_then(|r| r.err())
                     .map(|e| {
-                        view! { <p class="error">{format!("创建通道失败：{e}")}</p> }
+                        view! { <p class="error">{format!("创建迁移方向失败：{e}")}</p> }
                     })
             }}
             {move || {
@@ -102,7 +102,7 @@ pub fn DownloadersPage() -> impl IntoView {
                     .get()
                     .and_then(|r| r.err())
                     .map(|e| {
-                        view! { <p class="error">{format!("删除通道失败：{e}")}</p> }
+                        view! { <p class="error">{format!("删除迁移方向失败：{e}")}</p> }
                     })
             }}
 
@@ -279,6 +279,7 @@ fn DownloadersSection(
                     {move || if show_form.get() { "取消" } else { "添加下载器" }}
                 </button>
             </div>
+            <p class="section-desc">"管理 qBittorrent / Transmission 等下载器实例的连接信息。"</p>
 
             // Add downloader form
             {move || {
@@ -576,7 +577,7 @@ fn PairsSection(
     let on_submit = move |_| {
         let name_val = pair_name.get();
         if name_val.trim().is_empty() {
-            set_pair_error.set(Some("通道名称不能为空".into()));
+            set_pair_error.set(Some("迁移方向名称不能为空".into()));
             return;
         }
         let src: i64 = source_id.get().parse().unwrap_or(0);
@@ -604,14 +605,15 @@ fn PairsSection(
     view! {
         <div class="stats-table-section">
             <div class="section-header">
-                <h2>"转种通道"</h2>
+                <h2>"迁移方向"</h2>
                 <button
                     class="btn btn--primary"
                     on:click=move |_| set_show_form.update(|v| *v = !*v)
                 >
-                    {move || if show_form.get() { "取消" } else { "添加通道" }}
+                    {move || if show_form.get() { "取消" } else { "添加迁移方向" }}
                 </button>
             </div>
+            <p class="section-desc">"定义种子迁移的方向：从哪个下载器拉取、推送到哪个下载器。创建辅种任务时可选择一个迁移方向。"</p>
 
             // Add pair form
             {move || {
@@ -691,14 +693,14 @@ fn PairsSection(
             }}
 
             // Pairs table
-            <Suspense fallback=move || view! { <p>"正在加载转种通道..."</p> }>
+            <Suspense fallback=move || view! { <p>"正在加载迁移方向..."</p> }>
                 {move || {
                     pairs.get().map(|result| match result {
                         Err(e) => view! {
-                            <p class="error">{format!("转种通道加载失败：{e}")}</p>
+                            <p class="error">{format!("迁移方向加载失败：{e}")}</p>
                         }.into_any(),
                         Ok(list) if list.is_empty() => view! {
-                            <p>"尚未配置任何转种通道。"</p>
+                            <p>"尚未配置任何迁移方向。"</p>
                         }.into_any(),
                         Ok(list) => view! {
                             <div class="table-wrap">

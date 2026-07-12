@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <!-- 主渐变：Fluent 蓝紫色调 -->
+    <linearGradient id="grad-main" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0078D4"/>
+      <stop offset="100%" stop-color="#005A9E"/>
+    </linearGradient>
+    <!-- 箭头渐变 -->
+    <linearGradient id="grad-arrow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#50E6FF"/>
+      <stop offset="100%" stop-color="#0078D4"/>
+    </linearGradient>
+    <!-- 种子渐变 -->
+    <linearGradient id="grad-seed" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#005A9E"/>
+      <stop offset="100%" stop-color="#003966"/>
+    </linearGradient>
+    <!-- 背景微光 -->
+    <radialGradient id="bg-glow" cx="35%" cy="35%" r="65%">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- 白色底板 + 圆角矩形 (Fluent 风格) -->
+  <rect x="0" y="0" width="512" height="512" rx="90" ry="90" fill="#FFFFFF"/>
+
+  <!-- 内部圆角卡片底色 -->
+  <rect x="32" y="32" width="448" height="448" rx="72" ry="72" fill="url(#grad-main)"/>
+
+  <!-- 背景微光层 -->
+  <rect x="32" y="32" width="448" height="448" rx="72" ry="72" fill="url(#bg-glow)"/>
+
+  <!-- 循环箭头环 (Reseed 概念) -->
+  <!-- 用两段弧线 + 箭头表示循环 -->
+  <g transform="translate(256, 248)">
+    <!-- 上半弧 -->
+    <path d="M -80,-68 A 105,105 0 0 1 80,-68"
+          fill="none" stroke="url(#grad-arrow)" stroke-width="22" stroke-linecap="round"/>
+    <!-- 上箭头 -->
+    <polygon points="80,-68 58,-92 62,-56" fill="url(#grad-arrow)"/>
+
+    <!-- 下半弧 -->
+    <path d="M 80,68 A 105,105 0 0 1 -80,68"
+          fill="none" stroke="url(#grad-arrow)" stroke-width="22" stroke-linecap="round"/>
+    <!-- 下箭头 -->
+    <polygon points="-80,68 -58,92 -62,56" fill="url(#grad-arrow)"/>
+  </g>
+
+  <!-- 中央种子图形 (简化的种子/叶芽) -->
+  <g transform="translate(256, 248)">
+    <!-- 种子主体 - 水滴/种子形状 -->
+    <path d="M 0,-52 C 28,-52 48,-30 48,2 C 48,30 28,52 0,52 C -28,52 -48,30 -48,2 C -48,-30 -28,-52 0,-52 Z"
+          fill="#FFFFFF" opacity="0.95"/>
+    <!-- 种子内纹理 - 简洁的叶脉线 -->
+    <path d="M 0,-32 C 0,-32 0,38 0,38"
+          fill="none" stroke="url(#grad-seed)" stroke-width="5" stroke-linecap="round"/>
+    <path d="M 0,-8 C -18,4 -24,18 -22,28"
+          fill="none" stroke="url(#grad-seed)" stroke-width="4" stroke-linecap="round"/>
+    <path d="M 0,-8 C 18,4 24,18 22,28"
+          fill="none" stroke="url(#grad-seed)" stroke-width="4" stroke-linecap="round"/>
+    <!-- 顶部小尖芽 -->
+    <path d="M 0,-52 C -6,-66 0,-78 0,-78 C 0,-78 6,-66 0,-52 Z"
+          fill="#FFFFFF" opacity="0.9"/>
+  </g>
+
+  <!-- 底部文字标记 PT -->
+  <text x="256" y="390" text-anchor="middle" font-family="Segoe UI, SF Pro Display, Arial, sans-serif"
+        font-size="52" font-weight="700" fill="#FFFFFF" letter-spacing="6" opacity="0.9">PT</text>
+</svg>

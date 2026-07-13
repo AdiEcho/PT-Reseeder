@@ -1,5 +1,42 @@
 use leptos::prelude::*;
 use leptos_router::hooks::use_params_map;
+use serde::Deserialize;
+
+#[derive(Debug, Deserialize)]
+struct ProbeDetail {
+    api_reachable: Option<ProbeFieldDetail>,
+    #[serde(default)]
+    user_info_fields: Vec<ProbeFieldDetail>,
+    #[serde(default)]
+    passkey_available: Option<bool>,
+    #[serde(default)]
+    passkey_error: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ProbeFieldDetail {
+    field_name: String,
+    success: bool,
+    #[serde(default)]
+    value_preview: Option<String>,
+    error: Option<String>,
+}
+
+fn probe_field_label(field_name: &str) -> &str {
+    match field_name {
+        "api_reachable" => "辅种 API",
+        "uploaded" => "上传量",
+        "downloaded" => "下载量",
+        "ratio" => "分享率",
+        "bonus" => "积分/魔力值",
+        "user_class" => "用户等级",
+        "seeding_count" => "做种数",
+        "leeching_count" => "下载中数量",
+        "seeding_size" => "做种体积",
+        "upload_time_seconds" => "做种时间",
+        _ => field_name,
+    }
+}
 
 fn format_bytes(bytes: i64) -> String {
     const KB: f64 = 1024.0;
@@ -142,9 +179,16 @@ pub fn SiteDetailPage() -> impl IntoView {
                     .value()
                     .get()
                     .and_then(|r| r.ok())
-                    .map(|_| {
+                    .map(|result| {
+                        let (class, icon) = match result.status.as_str() {
+                            "ok" => ("form-alert form-alert--success", "✅ "),
+                            "partial" => ("form-alert form-alert--warning", "⚠️ "),
+                            _ => ("form-alert form-alert--error", "❌ "),
+                        };
                         view! {
-                            <div class="form-alert form-alert--success">"连通测试完成"</div>
+                            <div class=class>
+                                <div>{format!("{}{}", icon, result.message)}</div>
+                            </div>
                         }
                     })
             }}
@@ -423,16 +467,98 @@ pub fn SiteDetailPage() -> impl IntoView {
                                             }
                                         }}
 
-                                        // Probe detail JSON
+                                        // Probe detail
                                         {match probe_detail {
                                             Some(json) => {
-                                                view! {
-                                                    <div class="stats-table-section">
-                                                        <h2>"连通详情"</h2>
-                                                        <pre class="probe-detail-json">{json}</pre>
-                                                    </div>
+                                                let parsed = serde_json::from_str::<ProbeDetail>(&json).ok();
+                                                match parsed {
+                                                    Some(detail) => {
+                                                        let api_status = detail.api_reachable.as_ref().map(|f| {
+                                                            if f.success { "✅ 可达".to_string() }
+                                                            else { format!("❌ {}", f.error.as_deref().unwrap_or("不可达")) }
+                                                        });
+                                                        let successes: Vec<_> = detail.user_info_fields.iter()
+                                                            .filter(|f| f.success)
+                                                            .filter_map(|f| f.value_preview.as_ref().map(|v| (probe_field_label(&f.field_name), v.clone())))
+                                                            .collect();
+                                                        let failures: Vec<_> = detail.user_info_fields.iter()
+                                                            .filter(|f| !f.success)
+                                                            .map(|f| probe_field_label(&f.field_name).to_string())
+                                                            .collect();
+                                                        let passkey_info = match (detail.passkey_available, &detail.passkey_error) {
+                                                            (Some(true), _) => Some("✅ 已获取"),
+                                                            (_, Some(_)) => Some("❌ 获取失败"),
+                                                            (Some(false), None) => Some("— 未提供"),
+                                                            _ => None,
+                                                        };
+                                                        view! {
+                                                            <div class="stats-table-section">
+                                                                <h2>"连通详情"</h2>
+                                                                {api_status.map(|status| view! {
+                                                                    <div class="probe-detail-row">
+                                                                        <span class="probe-field-label">"辅种 API"</span>
+                                                                        "："
+                                                                        <span>{status}</span>
+                                                                    </div>
+                                                                })}
+                                                                {passkey_info.map(|info| view! {
+                                                                    <div class="probe-detail-row">
+                                                                        <span class="probe-field-label">"Passkey"</span>
+                                                                        "："
+                                                                        <span>{info}</span>
+                                                                    </div>
+                                                                })}
+                                                                {(!successes.is_empty()).then(|| view! {
+                                                                    <div class="probe-success-section">
+                                                                        <div class="probe-section-title">"获取到的个人信息："</div>
+                                                                        <div class="table-wrap">
+                                                                            <table class="stats-table">
+                                                                                <thead>
+                                                                                    <tr>
+                                                                                        <th>"指标"</th>
+                                                                                        <th>"值"</th>
+                                                                                    </tr>
+                                                                                </thead>
+                                                                                <tbody>
+                                                                                    {successes
+                                                                                        .into_iter()
+                                                                                        .map(|(label, value)| view! {
+                                                                                            <tr>
+                                                                                                <td>{label}</td>
+                                                                                                <td class="text-green">{value}</td>
+                                                                                            </tr>
+                                                                                        })
+                                                                                        .collect::<Vec<_>>()}
+                                                                                </tbody>
+                                                                            </table>
+                                                                        </div>
+                                                                    </div>
+                                                                })}
+                                                                {(!failures.is_empty()).then(|| view! {
+                                                                    <div class="probe-failure-section">
+                                                                        <div class="probe-section-title">"未获取到的项目："</div>
+                                                                        <ul class="probe-failure-list">
+                                                                            {failures
+                                                                                .into_iter()
+                                                                                .map(|label| view! { <li>{label}</li> })
+                                                                                .collect::<Vec<_>>()}
+                                                                        </ul>
+                                                                    </div>
+                                                                })}
+                                                            </div>
+                                                        }
+                                                            .into_any()
+                                                    }
+                                                    None => {
+                                                        view! {
+                                                            <div class="stats-table-section">
+                                                                <h2>"连通详情"</h2>
+                                                                <pre class="probe-detail-json">{json}</pre>
+                                                            </div>
+                                                        }
+                                                            .into_any()
+                                                    }
                                                 }
-                                                    .into_any()
                                             }
                                             None => {
                                                 view! {

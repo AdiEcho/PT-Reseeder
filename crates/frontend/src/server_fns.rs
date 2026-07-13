@@ -707,7 +707,7 @@ pub async fn delete_site(id: i64) -> Result<(), ServerFnError> {
 }
 
 #[server]
-pub async fn probe_site(id: i64) -> Result<(), ServerFnError> {
+pub async fn probe_site(id: i64) -> Result<ValidateSiteResult, ServerFnError> {
     use pt_reseeder_core::db::repo::Repository;
     use pt_reseeder_core::site::probe::probe_site as run_site_probe;
 
@@ -731,7 +731,20 @@ pub async fn probe_site(id: i64) -> Result<(), ServerFnError> {
     let detail = probe.to_json();
     repo.update_probe_status(id, &status, Some(&detail))
         .await
-        .map_err(|e| ServerFnError::new(format!("{e}")))
+        .map_err(|e| ServerFnError::new(format!("{e}")))?;
+
+    let message = match status.as_str() {
+        "ok" => "校验通过，站点连通正常".to_string(),
+        "partial" => "站点可访问，但部分指标未获取或不受支持，请查看具体项目".to_string(),
+        "failed" => "校验失败，无法连接站点或凭证无效".to_string(),
+        _ => "校验结果未知".to_string(),
+    };
+
+    Ok(ValidateSiteResult {
+        status,
+        message,
+        detail_json: Some(detail),
+    })
 }
 
 #[server]

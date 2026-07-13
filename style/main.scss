@@ -792,6 +792,43 @@ textarea:focus {
     margin-top: 4px;
 }
 
+.probe-success-list {
+    margin: 4px 0 0;
+    padding-left: 20px;
+    list-style: none;
+}
+
+.probe-success-list li + li {
+    margin-top: 2px;
+}
+
+.probe-section-title {
+    font-weight: 600;
+    margin-top: 8px;
+    margin-bottom: 4px;
+    font-size: 12px;
+    opacity: 0.85;
+}
+
+.probe-success-section,
+.probe-failure-section {
+    margin-top: 6px;
+}
+
+.probe-field-label {
+    opacity: 0.8;
+}
+
+.probe-field-value {
+    font-weight: 600;
+    color: var(--green, #22c55e);
+}
+
+.probe-detail-row {
+    padding: 4px 0;
+    font-size: 13px;
+}
+
 button:disabled {
     opacity: 0.5;
     cursor: not-allowed;

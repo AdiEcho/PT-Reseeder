@@ -14,6 +14,8 @@ struct ProbeDetail {
 struct ProbeFieldDetail {
     field_name: String,
     success: bool,
+    #[serde(default)]
+    value_preview: Option<String>,
     error: Option<String>,
 }
 
@@ -38,6 +40,26 @@ fn probe_error_label(error: Option<&str>) -> String {
         None | Some("field not parsed") => "未获取到（站点可能不支持或页面结构已变化）".to_string(),
         Some(error) => error.to_string(),
     }
+}
+
+fn probe_success_details(detail_json: Option<&str>) -> Vec<(String, String)> {
+    let Some(detail_json) = detail_json else {
+        return Vec::new();
+    };
+    let Ok(detail) = serde_json::from_str::<ProbeDetail>(detail_json) else {
+        return Vec::new();
+    };
+
+    detail
+        .user_info_fields
+        .into_iter()
+        .filter(|field| field.success)
+        .filter_map(|field| {
+            field
+                .value_preview
+                .map(|v| (probe_field_label(&field.field_name).to_string(), v))
+        })
+        .collect()
 }
 
 fn probe_failure_details(detail_json: Option<&str>) -> Vec<String> {
@@ -384,17 +406,38 @@ pub fn SitesPage() -> impl IntoView {
                                         "partial" => ("form-alert form-alert--warning", "⚠️ "),
                                         _ => ("form-alert form-alert--error", "❌ "),
                                     };
+                                    let successes = probe_success_details(result.detail_json.as_deref());
                                     let failures = probe_failure_details(result.detail_json.as_deref());
                                     view! {
                                         <div class=class>
                                             <div>{format!("{}{}", icon, result.message)}</div>
+                                            {(!successes.is_empty()).then(|| view! {
+                                                <div class="probe-success-section">
+                                                    <div class="probe-section-title">"获取到的个人信息："</div>
+                                                    <ul class="probe-success-list">
+                                                        {successes
+                                                            .into_iter()
+                                                            .map(|(label, value)| view! {
+                                                                <li>
+                                                                    <span class="probe-field-label">{label}</span>
+                                                                    "："
+                                                                    <span class="probe-field-value">{value}</span>
+                                                                </li>
+                                                            })
+                                                            .collect::<Vec<_>>()}
+                                                    </ul>
+                                                </div>
+                                            })}
                                             {(!failures.is_empty()).then(|| view! {
-                                                <ul class="probe-failure-list">
-                                                    {failures
-                                                        .into_iter()
-                                                        .map(|failure| view! { <li>{failure}</li> })
-                                                        .collect::<Vec<_>>()}
-                                                </ul>
+                                                <div class="probe-failure-section">
+                                                    <div class="probe-section-title">"未获取到的项目："</div>
+                                                    <ul class="probe-failure-list">
+                                                        {failures
+                                                            .into_iter()
+                                                            .map(|failure| view! { <li>{failure}</li> })
+                                                            .collect::<Vec<_>>()}
+                                                    </ul>
+                                                </div>
                                             })}
                                         </div>
                                     }
@@ -443,6 +486,54 @@ pub fn SitesPage() -> impl IntoView {
                     .and_then(|r| r.err())
                     .map(|e| {
                         view! { <p class="error">{format!("连通测试失败：{e}")}</p> }
+                    })
+            }}
+            {move || {
+                probe_action
+                    .value()
+                    .get()
+                    .and_then(|r| r.ok())
+                    .map(|result| {
+                        let (class, icon) = match result.status.as_str() {
+                            "ok" => ("form-alert form-alert--success", "✅ "),
+                            "partial" => ("form-alert form-alert--warning", "⚠️ "),
+                            _ => ("form-alert form-alert--error", "❌ "),
+                        };
+                        let successes = probe_success_details(result.detail_json.as_deref());
+                        let failures = probe_failure_details(result.detail_json.as_deref());
+                        view! {
+                            <div class=class>
+                                <div>{format!("{}{}", icon, result.message)}</div>
+                                {(!successes.is_empty()).then(|| view! {
+                                    <div class="probe-success-section">
+                                        <div class="probe-section-title">"获取到的个人信息："</div>
+                                        <ul class="probe-success-list">
+                                            {successes
+                                                .into_iter()
+                                                .map(|(label, value)| view! {
+                                                    <li>
+                                                        <span class="probe-field-label">{label}</span>
+                                                        "："
+                                                        <span class="probe-field-value">{value}</span>
+                                                    </li>
+                                                })
+                                                .collect::<Vec<_>>()}
+                                        </ul>
+                                    </div>
+                                })}
+                                {(!failures.is_empty()).then(|| view! {
+                                    <div class="probe-failure-section">
+                                        <div class="probe-section-title">"未获取到的项目："</div>
+                                        <ul class="probe-failure-list">
+                                            {failures
+                                                .into_iter()
+                                                .map(|failure| view! { <li>{failure}</li> })
+                                                .collect::<Vec<_>>()}
+                                        </ul>
+                                    </div>
+                                })}
+                            </div>
+                        }
                     })
             }}
             {move || {
@@ -661,7 +752,7 @@ pub fn SitesPage() -> impl IntoView {
 
 #[cfg(test)]
 mod tests {
-    use super::probe_failure_details;
+    use super::{probe_failure_details, probe_success_details};
 
     #[test]
     fn probe_failure_details_formats_failed_items() {
@@ -683,6 +774,32 @@ mod tests {
                 "Passkey：authentication failed: cookie expired",
             ]
         );
+    }
+
+    #[test]
+    fn probe_success_details_extracts_values() {
+        let detail = r#"{
+            "api_reachable":null,
+            "user_info_fields":[
+                {"field_name":"uploaded","success":true,"value_preview":"1.00 TB","error":null},
+                {"field_name":"downloaded","success":true,"value_preview":"500.00 GB","error":null},
+                {"field_name":"ratio","success":false,"value_preview":null,"error":"field not parsed"}
+            ]
+        }"#;
+
+        assert_eq!(
+            probe_success_details(Some(detail)),
+            vec![
+                ("上传量".to_string(), "1.00 TB".to_string()),
+                ("下载量".to_string(), "500.00 GB".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn probe_success_details_handles_missing_json() {
+        assert!(probe_success_details(None).is_empty());
+        assert!(probe_success_details(Some("not-json")).is_empty());
     }
 
     #[test]

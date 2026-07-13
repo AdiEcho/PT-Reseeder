@@ -81,10 +81,12 @@ pub fn SiteDetailPage() -> impl IntoView {
             .unwrap_or(0)
     };
 
-    // Edit URL state
+    // Edit state
     let (editing_url, set_editing_url) = signal(false);
     let (edit_url, set_edit_url) = signal(String::new());
     let (edit_api_url, set_edit_api_url) = signal(String::new());
+    let (edit_cookie, set_edit_cookie) = signal(String::new());
+    let (edit_passkey, set_edit_passkey) = signal(String::new());
 
     // Load site detail
     let detail = Resource::new(
@@ -104,10 +106,10 @@ pub fn SiteDetailPage() -> impl IntoView {
         async move { crate::server_fns::probe_site(id).await }
     });
 
-    // Update URL action
-    let update_url_action = Action::new(move |args: &(i64, String, String)| {
-        let (id, u, au) = args.clone();
-        async move { crate::server_fns::update_site_url(id, u, au).await }
+    // Update site action
+    let update_site_action = Action::new(move |args: &(i64, String, String, String, String)| {
+        let (id, u, au, c, p) = args.clone();
+        async move { crate::server_fns::update_site(id, u, au, c, p).await }
     });
 
     let refresh_pending = refresh_action.pending();
@@ -127,7 +129,7 @@ pub fn SiteDetailPage() -> impl IntoView {
     });
 
     Effect::new(move |_| {
-        if update_url_action.value().get().is_some() {
+        if update_site_action.value().get().is_some() {
             detail.refetch();
             set_editing_url.set(false);
         }
@@ -193,24 +195,24 @@ pub fn SiteDetailPage() -> impl IntoView {
                     })
             }}
             {move || {
-                update_url_action
+                update_site_action
                     .value()
                     .get()
                     .and_then(|r| r.err())
                     .map(|e| {
                         view! {
-                            <p class="error">{format!("URL 更新失败：{e}")}</p>
+                            <p class="error">{format!("更新失败：{e}")}</p>
                         }
                     })
             }}
             {move || {
-                update_url_action
+                update_site_action
                     .value()
                     .get()
                     .and_then(|r| r.ok())
                     .map(|_| {
                         view! {
-                            <div class="form-alert form-alert--success">"站点 URL 已更新"</div>
+                            <div class="form-alert form-alert--success">"站点已更新"</div>
                         }
                     })
             }}
@@ -262,9 +264,9 @@ pub fn SiteDetailPage() -> impl IntoView {
                                             </div>
                                         </div>
 
-                                        // Site URL section with edit support
+                                        // Site info section with edit support
                                         <div class="stats-table-section">
-                                            <h2>"站点 URL"</h2>
+                                            <h2>"站点信息"</h2>
                                             {move || {
                                                 if editing_url.get() {
                                                     view! {
@@ -285,6 +287,24 @@ pub fn SiteDetailPage() -> impl IntoView {
                                                                     on:input=move |ev| set_edit_api_url.set(event_target_value(&ev))
                                                                 />
                                                             </div>
+                                                            <div class="form-group">
+                                                                <label>"Cookie"</label>
+                                                                <input
+                                                                    type="text"
+                                                                    placeholder="留空则保持不变"
+                                                                    prop:value=move || edit_cookie.get()
+                                                                    on:input=move |ev| set_edit_cookie.set(event_target_value(&ev))
+                                                                />
+                                                            </div>
+                                                            <div class="form-group">
+                                                                <label>"Passkey"</label>
+                                                                <input
+                                                                    type="text"
+                                                                    placeholder="留空则保持不变"
+                                                                    prop:value=move || edit_passkey.get()
+                                                                    on:input=move |ev| set_edit_passkey.set(event_target_value(&ev))
+                                                                />
+                                                            </div>
                                                         </div>
                                                         <div class="form-actions">
                                                             <button
@@ -296,7 +316,7 @@ pub fn SiteDetailPage() -> impl IntoView {
                                                             <button
                                                                 class="btn btn-primary"
                                                                 on:click=move |_| {
-                                                                    update_url_action.dispatch((current_site_id, edit_url.get_untracked(), edit_api_url.get_untracked()));
+                                                                    update_site_action.dispatch((current_site_id, edit_url.get_untracked(), edit_api_url.get_untracked(), edit_cookie.get_untracked(), edit_passkey.get_untracked()));
                                                                 }
                                                             >
                                                                 "保存"
@@ -325,10 +345,12 @@ pub fn SiteDetailPage() -> impl IntoView {
                                                             on:click=move |_| {
                                                                 set_edit_url.set(url_for_btn.clone());
                                                                 set_edit_api_url.set(api_url_for_btn.clone());
+                                                                set_edit_cookie.set(String::new());
+                                                                set_edit_passkey.set(String::new());
                                                                 set_editing_url.set(true);
                                                             }
                                                         >
-                                                            "编辑 URL"
+                                                            "编辑"
                                                         </button>
                                                     }.into_any()
                                                 }

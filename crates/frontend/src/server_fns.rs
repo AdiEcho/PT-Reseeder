@@ -530,6 +530,85 @@ pub async fn update_site_url(
 }
 
 #[server]
+pub async fn update_site(
+    id: i64,
+    url: String,
+    api_url: String,
+    cookie: String,
+    passkey: String,
+) -> Result<SiteInfo, ServerFnError> {
+    use pt_reseeder_core::db::repo::Repository;
+
+    let url = url.trim().to_string();
+    if url.is_empty() {
+        return Err(ServerFnError::new("URL 不能为空"));
+    }
+
+    let context = server_context()?;
+    let vault = context
+        .vault
+        .read()
+        .await
+        .clone()
+        .ok_or_else(|| ServerFnError::new("凭证已锁定，请重新登录后再操作"))?;
+    let repo = Repository::new(context.pool.clone());
+
+    // Update URL
+    let api_url_opt = if api_url.trim().is_empty() {
+        None
+    } else {
+        Some(api_url.trim().to_string())
+    };
+    repo.update_site_url(id, &url, api_url_opt.as_deref())
+        .await
+        .map_err(|e| ServerFnError::new(format!("{e}")))?;
+
+    // Update credentials (only if user provided new values; empty means keep existing)
+    let cookie_trimmed = cookie.trim().to_string();
+    let passkey_trimmed = passkey.trim().to_string();
+    if !cookie_trimmed.is_empty() || !passkey_trimmed.is_empty() {
+        // Load existing credentials to preserve unchanged fields
+        let site_row = repo
+            .get_site(id)
+            .await
+            .map_err(|e| ServerFnError::new(format!("{e}")))?
+            .ok_or_else(|| ServerFnError::new("站点不存在"))?;
+
+        let (encrypted_cookie, cookie_nonce) = if !cookie_trimmed.is_empty() {
+            encrypt_optional(&vault, &cookie_trimmed)?
+        } else {
+            (
+                site_row.encrypted_cookie.clone(),
+                site_row.cookie_nonce.clone(),
+            )
+        };
+        let (encrypted_passkey, passkey_nonce) = if !passkey_trimmed.is_empty() {
+            encrypt_optional(&vault, &passkey_trimmed)?
+        } else {
+            (
+                site_row.encrypted_passkey.clone(),
+                site_row.passkey_nonce.clone(),
+            )
+        };
+
+        repo.update_site_credentials(
+            id,
+            encrypted_cookie.as_deref(),
+            cookie_nonce.as_deref(),
+            encrypted_passkey.as_deref(),
+            passkey_nonce.as_deref(),
+            site_row.encrypted_token.as_deref(),
+            site_row.token_nonce.as_deref(),
+        )
+        .await
+        .map_err(|e| ServerFnError::new(format!("{e}")))?;
+    }
+
+    refresh_site_registry_best_effort(&context).await;
+    get_site_info(id).await
+}
+
+#[server]
 pub async fn create_site(
     name: String,
     url: String,

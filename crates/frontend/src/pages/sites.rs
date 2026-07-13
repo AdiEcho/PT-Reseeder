@@ -1,4 +1,82 @@
 use leptos::prelude::*;
+use serde::Deserialize;
+
+#[derive(Debug, Deserialize)]
+struct ProbeDetail {
+    api_reachable: Option<ProbeFieldDetail>,
+    #[serde(default)]
+    user_info_fields: Vec<ProbeFieldDetail>,
+    #[serde(default)]
+    passkey_error: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ProbeFieldDetail {
+    field_name: String,
+    success: bool,
+    error: Option<String>,
+}
+
+fn probe_field_label(field_name: &str) -> &str {
+    match field_name {
+        "api_reachable" => "辅种 API",
+        "uploaded" => "上传量",
+        "downloaded" => "下载量",
+        "ratio" => "分享率",
+        "bonus" => "积分/魔力值",
+        "user_class" => "用户等级",
+        "seeding_count" => "做种数",
+        "leeching_count" => "下载中数量",
+        "seeding_size" => "做种体积",
+        "upload_time_seconds" => "做种时间",
+        _ => field_name,
+    }
+}
+
+fn probe_error_label(error: Option<&str>) -> String {
+    match error {
+        None | Some("field not parsed") => "未获取到（站点可能不支持或页面结构已变化）".to_string(),
+        Some(error) => error.to_string(),
+    }
+}
+
+fn probe_failure_details(detail_json: Option<&str>) -> Vec<String> {
+    let Some(detail_json) = detail_json else {
+        return Vec::new();
+    };
+    let Ok(detail) = serde_json::from_str::<ProbeDetail>(detail_json) else {
+        return Vec::new();
+    };
+
+    let mut failures = Vec::new();
+    if let Some(field) = detail.api_reachable.filter(|field| !field.success) {
+        failures.push(format!(
+            "{}：{}",
+            probe_field_label(&field.field_name),
+            probe_error_label(field.error.as_deref())
+        ));
+    }
+    failures.extend(
+        detail
+            .user_info_fields
+            .into_iter()
+            .filter(|field| !field.success)
+            .map(|field| {
+                format!(
+                    "{}：{}",
+                    probe_field_label(&field.field_name),
+                    probe_error_label(field.error.as_deref())
+                )
+            }),
+    );
+    if let Some(error) = detail.passkey_error {
+        failures.push(format!(
+            "Passkey：{}",
+            probe_error_label(Some(error.as_str()))
+        ));
+    }
+    failures
+}
 
 #[component]
 pub fn SitesPage() -> impl IntoView {
@@ -240,8 +318,6 @@ pub fn SitesPage() -> impl IntoView {
                                         <option value="Gazelle">"Gazelle"</option>
                                         <option value="MTeam">"MTeam"</option>
                                         <option value="Zhuque">"Zhuque"</option>
-                                        <option value="Luminance">"Luminance"</option>
-                                        <option value="Generic">"Generic"</option>
                                     </select>
                                 </div>
                                 <div class="form-group">
@@ -308,9 +384,18 @@ pub fn SitesPage() -> impl IntoView {
                                         "partial" => ("form-alert form-alert--warning", "⚠️ "),
                                         _ => ("form-alert form-alert--error", "❌ "),
                                     };
+                                    let failures = probe_failure_details(result.detail_json.as_deref());
                                     view! {
                                         <div class=class>
-                                            {format!("{}{}", icon, result.message)}
+                                            <div>{format!("{}{}", icon, result.message)}</div>
+                                            {(!failures.is_empty()).then(|| view! {
+                                                <ul class="probe-failure-list">
+                                                    {failures
+                                                        .into_iter()
+                                                        .map(|failure| view! { <li>{failure}</li> })
+                                                        .collect::<Vec<_>>()}
+                                                </ul>
+                                            })}
                                         </div>
                                     }
                                 })
@@ -425,6 +510,7 @@ pub fn SitesPage() -> impl IntoView {
                                                                     .as_str()
                                                                 {
                                                                     "ok" => ("text-green", "正常"),
+                                                                    "partial" => ("text-yellow", "部分可用"),
                                                                     "failed" => ("text-red", "失败"),
                                                                     "pending" => ("text-muted", "检测中"),
                                                                     _ => ("text-muted", "未知"),
@@ -570,5 +656,49 @@ pub fn SitesPage() -> impl IntoView {
                 })
             }}
         </div>
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::probe_failure_details;
+
+    #[test]
+    fn probe_failure_details_formats_failed_items() {
+        let detail = r#"{
+            "api_reachable":{"field_name":"api_reachable","success":false,"value_preview":null,"error":"HTTP 403"},
+            "user_info_fields":[
+                {"field_name":"uploaded","success":true,"value_preview":"1.00 TB","error":null},
+                {"field_name":"ratio","success":false,"value_preview":null,"error":"field not parsed"}
+            ],
+            "passkey_available":false,
+            "passkey_error":"authentication failed: cookie expired"
+        }"#;
+
+        assert_eq!(
+            probe_failure_details(Some(detail)),
+            vec![
+                "辅种 API：HTTP 403",
+                "分享率：未获取到（站点可能不支持或页面结构已变化）",
+                "Passkey：authentication failed: cookie expired",
+            ]
+        );
+    }
+
+    #[test]
+    fn probe_failure_details_handles_missing_or_invalid_json() {
+        assert!(probe_failure_details(None).is_empty());
+        assert!(probe_failure_details(Some("not-json")).is_empty());
+    }
+
+    #[test]
+    fn probe_failure_details_ignores_absent_optional_passkey() {
+        let detail = r#"{
+            "api_reachable":null,
+            "user_info_fields":[],
+            "passkey_available":false
+        }"#;
+
+        assert!(probe_failure_details(Some(detail)).is_empty());
     }
 }

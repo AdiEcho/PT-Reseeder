@@ -601,6 +601,9 @@ textarea:focus {
 .stat-card--red {
     border-left-color: var(--red);
 }
+.stat-card--warning {
+    border-left-color: var(--amber);
+}
 .stat-card--purple {
     border-left-color: var(--purple);
 }
@@ -772,6 +775,21 @@ textarea:focus {
     background: rgba(46, 204, 113, 0.1);
     border: 1px solid rgba(46, 204, 113, 0.3);
     color: var(--green, #2ecc71);
+}
+
+.form-alert--warning {
+    background: rgba(245, 158, 11, 0.1);
+    border: 1px solid rgba(245, 158, 11, 0.3);
+    color: var(--amber, #f59e0b);
+}
+
+.probe-failure-list {
+    margin: 8px 0 0;
+    padding-left: 20px;
+}
+
+.probe-failure-list li + li {
+    margin-top: 4px;
 }
 
 button:disabled {

@@ -10,7 +10,14 @@ pub struct ServerFnContext {
     pub vault: std::sync::Arc<tokio::sync::RwLock<Option<pt_reseeder_core::crypto::Vault>>>,
     pub session_ttl_hours: u64,
     pub data_dir: std::path::PathBuf,
-    pub site_registry: std::sync::Arc<pt_reseeder_core::site::registry::SiteRegistry>,
+    pub site_registry:
+        std::sync::Arc<tokio::sync::RwLock<pt_reseeder_core::site::registry::SiteRegistry>>,
+    pub refresh_site_registry: std::sync::Arc<
+        dyn Fn() -> std::pin::Pin<
+                Box<dyn std::future::Future<Output = Result<(), String>> + Send + 'static>,
+            > + Send
+            + Sync,
+    >,
     pub fetch_seeding_size: std::sync::Arc<std::sync::atomic::AtomicBool>,
     pub authenticated_user_id: Option<i64>,
 }
@@ -110,7 +117,9 @@ async fn auth_register(username: String, password: String) -> Result<(), ServerF
         .await
         .map_err(|e| ServerFnError::new(format!("{e}")))?;
     *context.vault.write().await = Some(vault);
-    create_session_cookie(&repo, user_id, context.session_ttl_hours).await
+    create_session_cookie(&repo, user_id, context.session_ttl_hours).await?;
+    refresh_site_registry_best_effort(&context).await;
+    Ok(())
 }
 
 #[cfg(feature = "ssr")]
@@ -135,7 +144,9 @@ async fn auth_login(username: String, password: String) -> Result<(), ServerFnEr
     .map_err(|_| ServerFnError::new("Invalid username or password"))?;
     *context.vault.write().await = Some(vault);
     let _ = repo.update_last_login(user.id).await;
-    create_session_cookie(&repo, user.id, context.session_ttl_hours).await
+    create_session_cookie(&repo, user.id, context.session_ttl_hours).await?;
+    refresh_site_registry_best_effort(&context).await;
+    Ok(())
 }
 
 #[cfg(feature = "ssr")]
@@ -285,6 +296,11 @@ pub async fn get_current_user() -> Result<Option<UserInfo>, ServerFnError> {
     use pt_reseeder_core::db::models::User;
     use pt_reseeder_core::db::repo::Repository;
 
+    let context = server_context()?;
+    if context.vault.read().await.is_none() {
+        return Ok(None);
+    }
+
     let jar: CookieJar = leptos_axum::extract()
         .await
         .map_err(|e| ServerFnError::new(format!("{e}")))?;
@@ -431,6 +447,13 @@ pub struct TaskLogInfo {
 }
 
 #[cfg(feature = "ssr")]
+async fn refresh_site_registry_best_effort(context: &ServerFnContext) {
+    if let Err(error) = (context.refresh_site_registry)().await {
+        eprintln!("failed to refresh site registry: {error}");
+    }
+}
+
+#[cfg(feature = "ssr")]
 fn server_pool() -> Result<sqlx::SqlitePool, ServerFnError> {
     Ok(server_context()?.pool)
 }
@@ -502,6 +525,7 @@ pub async fn update_site_url(
     repo.update_site_url(id, &url, api_url_opt.as_deref())
         .await
         .map_err(|e| ServerFnError::new(format!("{e}")))?;
+    refresh_site_registry_best_effort(&server_context()?).await;
     get_site_info(id).await
 }
 
@@ -518,9 +542,23 @@ pub async fn create_site(
     use pt_reseeder_core::db::repo::Repository;
 
     let context = server_context()?;
+    let vault = context
+        .vault
+        .read()
+        .await
+        .clone()
+        .ok_or_else(|| ServerFnError::new("凭证已锁定，请重新登录后再创建站点"))?;
     let repo = Repository::new(context.pool.clone());
     let adapter = adapter_type.to_ascii_lowercase();
-    let id = repo
+    if !matches!(
+        adapter.as_str(),
+        "nexusphp" | "mteam" | "unit3d" | "gazelle" | "zhuque"
+    ) {
+        return Err(ServerFnError::new(format!(
+            "不支持的站点架构：{adapter_type}"
+        )));
+    }
+    let id = match repo
         .create_site(
             &name,
             &url,
@@ -529,10 +567,13 @@ pub async fn create_site(
             &auth_type,
         )
         .await
-        .map_err(|e| ServerFnError::new(format!("{e}")))?;
-    if let Some(vault) = context.vault.read().await.as_ref() {
-        let (encrypted_cookie, cookie_nonce) = encrypt_optional(vault, &cookie)?;
-        let (encrypted_passkey, passkey_nonce) = encrypt_optional(vault, &passkey)?;
+    {
+        Ok(id) => id,
+        Err(error) => return Err(ServerFnError::new(format!("{error}"))),
+    };
+    let credential_result = async {
+        let (encrypted_cookie, cookie_nonce) = encrypt_optional(&vault, &cookie)?;
+        let (encrypted_passkey, passkey_nonce) = encrypt_optional(&vault, &passkey)?;
         repo.update_site_credentials(
             id,
             encrypted_cookie.as_deref(),
@@ -543,8 +584,14 @@ pub async fn create_site(
             None,
         )
         .await
-        .map_err(|e| ServerFnError::new(format!("{e}")))?;
+        .map_err(|e| ServerFnError::new(format!("{e}")))
     }
+    .await;
+    if let Err(error) = credential_result {
+        let _ = repo.delete_site(id).await;
+        return Err(error);
+    }
+    refresh_site_registry_best_effort(&context).await;
     get_site_info(id).await
 }
 
@@ -634,7 +681,7 @@ pub async fn validate_site(
     let detail = probe.to_json();
     let message = match status.as_str() {
         "ok" => "校验通过，站点连通正常".to_string(),
-        "partial" => "部分功能可用，建议检查凭证".to_string(),
+        "partial" => "站点可访问，但部分指标未获取或不受支持，请查看具体项目".to_string(),
         "failed" => "校验失败，无法连接站点或凭证无效".to_string(),
         _ => "校验结果未知".to_string(),
     };
@@ -650,10 +697,13 @@ pub async fn validate_site(
 pub async fn delete_site(id: i64) -> Result<(), ServerFnError> {
     use pt_reseeder_core::db::repo::Repository;
 
-    Repository::new(server_pool()?)
+    let context = server_context()?;
+    Repository::new(context.pool.clone())
         .delete_site(id)
         .await
-        .map_err(|e| ServerFnError::new(format!("{e}")))
+        .map_err(|e| ServerFnError::new(format!("{e}")))?;
+    refresh_site_registry_best_effort(&context).await;
+    Ok(())
 }
 
 #[server]
@@ -671,10 +721,11 @@ pub async fn probe_site(id: i64) -> Result<(), ServerFnError> {
 
     let handle = context
         .site_registry
+        .read()
+        .await
         .get(&pt_reseeder_core::site::models::SiteId::from(site.id))
-        .ok_or_else(|| {
-            ServerFnError::new("site is not registered; ensure credentials are unlocked")
-        })?;
+        .cloned()
+        .ok_or_else(|| ServerFnError::new("站点适配器未注册，请确认凭证已解锁且站点架构受支持"))?;
     let probe = run_site_probe(handle.reseed.as_ref(), handle.user_info.as_ref()).await;
     let status = probe.status_str().to_string();
     let detail = probe.to_json();
@@ -1281,7 +1332,8 @@ pub async fn submit_repost(id: i64) -> Result<(), ServerFnError> {
 
     let context = server_context()?;
     let repo = Repository::new(context.pool.clone());
-    submitter::submit_entry(&repo, &context.site_registry, id)
+    let registry = context.site_registry.read().await.clone();
+    submitter::submit_entry(&repo, &registry, id)
         .await
         .map(|_| ())
         .map_err(|e| ServerFnError::new(format!("{e}")))

@@ -188,11 +188,12 @@ pub fn SiteDetailPage() -> impl IntoView {
                                 let site_probe_status = site.probe_status.clone();
                                 let user_stats = data.user_stats;
                                 let probe_detail = data.probe_detail;
-                                let (_probe_class, probe_label) = match site_probe_status.as_str() {
-                                    "ok" => ("text-green", "正常"),
-                                    "failed" => ("text-red", "失败"),
-                                    "pending" => ("text-muted", "检测中"),
-                                    _ => ("text-muted", "未知"),
+                                let (probe_card_class, probe_label) = match site_probe_status.as_str() {
+                                    "ok" => ("green", "正常"),
+                                    "partial" => ("warning", "部分可用"),
+                                    "failed" => ("red", "失败"),
+                                    "pending" => ("blue", "检测中"),
+                                    _ => ("blue", "未知"),
                                 };
                                 let current_site_id = site.id;
                                 view! {
@@ -211,7 +212,7 @@ pub fn SiteDetailPage() -> impl IntoView {
                                                 <div class="stat-card__value">{site_auth_type.clone()}</div>
                                                 <div class="stat-card__label">"认证方式"</div>
                                             </div>
-                                            <div class={format!("stat-card stat-card--{}", if site_probe_status == "ok" { "green" } else { "red" })}>
+                                            <div class={format!("stat-card stat-card--{}", probe_card_class)}>
                                                 <div class="stat-card__value">{probe_label}</div>
                                                 <div class="stat-card__label">"连通状态"</div>
                                             </div>

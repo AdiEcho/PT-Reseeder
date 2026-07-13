@@ -12,6 +12,8 @@ pub struct ProbeResult {
     pub api_reachable: Option<FieldProbeResult>,
     pub user_info_fields: Vec<FieldProbeResult>,
     pub passkey_available: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub passkey_error: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -100,6 +102,7 @@ pub async fn probe_site(
         api_reachable: None,
         user_info_fields: Vec::new(),
         passkey_available: None,
+        passkey_error: None,
     };
 
     let mut any_passed = false;
@@ -226,8 +229,6 @@ pub async fn probe_site(
                 result.passkey_available = Some(available);
                 if available {
                     any_passed = true;
-                } else {
-                    any_failed = true;
                 }
             }
             Err(e) => {
@@ -237,6 +238,7 @@ pub async fn probe_site(
                     e
                 );
                 result.passkey_available = Some(false);
+                result.passkey_error = Some(e.to_string());
                 any_failed = true;
             }
         }
@@ -259,6 +261,58 @@ pub async fn probe_site(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::error::{CoreError, SiteError};
+    use crate::site::models::{SiteId, UserStats};
+    use async_trait::async_trait;
+    use std::collections::HashSet;
+
+    struct StubUserInfo {
+        stats: UserStats,
+        passkey_result: Result<Option<String>, String>,
+    }
+
+    impl SiteCore for StubUserInfo {
+        fn name(&self) -> &str {
+            "stub"
+        }
+
+        fn base_url(&self) -> &str {
+            "https://stub.invalid"
+        }
+
+        fn capabilities(&self) -> HashSet<SiteCapability> {
+            HashSet::from([SiteCapability::UserInfo])
+        }
+    }
+
+    #[async_trait]
+    impl UserInfoCapable for StubUserInfo {
+        async fn fetch_user_info(&self) -> Result<UserStats, CoreError> {
+            Ok(self.stats.clone())
+        }
+
+        async fn fetch_passkey(&self) -> Result<Option<String>, CoreError> {
+            self.passkey_result
+                .clone()
+                .map_err(|error| SiteError::AuthFailed(error).into())
+        }
+    }
+
+    fn complete_stats() -> UserStats {
+        UserStats {
+            site_id: SiteId(1),
+            uploaded: Some(1),
+            downloaded: Some(1),
+            ratio: Some(1.0),
+            bonus: Some(1.0),
+            user_class: Some("User".to_string()),
+            seeding_count: Some(1),
+            leeching_count: Some(0),
+            seeding_size: Some(1),
+            upload_time_seconds: Some(1),
+            fetched_at: None,
+        }
+    }
 
     #[test]
     fn probe_status_display_returns_lowercase() {
@@ -298,6 +352,7 @@ mod tests {
             api_reachable: None,
             user_info_fields: Vec::new(),
             passkey_available: None,
+            passkey_error: None,
         }
     }
 
@@ -349,6 +404,39 @@ mod tests {
     #[test]
     fn format_bytes_preview_shows_tb() {
         assert_eq!(format_bytes_preview(1_099_511_627_776), "1.00 TB");
+    }
+
+    #[tokio::test]
+    async fn missing_optional_passkey_does_not_make_probe_partial() {
+        let user_info: Arc<dyn UserInfoCapable> = Arc::new(StubUserInfo {
+            stats: complete_stats(),
+            passkey_result: Ok(None),
+        });
+
+        let result = probe_site(None, Some(&user_info)).await;
+
+        assert_eq!(result.overall_status, ProbeStatus::Ok);
+        assert_eq!(result.passkey_available, Some(false));
+        assert!(result.passkey_error.is_none());
+    }
+
+    #[tokio::test]
+    async fn passkey_fetch_error_is_preserved_in_probe_result() {
+        let user_info: Arc<dyn UserInfoCapable> = Arc::new(StubUserInfo {
+            stats: complete_stats(),
+            passkey_result: Err("cookie expired".to_string()),
+        });
+
+        let result = probe_site(None, Some(&user_info)).await;
+
+        assert_eq!(result.overall_status, ProbeStatus::Partial);
+        assert_eq!(result.passkey_available, Some(false));
+        assert_eq!(
+            result.passkey_error.as_deref(),
+            Some("site error: authentication failed: cookie expired")
+        );
+        let json = result.to_json();
+        assert!(json.contains("cookie expired"));
     }
 
     #[test]

@@ -81,12 +81,22 @@ async fn server_fn_handler(State(state): State<AppState>, request: Request<Body>
         Ok(user_id) => user_id,
         Err(status) => return status.into_response(),
     };
+    let refresh_state = state.clone();
     let context = pt_reseeder_frontend::server_fns::ServerFnContext {
         pool: state.inner.db_pool.clone(),
         vault: state.inner.vault.clone(),
         session_ttl_hours: state.inner.config.session_ttl_hours,
         data_dir: state.inner.config.data_dir.clone(),
-        site_registry: state.site_registry_snapshot().await,
+        site_registry: state.inner.site_registry.clone(),
+        refresh_site_registry: std::sync::Arc::new(move || {
+            let state = refresh_state.clone();
+            Box::pin(async move {
+                state
+                    .refresh_site_registry()
+                    .await
+                    .map_err(|error| error.to_string())
+            })
+        }),
         fetch_seeding_size: state.inner.fetch_seeding_size.clone(),
         authenticated_user_id: user_id,
     };
@@ -149,14 +159,22 @@ pub fn build_router(state: AppState) -> Router {
             &state,
             routes,
             {
+                let refresh_state = state.clone();
                 let context = pt_reseeder_frontend::server_fns::ServerFnContext {
                     pool: state.inner.db_pool.clone(),
                     vault: state.inner.vault.clone(),
                     session_ttl_hours: state.inner.config.session_ttl_hours,
                     data_dir: state.inner.config.data_dir.clone(),
-                    site_registry: std::sync::Arc::new(
-                        pt_reseeder_core::site::registry::SiteRegistry::new(),
-                    ),
+                    site_registry: state.inner.site_registry.clone(),
+                    refresh_site_registry: std::sync::Arc::new(move || {
+                        let state = refresh_state.clone();
+                        Box::pin(async move {
+                            state
+                                .refresh_site_registry()
+                                .await
+                                .map_err(|error| error.to_string())
+                        })
+                    }),
                     fetch_seeding_size: state.inner.fetch_seeding_size.clone(),
                     authenticated_user_id: None,
                 };

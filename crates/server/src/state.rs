@@ -28,7 +28,7 @@ impl axum::extract::FromRef<AppState> for leptos::config::LeptosOptions {
         state.leptos_options()
     }
 }
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, RwLock};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, warn};
 
@@ -46,7 +46,8 @@ pub struct AppStateInner {
     pub leptos_options: leptos::config::LeptosOptions,
     pub cancel_token: CancellationToken,
     pub start_time: std::time::Instant,
-    pub site_registry: RwLock<SiteRegistry>,
+    pub site_registry: Arc<RwLock<SiteRegistry>>,
+    site_registry_refresh: Mutex<()>,
     pub fetch_seeding_size: Arc<AtomicBool>,
     pub cron_scheduler: RwLock<Option<Arc<CronScheduler>>>,
     pub file_watcher: RwLock<Option<Arc<FileWatcher>>>,
@@ -82,7 +83,8 @@ impl AppState {
                 leptos_options,
                 cancel_token,
                 start_time: std::time::Instant::now(),
-                site_registry: RwLock::new(site_registry),
+                site_registry: Arc::new(RwLock::new(site_registry)),
+                site_registry_refresh: Mutex::new(()),
                 fetch_seeding_size,
                 cron_scheduler: RwLock::new(None),
                 file_watcher: RwLock::new(None),
@@ -118,21 +120,25 @@ impl AppState {
     }
 
     pub async fn refresh_site_registry(&self) -> Result<(), CoreError> {
-        let vault_guard = self.inner.vault.read().await;
-        let Some(vault) = vault_guard.as_ref() else {
+        let _refresh_guard = self.inner.site_registry_refresh.lock().await;
+        let Some(vault) = self.inner.vault.read().await.clone() else {
             return Ok(());
         };
 
         let sites = self.inner.repo.list_sites().await?;
         let mut registry = SiteRegistry::new();
         for site in sites.into_iter().filter(|site| site.enabled) {
-            if let Some(handle) = build_adapter_handle(
+            match build_adapter_handle(
                 &site,
-                vault,
+                &vault,
                 &self.inner.config,
                 self.inner.fetch_seeding_size.clone(),
-            )? {
-                registry.register(SiteId::from(site.id), handle);
+            ) {
+                Ok(Some(handle)) => registry.register(SiteId::from(site.id), handle),
+                Ok(None) => {}
+                Err(error) => {
+                    warn!(site_id = site.id, site = %site.name, %error, "skipping site with invalid credentials during registry refresh");
+                }
             }
         }
 

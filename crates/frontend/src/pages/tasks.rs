@@ -93,6 +93,7 @@ pub fn TasksPage() -> impl IntoView {
                                 "辅种"
                             </option>
                             <option value="repost">"转种"</option>
+                            <option value="sync_stats">"数据同步"</option>
                         </select>
                     </label>
                     <label>
@@ -274,8 +275,18 @@ fn TaskRow(task: TaskInfo, on_change: impl Fn() + Copy + Send + Sync + 'static) 
                 on:click=move |_| set_expanded.update(|v| *v = !*v)
             >
                 <td>{task.name.clone()}</td>
-                <td>{task.task_type.clone()}</td>
-                <td>{task.trigger_type.clone()}</td>
+                <td>{match task.task_type.as_str() {
+                    "reseed" => "辅种".to_string(),
+                    "repost" => "转种".to_string(),
+                    "sync_stats" => "数据同步".to_string(),
+                    other => other.to_string(),
+                }}</td>
+                <td>{match task.trigger_type.as_str() {
+                    "manual" => "手动".to_string(),
+                    "cron" => "定时".to_string(),
+                    "file_watch" => "文件监控".to_string(),
+                    other => other.to_string(),
+                }}</td>
                 <td class="text-muted">{cron_display}</td>
                 <td class=sc>{status_label}</td>
                 <td class="text-muted">{last_run}</td>

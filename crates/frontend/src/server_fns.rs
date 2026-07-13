@@ -592,6 +592,50 @@ pub async fn create_site(
         return Err(error);
     }
     refresh_site_registry_best_effort(&context).await;
+
+    // 后台抓取一次用户数据，不阻塞站点创建流程
+    {
+        let pool = context.pool.clone();
+        let site_registry = context.site_registry.clone();
+        let site_id = id;
+        tokio::spawn(async move {
+            use pt_reseeder_core::db::models::UserStatRecord;
+            use pt_reseeder_core::db::repo::Repository;
+            use pt_reseeder_core::site::models::SiteId;
+
+            let registry = site_registry.read().await;
+            let handle = registry.get(&SiteId::from(site_id));
+            let user_info_cap = handle.and_then(|h| h.user_info.as_ref());
+            if let Some(ui) = user_info_cap {
+                match ui.fetch_user_info().await {
+                    Ok(stats) => {
+                        let repo = Repository::new(pool);
+                        let record = UserStatRecord {
+                            id: 0,
+                            site_id,
+                            uploaded: stats.uploaded,
+                            downloaded: stats.downloaded,
+                            ratio: stats.ratio,
+                            bonus: stats.bonus,
+                            user_class: stats.user_class,
+                            seeding_count: stats.seeding_count,
+                            leeching_count: stats.leeching_count,
+                            seeding_size: stats.seeding_size,
+                            upload_time_seconds: stats.upload_time_seconds,
+                            fetched_at: String::new(),
+                        };
+                        if let Err(e) = repo.insert_user_stats(site_id, &record).await {
+                            eprintln!("创建站点后自动抓取用户数据写入失败: {e}");
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("创建站点后自动抓取用户数据失败: {e}");
+                    }
+                }
+            }
+        });
+    }
+
     get_site_info(id).await
 }
 

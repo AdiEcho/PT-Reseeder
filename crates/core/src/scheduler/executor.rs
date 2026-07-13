@@ -93,6 +93,7 @@ impl TaskExecutor {
         let result = match task.task_type.as_str() {
             "reseed" => self.execute_reseed(&task).await,
             "repost" => self.execute_repost(&task).await,
+            "sync_stats" => self.execute_sync_stats(&task).await,
             other => {
                 let msg = format!("unknown task type: {}", other);
                 Err(CoreError::Scheduler(SchedulerError::ExecutorError(msg)))
@@ -281,6 +282,91 @@ impl TaskExecutor {
             batch_result.submitted_count,
             batch_result.failed_count + batch_result.skipped_count,
         ))
+    }
+
+    /// Execute a sync_stats-type task: fetch user stats from all enabled sites
+    /// (or only the sites configured on this task) and store snapshots.
+    /// Returns (total_sites, succeeded_count, failed_count).
+    async fn execute_sync_stats(&self, task: &TaskRow) -> Result<(i64, i64, i64), CoreError> {
+        use crate::db::models::UserStatRecord;
+        use crate::site::models::SiteId;
+
+        // If the task has specific sites configured, only sync those;
+        // otherwise sync all sites in the registry.
+        let task_site_ids = self.repo.get_task_sites(task.id).await?;
+        let site_ids: Vec<SiteId> = if task_site_ids.is_empty() {
+            self.site_registry.list_ids()
+        } else {
+            task_site_ids.into_iter().map(SiteId::from).collect()
+        };
+
+        let total = site_ids.len() as i64;
+        let mut succeeded: i64 = 0;
+        let mut failed: i64 = 0;
+
+        for site_id in &site_ids {
+            if self.cancel_token.is_cancelled() {
+                warn!("sync_stats cancelled");
+                break;
+            }
+
+            let handle = match self.site_registry.get(site_id) {
+                Some(h) => h,
+                None => {
+                    warn!(site_id = site_id.0, "site not in registry, skipping");
+                    failed += 1;
+                    continue;
+                }
+            };
+
+            let user_info_cap = match handle.user_info.as_ref() {
+                Some(ui) => ui,
+                None => {
+                    info!(site_id = site_id.0, "site has no user_info capability, skipping");
+                    continue;
+                }
+            };
+
+            match user_info_cap.fetch_user_info().await {
+                Ok(stats) => {
+                    let sid = site_id.0;
+                    let record = UserStatRecord {
+                        id: 0,
+                        site_id: sid,
+                        uploaded: stats.uploaded,
+                        downloaded: stats.downloaded,
+                        ratio: stats.ratio,
+                        bonus: stats.bonus,
+                        user_class: stats.user_class,
+                        seeding_count: stats.seeding_count,
+                        leeching_count: stats.leeching_count,
+                        seeding_size: stats.seeding_size,
+                        upload_time_seconds: stats.upload_time_seconds,
+                        fetched_at: String::new(),
+                    };
+                    if let Err(e) = self.repo.insert_user_stats(sid, &record).await {
+                        error!(site_id = sid, %e, "failed to store user stats");
+                        failed += 1;
+                    } else {
+                        succeeded += 1;
+                    }
+                }
+                Err(e) => {
+                    error!(site_id = site_id.0, %e, "failed to fetch user stats");
+                    failed += 1;
+                }
+            }
+        }
+
+        info!(
+            task_id = task.id,
+            total,
+            succeeded,
+            failed,
+            "sync_stats task completed"
+        );
+
+        Ok((total, succeeded, failed))
     }
 
     async fn build_destination_downloader(

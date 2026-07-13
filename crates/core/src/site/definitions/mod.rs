@@ -34,6 +34,24 @@ const BUILTIN_BTSCHOOL: &str = include_str!("btschool.toml");
 const BUILTIN_HDATMOS: &str = include_str!("hdatmos.toml");
 const BUILTIN_REDACTED: &str = include_str!("redacted.toml");
 const BUILTIN_ORPHEUS: &str = include_str!("orpheus.toml");
+const BUILTIN_HHANCLUB: &str = include_str!("hhanclub.toml");
+const BUILTIN_ULTRAHD: &str = include_str!("ultrahd.toml");
+const BUILTIN_ZMPT: &str = include_str!("zmpt.toml");
+const BUILTIN_HDTIME: &str = include_str!("hdtime.toml");
+const BUILTIN_PTTIME: &str = include_str!("pttime.toml");
+const BUILTIN_FREEFARM: &str = include_str!("freefarm.toml");
+const BUILTIN_ROUSI: &str = include_str!("rousi.toml");
+const BUILTIN_KUFEI: &str = include_str!("kufei.toml");
+const BUILTIN_PTCAFE: &str = include_str!("ptcafe.toml");
+const BUILTIN_1PTBA: &str = include_str!("1ptba.toml");
+const BUILTIN_OSHEN: &str = include_str!("oshen.toml");
+const BUILTIN_SOULVOICE: &str = include_str!("soulvoice.toml");
+const BUILTIN_OKPT: &str = include_str!("okpt.toml");
+const BUILTIN_LEAVES: &str = include_str!("leaves.toml");
+const BUILTIN_PTLSP: &str = include_str!("ptlsp.toml");
+const BUILTIN_ICC2022: &str = include_str!("icc2022.toml");
+const BUILTIN_HDPT: &str = include_str!("hdpt.toml");
+const BUILTIN_2XFREE: &str = include_str!("2xfree.toml");
 
 /// Load all built-in site definitions embedded at compile time.
 pub fn load_builtin_definitions() -> HashMap<String, SiteDefinition> {
@@ -70,6 +88,24 @@ pub fn load_builtin_definitions() -> HashMap<String, SiteDefinition> {
         ("hdatmos", BUILTIN_HDATMOS),
         ("redacted", BUILTIN_REDACTED),
         ("orpheus", BUILTIN_ORPHEUS),
+        ("hhanclub", BUILTIN_HHANCLUB),
+        ("ultrahd", BUILTIN_ULTRAHD),
+        ("zmpt", BUILTIN_ZMPT),
+        ("hdtime", BUILTIN_HDTIME),
+        ("pttime", BUILTIN_PTTIME),
+        ("freefarm", BUILTIN_FREEFARM),
+        ("rousi", BUILTIN_ROUSI),
+        ("kufei", BUILTIN_KUFEI),
+        ("ptcafe", BUILTIN_PTCAFE),
+        ("1ptba", BUILTIN_1PTBA),
+        ("oshen", BUILTIN_OSHEN),
+        ("soulvoice", BUILTIN_SOULVOICE),
+        ("okpt", BUILTIN_OKPT),
+        ("leaves", BUILTIN_LEAVES),
+        ("ptlsp", BUILTIN_PTLSP),
+        ("icc2022", BUILTIN_ICC2022),
+        ("hdpt", BUILTIN_HDPT),
+        ("2xfree", BUILTIN_2XFREE),
     ];
 
     for (name, toml_str) in &builtins {
@@ -198,10 +234,10 @@ mod tests {
     #[test]
     fn test_all_builtin_definitions_parse() {
         let definitions = load_builtin_definitions();
-        // We have 30 builtin definitions
+        // We have 50 builtin definitions
         assert!(
-            definitions.len() >= 30,
-            "Expected at least 30 builtin definitions, got {}",
+            definitions.len() >= 48,
+            "Expected at least 48 builtin definitions, got {}",
             definitions.len()
         );
 
@@ -301,8 +337,8 @@ mod tests {
     fn test_load_all_definitions_without_user_dir() {
         let definitions = load_all_definitions(None);
         assert!(
-            definitions.len() >= 30,
-            "Expected at least 30 definitions, got {}",
+            definitions.len() >= 48,
+            "Expected at least 48 definitions, got {}",
             definitions.len()
         );
     }

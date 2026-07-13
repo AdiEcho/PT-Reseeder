@@ -8,7 +8,7 @@ use pt_reseeder_core::config::AppConfig;
 use pt_reseeder_core::db;
 use pt_reseeder_core::site::registry::SiteRegistry;
 use std::net::SocketAddr;
-use std::sync::Arc;
+use std::sync::{atomic::AtomicBool, Arc};
 use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
 
@@ -58,6 +58,12 @@ pub async fn run_server(
 
     // Build state
     let site_registry = SiteRegistry::new();
+    let fetch_seeding_size = Arc::new(AtomicBool::new(
+        pt_reseeder_core::db::repo::Repository::new(pool.clone())
+            .get_config("fetch_seeding_size")
+            .await?
+            .is_some_and(|value| value.eq_ignore_ascii_case("true") || value == "1"),
+    ));
     let (repost_autofiller, repost_autofiller_error) = initialize_repost_autofiller().await;
     let state = state::AppState::new(
         pool,
@@ -67,6 +73,7 @@ pub async fn run_server(
         site_registry,
         repost_autofiller,
         repost_autofiller_error,
+        fetch_seeding_size,
     );
     state.start_task_runtime().await?;
 

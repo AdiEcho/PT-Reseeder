@@ -1,8 +1,12 @@
 use std::collections::HashSet;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
 use std::time::Duration;
 
 use async_trait::async_trait;
-use reqwest::header::{HeaderMap, HeaderValue, COOKIE, USER_AGENT};
+use reqwest::header::{HeaderMap, HeaderValue, COOKIE, REFERER, USER_AGENT};
 use reqwest::Client;
 use scraper::{Html, Selector};
 use serde::Deserialize;
@@ -23,6 +27,8 @@ pub struct NexusPhpAdapter {
     selectors: UserInfoSelectors,
     client: Client,
     batch_size: usize,
+    /// Shared runtime switch for the extra seeding-list request.
+    fetch_seeding_size: Arc<AtomicBool>,
 }
 
 #[derive(Deserialize)]
@@ -58,7 +64,7 @@ impl NexusPhpAdapter {
 
         let client = Client::builder()
             .use_rustls_tls()
-            .cookie_store(true)
+            .cookie_store(false)
             .timeout(Duration::from_secs(30))
             .default_headers(headers)
             .build()
@@ -74,7 +80,18 @@ impl NexusPhpAdapter {
             selectors,
             client,
             batch_size,
+            fetch_seeding_size: Arc::new(AtomicBool::new(false)),
         }
+    }
+
+    pub fn with_fetch_seeding_size(mut self, enabled: bool) -> Self {
+        self.fetch_seeding_size = Arc::new(AtomicBool::new(enabled));
+        self
+    }
+
+    pub fn with_fetch_seeding_size_switch(mut self, enabled: Arc<AtomicBool>) -> Self {
+        self.fetch_seeding_size = enabled;
+        self
     }
 
     /// Returns the configured batch size for hash queries.
@@ -82,11 +99,10 @@ impl NexusPhpAdapter {
         self.batch_size
     }
 
-    async fn resolve_user_id(&self) -> Result<String, CoreError> {
-        if let Some(user_id) = self.user_id.as_ref().filter(|id| !id.trim().is_empty()) {
-            return Ok(user_id.clone());
-        }
-
+    /// Fetch the index page, extract the user id, and return (user_id, index_html).
+    /// The index HTML is kept so callers can extract info-bar fields (seeding count,
+    /// leeching count, etc.) that only appear on the main page, not on userdetails.
+    async fn resolve_user_id_with_index(&self) -> Result<(String, Html), CoreError> {
         let resp = self
             .client
             .get(&self.base_url)
@@ -103,9 +119,51 @@ impl NexusPhpAdapter {
             .await
             .map_err(|e| SiteError::HttpError(e.to_string()))?;
         let html = Html::parse_document(&body);
-        extract_user_id(&html, &self.selectors).ok_or_else(|| {
+        let uid = extract_user_id(&html, &self.selectors).ok_or_else(|| -> CoreError {
             SiteError::AuthFailed("failed to resolve user_id from cookie session".into()).into()
-        })
+        })?;
+        Ok((uid, html))
+    }
+
+    async fn resolve_user_id(&self) -> Result<String, CoreError> {
+        if let Some(user_id) = self.user_id.as_ref().filter(|id| !id.trim().is_empty()) {
+            return Ok(user_id.clone());
+        }
+        let (uid, _) = self.resolve_user_id_with_index().await?;
+        Ok(uid)
+    }
+
+    async fn fetch_ajax_seeding_size(
+        &self,
+        user_id: &str,
+        referer: &str,
+    ) -> Result<Option<i64>, CoreError> {
+        let url = format!(
+            "{}/getusertorrentlistajax.php?userid={}&type=seeding",
+            self.base_url.trim_end_matches('/'),
+            user_id
+        );
+        let response = self
+            .client
+            .get(url)
+            .header(REFERER, referer)
+            .send()
+            .await
+            .map_err(|e| SiteError::HttpError(e.to_string()))?;
+
+        if !response.status().is_success() {
+            return Err(SiteError::HttpError(format!(
+                "HTTP {} fetching seeding list",
+                response.status()
+            ))
+            .into());
+        }
+
+        let body = response
+            .text()
+            .await
+            .map_err(|e| SiteError::HttpError(e.to_string()))?;
+        Ok(parse_seeding_size_summary(&body))
     }
 }
 
@@ -115,18 +173,201 @@ impl NexusPhpAdapter {
 
 fn extract_text(html: &Html, selector_str: &Option<String>) -> Option<String> {
     let sel_str = selector_str.as_deref()?;
-    let selector = Selector::parse(sel_str).ok()?;
-    let element = html.select(&selector).next()?;
-    let text: String = element
-        .text()
-        .collect::<Vec<_>>()
-        .join("")
-        .trim()
-        .to_string();
-    if text.is_empty() {
-        None
+
+    // Handle :contains('...') pseudo-selector which scraper does not support.
+    // Patterns supported:
+    //   "tag.class:contains('text') + sibling"
+    //   "tag.class:contains('text') + sibling tag"
+    //   "tag:contains('text')"
+    if let Some(contains_start) = sel_str.find(":contains(") {
+        let prefix_sel_str = &sel_str[..contains_start];
+        let after_contains = &sel_str[contains_start + ":contains(".len()..];
+        // Extract the text inside quotes: 'text' or "text"
+        let (needle, rest) = if after_contains.starts_with('\'') {
+            let end = after_contains[1..].find('\'')?;
+            (&after_contains[1..1 + end], &after_contains[2 + end..])
+        } else if after_contains.starts_with('"') {
+            let end = after_contains[1..].find('"')?;
+            (&after_contains[1..1 + end], &after_contains[2 + end..])
+        } else {
+            return None;
+        };
+        // rest should start with ')', strip it
+        let rest = rest.strip_prefix(')')?;
+        let suffix = rest.trim();
+
+        // Parse the prefix selector (the part before :contains)
+        let prefix_selector = Selector::parse(prefix_sel_str).ok()?;
+
+        // Find the most specific (deepest) element whose text contains the needle.
+        // A naive `.find()` would match a large ancestor whose text also contains
+        // the needle. Prefer the element with the shortest text content — it is
+        // the most specific match.
+        let matched_el = html
+            .select(&prefix_selector)
+            .filter(|el| {
+                let text: String = el.text().collect::<Vec<_>>().join("");
+                text.contains(needle)
+            })
+            .min_by_key(|el| el.text().collect::<Vec<_>>().join("").len())?;
+
+        // If there is a " + sibling" suffix, navigate to the next sibling element
+        if let Some(sibling_part) = suffix.strip_prefix('+') {
+            let sibling_part = sibling_part.trim();
+            // Parse "td img" as sibling_tag="td", descendant_sel="img"
+            let (sibling_tag, descendant_sel) = match sibling_part.split_once(char::is_whitespace) {
+                Some((tag, desc)) => (tag.trim(), Some(desc.trim())),
+                None => (sibling_part, None),
+            };
+            let expected_tag = sibling_tag
+                .split(|c: char| c == '.' || c == '#' || c == '[' || c == ':')
+                .next()
+                .unwrap_or("");
+            // Walk next element siblings via the tree
+            let node_id = matched_el.id();
+            let node_ref = html.tree.get(node_id)?;
+            for sibling in node_ref.next_siblings() {
+                if let Some(el) = scraper::ElementRef::wrap(sibling) {
+                    if !expected_tag.is_empty()
+                        && !el.value().name().eq_ignore_ascii_case(expected_tag)
+                    {
+                        continue;
+                    }
+                    // If there is a descendant selector (e.g. "img" in "+ td img"),
+                    // find that element inside the matched sibling
+                    if let Some(desc) = descendant_sel {
+                        if let Ok(desc_sel) = Selector::parse(desc) {
+                            if let Some(inner) = el.select(&desc_sel).next() {
+                                // Use the same img-aware extraction logic
+                                if inner.value().name().eq_ignore_ascii_case("img") {
+                                    // Try next sibling text, then alt/title
+                                    let inner_id = inner.id();
+                                    if let Some(inner_ref) = html.tree.get(inner_id) {
+                                        for s in inner_ref.next_siblings() {
+                                            if let Some(t) = s.value().as_text() {
+                                                let trimmed = t.trim();
+                                                if !trimmed.is_empty() {
+                                                    return Some(trimmed.to_string());
+                                                }
+                                            }
+                                            if scraper::ElementRef::wrap(s).is_some() {
+                                                break;
+                                            }
+                                        }
+                                    }
+                                    let title = inner.value().attr("title").unwrap_or("").trim();
+                                    let alt = inner.value().attr("alt").unwrap_or("").trim();
+                                    let val = if !title.is_empty() { title } else { alt };
+                                    if !val.is_empty() {
+                                        return Some(val.to_string());
+                                    }
+                                } else {
+                                    let t: String = inner
+                                        .text()
+                                        .collect::<Vec<_>>()
+                                        .join("")
+                                        .trim()
+                                        .to_string();
+                                    if !t.is_empty() {
+                                        return Some(t);
+                                    }
+                                }
+                            }
+                        }
+                        continue;
+                    }
+                    let text: String = el.text().collect::<Vec<_>>().join("").trim().to_string();
+                    if !text.is_empty() {
+                        return Some(text);
+                    }
+                }
+            }
+            None
+        } else {
+            // No sibling suffix — return text of the matched element itself
+            let text: String = matched_el
+                .text()
+                .collect::<Vec<_>>()
+                .join("")
+                .trim()
+                .to_string();
+            if text.is_empty() {
+                None
+            } else {
+                Some(text)
+            }
+        }
     } else {
-        Some(text)
+        let selector = Selector::parse(sel_str).ok()?;
+        let element = html.select(&selector).next()?;
+
+        // For <img> elements: first try next sibling text node (e.g. seeding count
+        // after <img class="arrowup"/>33), then fall back to alt/title attribute
+        // (e.g. user class <img alt="Veteran User" title="Veteran User"/>).
+        if element.value().name().eq_ignore_ascii_case("img") {
+            let node_id = element.id();
+            if let Some(node_ref) = html.tree.get(node_id) {
+                for sibling in node_ref.next_siblings() {
+                    if let Some(text_node) = sibling.value().as_text() {
+                        let trimmed = text_node.trim();
+                        if !trimmed.is_empty() {
+                            return Some(trimmed.to_string());
+                        }
+                    }
+                    if scraper::ElementRef::wrap(sibling).is_some() {
+                        break;
+                    }
+                }
+            }
+            // Fallback to alt/title attribute
+            let title = element.value().attr("title").unwrap_or("").trim();
+            let alt = element.value().attr("alt").unwrap_or("").trim();
+            let val = if !title.is_empty() { title } else { alt };
+            return if val.is_empty() {
+                None
+            } else {
+                Some(val.to_string())
+            };
+        }
+
+        let text: String = element
+            .text()
+            .collect::<Vec<_>>()
+            .join("")
+            .trim()
+            .to_string();
+
+        // If the element text looks like a label only (ends with ':' or '：'),
+        // the actual value is in the next sibling text node (common NexusPHP
+        // info-bar pattern: <font class='color_uploaded'>上传量:</font> 4.425 TB).
+        if !text.is_empty() && !text.ends_with(':') && !text.ends_with('：') {
+            return Some(text);
+        }
+
+        // Fallback: collect the next sibling text node after this element
+        let node_id = element.id();
+        if let Some(node_ref) = html.tree.get(node_id) {
+            for sibling in node_ref.next_siblings() {
+                // Text nodes are not elements — they won't wrap into ElementRef.
+                // Check if it's a text node by trying to get its value.
+                if let Some(text_node) = sibling.value().as_text() {
+                    let trimmed = text_node.trim();
+                    if !trimmed.is_empty() {
+                        return Some(trimmed.to_string());
+                    }
+                }
+                // Stop at the next element (don't skip past it into unrelated content)
+                if scraper::ElementRef::wrap(sibling).is_some() {
+                    break;
+                }
+            }
+        }
+
+        if text.is_empty() {
+            None
+        } else {
+            Some(text)
+        }
     }
 }
 
@@ -171,23 +412,18 @@ fn extract_user_id(html: &Html, selectors: &UserInfoSelectors) -> Option<String>
 }
 
 fn parse_size_to_bytes(text: &str) -> Option<i64> {
-    let text = text.trim();
-    // Try to split into numeric part and unit
-    let mut num_end = 0;
-    for (i, ch) in text.char_indices() {
-        if ch.is_ascii_digit() || ch == '.' {
-            num_end = i + ch.len_utf8();
-        } else if !ch.is_ascii_whitespace() {
-            break;
-        }
-    }
-
-    let num_str = text[..num_end].trim();
-    let unit_str = text[num_end..].trim().to_uppercase();
+    // Use regex to find a "number unit" pattern anywhere in the text.
+    // This handles prefix labels like "上传量:  4.425 TB".
+    let re = regex_lite::Regex::new(r"(\d[\d,]*\.?\d*)\s*(B|KB|KIB|MB|MIB|GB|GIB|TB|TIB|PB|PIB)\b")
+        .ok()?;
+    let upper = text.to_uppercase();
+    let caps = re.captures(&upper)?;
+    let num_str: String = caps[1].chars().filter(|c| *c != ',').collect();
+    let unit_str = &caps[2];
 
     let value: f64 = num_str.parse().ok()?;
 
-    let multiplier: f64 = match unit_str.as_str() {
+    let multiplier: f64 = match unit_str {
         "B" => 1.0,
         "KB" | "KIB" => 1024.0,
         "MB" | "MIB" => 1024.0 * 1024.0,
@@ -200,13 +436,44 @@ fn parse_size_to_bytes(text: &str) -> Option<i64> {
     Some((value * multiplier) as i64)
 }
 
+fn parse_seeding_size_summary(body: &str) -> Option<i64> {
+    let text = Html::parse_fragment(body)
+        .root_element()
+        .text()
+        .collect::<Vec<_>>()
+        .join(" ");
+    let summary = regex_lite::Regex::new(
+        r"(?i)(?:总大小|total\s*size)\s*[：:]?\s*(\d[\d,]*\.?\d*\s*(?:B|KB|KIB|MB|MIB|GB|GIB|TB|TIB|PB|PIB))\b",
+    )
+    .ok()?;
+    let value = summary.captures(&text)?.get(1)?.as_str();
+    parse_size_to_bytes(value)
+}
+
+fn extract_seeding_ajax_user_id(body: &str) -> Option<String> {
+    let patterns = [
+        r#"getusertorrentlistajax\s*\(\s*['\"](\d+)['\"]\s*,\s*['\"]seeding['\"]"#,
+        r#"getusertorrentlistajax\.php\?[^\"']*userid=(\d+)[^\"']*type=seeding"#,
+    ];
+    patterns.into_iter().find_map(|pattern| {
+        regex_lite::Regex::new(pattern)
+            .ok()?
+            .captures(body)?
+            .get(1)
+            .map(|value| value.as_str().to_string())
+    })
+}
+
 fn parse_ratio(text: &str) -> Option<f64> {
     let text = text.trim();
     if text == "∞" || text.eq_ignore_ascii_case("inf") || text.eq_ignore_ascii_case("infinite") {
         return Some(f64::INFINITY);
     }
-    // Strip commas, e.g. "1,234.56"
-    let cleaned: String = text.chars().filter(|c| *c != ',').collect();
+    // Extract the first floating-point number from the text,
+    // skipping prefix labels like "分享率:" or "Ratio:"
+    let re = regex_lite::Regex::new(r"(\d[\d,]*\.?\d*)").ok()?;
+    let caps = re.captures(text)?;
+    let cleaned: String = caps[1].chars().filter(|c| *c != ',').collect();
     cleaned.parse::<f64>().ok()
 }
 
@@ -230,6 +497,35 @@ fn parse_time_to_seconds(text: &str) -> Option<i64> {
                 '时' | '時' => total_seconds += num * 3600,
                 '分' => total_seconds += num * 60,
                 '秒' => total_seconds += num,
+                ':' => {
+                    // Colon-separated time: could be HH:MM:SS or MM:SS
+                    // Collect the rest as a time string and parse it
+                    let rest: String =
+                        text[text.find(&format!("{num}:")).unwrap_or(0)..].to_string();
+                    let parts: Vec<&str> = rest.split(':').collect();
+                    match parts.len() {
+                        3 => {
+                            // HH:MM:SS
+                            let h: i64 = parts[0].trim().parse().unwrap_or(0);
+                            let m: i64 = parts[1].trim().parse().unwrap_or(0);
+                            let s: i64 = parts[2].trim().parse().unwrap_or(0);
+                            total_seconds += h * 3600 + m * 60 + s;
+                        }
+                        2 => {
+                            // MM:SS
+                            let m: i64 = parts[0].trim().parse().unwrap_or(0);
+                            let s: i64 = parts[1].trim().parse().unwrap_or(0);
+                            total_seconds += m * 60 + s;
+                        }
+                        _ => {}
+                    }
+                    // We consumed the rest of the colon time, return immediately
+                    return if total_seconds > 0 {
+                        Some(total_seconds)
+                    } else {
+                        None
+                    };
+                }
                 _ => {
                     // Handle English units by collecting the rest of the word
                     let mut unit = String::new();
@@ -397,7 +693,58 @@ impl UserInfoCapable for NexusPhpAdapter {
         if self.cookie.is_none() {
             return Err(SiteError::AuthFailed("no cookie configured".into()).into());
         }
-        let user_id = self.resolve_user_id().await?;
+
+        // Fetch index page and extract info-bar fields before any further await.
+        // Html contains Cell<usize> (not Send), so it must not live across awaits.
+        let (
+            user_id,
+            idx_uploaded,
+            idx_downloaded,
+            idx_ratio,
+            idx_bonus,
+            idx_user_class,
+            idx_seeding_count,
+            idx_leeching_count,
+            idx_seeding_size,
+            idx_upload_time,
+        ) = {
+            let (uid, index_html) =
+                if let Some(uid) = self.user_id.as_ref().filter(|id| !id.trim().is_empty()) {
+                    let resp = self
+                        .client
+                        .get(&self.base_url)
+                        .send()
+                        .await
+                        .map_err(|e| SiteError::HttpError(e.to_string()))?;
+                    let body = resp
+                        .text()
+                        .await
+                        .map_err(|e| SiteError::HttpError(e.to_string()))?;
+                    (uid.clone(), Html::parse_document(&body))
+                } else {
+                    self.resolve_user_id_with_index().await?
+                };
+            let s = &self.selectors;
+            (
+                uid,
+                extract_text(&index_html, &s.uploaded_selector)
+                    .and_then(|t| parse_size_to_bytes(&t)),
+                extract_text(&index_html, &s.downloaded_selector)
+                    .and_then(|t| parse_size_to_bytes(&t)),
+                extract_text(&index_html, &s.ratio_selector).and_then(|t| parse_ratio(&t)),
+                extract_text(&index_html, &s.bonus_selector).and_then(|t| parse_f64_from_text(&t)),
+                extract_text(&index_html, &s.user_class_selector),
+                extract_text(&index_html, &s.seeding_count_selector)
+                    .and_then(|t| parse_number_from_text(&t)),
+                extract_text(&index_html, &s.leeching_count_selector)
+                    .and_then(|t| parse_number_from_text(&t)),
+                extract_text(&index_html, &s.seeding_size_selector)
+                    .and_then(|t| parse_size_to_bytes(&t)),
+                extract_text(&index_html, &s.upload_time_selector)
+                    .and_then(|t| parse_time_to_seconds(&t)),
+            )
+            // index_html is dropped here
+        };
 
         let url = format!("{}/userdetails.php?id={}", self.base_url, user_id);
         debug!(site = %self.name, "fetching user info (cookie=[REDACTED])");
@@ -419,25 +766,64 @@ impl UserInfoCapable for NexusPhpAdapter {
             .text()
             .await
             .map_err(|e| SiteError::HttpError(e.to_string()))?;
-        let html = Html::parse_document(&body);
+        let ajax_user_id = extract_seeding_ajax_user_id(&body);
+        let (
+            uploaded,
+            downloaded,
+            ratio,
+            bonus,
+            user_class,
+            seeding_count,
+            leeching_count,
+            seeding_size,
+            upload_time_seconds,
+        ) = {
+            let html = Html::parse_document(&body);
+            (
+                extract_text(&html, &self.selectors.uploaded_selector)
+                    .and_then(|t| parse_size_to_bytes(&t))
+                    .or(idx_uploaded),
+                extract_text(&html, &self.selectors.downloaded_selector)
+                    .and_then(|t| parse_size_to_bytes(&t))
+                    .or(idx_downloaded),
+                extract_text(&html, &self.selectors.ratio_selector)
+                    .and_then(|t| parse_ratio(&t))
+                    .or(idx_ratio),
+                extract_text(&html, &self.selectors.bonus_selector)
+                    .and_then(|t| parse_f64_from_text(&t))
+                    .or(idx_bonus),
+                extract_text(&html, &self.selectors.user_class_selector).or(idx_user_class),
+                extract_text(&html, &self.selectors.seeding_count_selector)
+                    .and_then(|t| parse_number_from_text(&t))
+                    .or(idx_seeding_count),
+                extract_text(&html, &self.selectors.leeching_count_selector)
+                    .and_then(|t| parse_number_from_text(&t))
+                    .or(idx_leeching_count),
+                extract_text(&html, &self.selectors.seeding_size_selector)
+                    .and_then(|t| parse_size_to_bytes(&t))
+                    .or(idx_seeding_size),
+                extract_text(&html, &self.selectors.upload_time_selector)
+                    .and_then(|t| parse_time_to_seconds(&t))
+                    .or(idx_upload_time),
+            )
+        };
 
-        let uploaded = extract_text(&html, &self.selectors.uploaded_selector)
-            .and_then(|t| parse_size_to_bytes(&t));
-        let downloaded = extract_text(&html, &self.selectors.downloaded_selector)
-            .and_then(|t| parse_size_to_bytes(&t));
-        let ratio =
-            extract_text(&html, &self.selectors.ratio_selector).and_then(|t| parse_ratio(&t));
-        let bonus = extract_text(&html, &self.selectors.bonus_selector)
-            .and_then(|t| parse_f64_from_text(&t));
-        let user_class = extract_text(&html, &self.selectors.user_class_selector);
-        let seeding_count = extract_text(&html, &self.selectors.seeding_count_selector)
-            .and_then(|t| parse_number_from_text(&t));
-        let leeching_count = extract_text(&html, &self.selectors.leeching_count_selector)
-            .and_then(|t| parse_number_from_text(&t));
-        let seeding_size = extract_text(&html, &self.selectors.seeding_size_selector)
-            .and_then(|t| parse_size_to_bytes(&t));
-        let upload_time_seconds = extract_text(&html, &self.selectors.upload_time_selector)
-            .and_then(|t| parse_time_to_seconds(&t));
+        let seeding_size = if self.fetch_seeding_size.load(Ordering::Relaxed) {
+            let ajax_user_id = ajax_user_id.as_deref().unwrap_or(&user_id);
+            match self.fetch_ajax_seeding_size(ajax_user_id, &url).await {
+                Ok(Some(size)) => Some(size),
+                Ok(None) => {
+                    warn!(site = %self.name, "seeding list response did not contain total size");
+                    seeding_size
+                }
+                Err(error) => {
+                    warn!(site = %self.name, %error, "failed to fetch seeding list size");
+                    seeding_size
+                }
+            }
+        } else {
+            seeding_size
+        };
 
         debug!(site = %self.name, "user info fetched successfully");
 
@@ -956,4 +1342,43 @@ fn extract_images(html: &Html, selector_str: &str) -> Vec<String> {
         }
     }
     images
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{extract_seeding_ajax_user_id, parse_seeding_size_summary};
+
+    #[test]
+    fn extracts_ptcafe_seeding_ajax_user_id() {
+        let body = r#"
+            <a href="javascript: getusertorrentlistajax('13154', 'seeding', 'ka1'); klappe_news('a1')">
+                当前做种
+            </a>
+        "#;
+
+        assert_eq!(extract_seeding_ajax_user_id(body).as_deref(), Some("13154"));
+    }
+
+    #[test]
+    fn parses_ptcafe_seeding_size_summary() {
+        let body = r#"
+            <div style="display: flex;justify-content: space-between">
+                <div><b>33</b> 条记录 | 总大小：5.659 TB</div>
+                <div></div>
+            </div>
+        "#;
+
+        assert_eq!(
+            parse_seeding_size_summary(body),
+            Some((5.659_f64 * 1024_f64.powi(4)) as i64)
+        );
+    }
+
+    #[test]
+    fn rejects_seeding_response_without_total_size() {
+        assert_eq!(
+            parse_seeding_size_summary("<div><b>33</b> 条记录</div>"),
+            None
+        );
+    }
 }

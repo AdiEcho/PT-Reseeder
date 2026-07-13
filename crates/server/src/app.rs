@@ -87,6 +87,7 @@ async fn server_fn_handler(State(state): State<AppState>, request: Request<Body>
         session_ttl_hours: state.inner.config.session_ttl_hours,
         data_dir: state.inner.config.data_dir.clone(),
         site_registry: state.site_registry_snapshot().await,
+        fetch_seeding_size: state.inner.fetch_seeding_size.clone(),
         authenticated_user_id: user_id,
     };
     leptos_axum::handle_server_fns_with_context(
@@ -156,6 +157,7 @@ pub fn build_router(state: AppState) -> Router {
                     site_registry: std::sync::Arc::new(
                         pt_reseeder_core::site::registry::SiteRegistry::new(),
                     ),
+                    fetch_seeding_size: state.inner.fetch_seeding_size.clone(),
                     authenticated_user_id: None,
                 };
                 move || provide_server_fn_context(context.clone())

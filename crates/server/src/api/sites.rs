@@ -186,6 +186,7 @@ async fn build_adapter(
     site: &SiteRow,
     vault: &Vault,
     data_dir: &std::path::Path,
+    fetch_seeding_size: bool,
 ) -> Result<NexusPhpAdapter, (StatusCode, Json<ApiError>)> {
     let cookie = if let (Some(enc), Some(nonce)) = (&site.encrypted_cookie, &site.cookie_nonce) {
         Some(decrypt_credential(vault, enc, nonce)?)
@@ -227,7 +228,8 @@ async fn build_adapter(
         None, // user_id extracted at runtime
         selectors,
         100, // default batch size
-    );
+    )
+    .with_fetch_seeding_size(fetch_seeding_size);
 
     Ok(adapter)
 }
@@ -238,7 +240,16 @@ async fn run_probe(
     site: &SiteRow,
     vault: &Vault,
 ) -> Result<(), (StatusCode, Json<ApiError>)> {
-    let adapter = build_adapter(site, vault, &state.inner.config.data_dir).await?;
+    let adapter = build_adapter(
+        site,
+        vault,
+        &state.inner.config.data_dir,
+        state
+            .inner
+            .fetch_seeding_size
+            .load(std::sync::atomic::Ordering::Relaxed),
+    )
+    .await?;
     let adapter_arc: Arc<dyn UserInfoCapable> = Arc::new(adapter);
 
     let probe_result = probe_site(None, Some(&adapter_arc)).await;
@@ -507,10 +518,7 @@ async fn update_site(
     // Update URL fields if provided
     if req.url.is_some() || req.api_url.is_some() {
         let new_url = req.url.as_deref().unwrap_or(&site.url);
-        let new_api_url = req
-            .api_url
-            .as_deref()
-            .or(site.api_url.as_deref());
+        let new_api_url = req.api_url.as_deref().or(site.api_url.as_deref());
         state
             .inner
             .repo
@@ -724,7 +732,16 @@ async fn refresh_stats(
         })?
         .ok_or_else(|| api_err(StatusCode::NOT_FOUND, "site not found"))?;
 
-    let adapter = build_adapter(&site, vault, &state.inner.config.data_dir).await?;
+    let adapter = build_adapter(
+        &site,
+        vault,
+        &state.inner.config.data_dir,
+        state
+            .inner
+            .fetch_seeding_size
+            .load(std::sync::atomic::Ordering::Relaxed),
+    )
+    .await?;
 
     let user_stats = adapter.fetch_user_info().await.map_err(|e| {
         api_err(

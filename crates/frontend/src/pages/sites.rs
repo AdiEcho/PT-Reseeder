@@ -39,6 +39,22 @@ pub fn SitesPage() -> impl IntoView {
         async move { crate::server_fns::create_site(n, u, au, at, aht, c, p).await }
     });
 
+    // Validate site action
+    let validate_action = Action::new(move |_: &()| {
+        // 预设模式下用 site id（selected_preset），自定义模式下用用户输入的 name
+        let n = if is_custom.get_untracked() {
+            name.get_untracked()
+        } else {
+            selected_preset.get_untracked()
+        };
+        let u = url.get_untracked();
+        let au = api_url.get_untracked();
+        let at = adapter_type.get_untracked();
+        let c = cookie.get_untracked();
+        let p = passkey.get_untracked();
+        async move { crate::server_fns::validate_site(n, u, au, at, c, p).await }
+    });
+
     // Delete site action
     let delete_action = Action::new(move |id: &i64| {
         let id = *id;
@@ -271,7 +287,34 @@ pub fn SitesPage() -> impl IntoView {
                                 >
                                     "创建站点"
                                 </button>
+                                <button
+                                    class="btn btn--outline"
+                                    on:click=move |_| { validate_action.dispatch(()); }
+                                >
+                                    {move || {
+                                        if validate_action.pending().get() {
+                                            "校验中..."
+                                        } else {
+                                            "校验连通"
+                                        }
+                                    }}
+                                </button>
                             </div>
+                            // Validate result display
+                            {move || {
+                                validate_action.value().get().and_then(|r| r.ok()).map(|result| {
+                                    let (class, icon) = match result.status.as_str() {
+                                        "ok" => ("form-alert form-alert--success", "✅ "),
+                                        "partial" => ("form-alert form-alert--warning", "⚠️ "),
+                                        _ => ("form-alert form-alert--error", "❌ "),
+                                    };
+                                    view! {
+                                        <div class=class>
+                                            {format!("{}{}", icon, result.message)}
+                                        </div>
+                                    }
+                                })
+                            }}
                         </div>
                     }
                         .into_any()
@@ -297,6 +340,15 @@ pub fn SitesPage() -> impl IntoView {
                     .and_then(|r| r.err())
                     .map(|e| {
                         view! { <p class="error">{format!("删除失败：{e}")}</p> }
+                    })
+            }}
+            {move || {
+                validate_action
+                    .value()
+                    .get()
+                    .and_then(|r| r.err())
+                    .map(|e| {
+                        view! { <p class="error">{format!("校验失败：{e}")}</p> }
                     })
             }}
             {move || {

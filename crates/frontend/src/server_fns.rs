@@ -1,6 +1,8 @@
 use leptos::prelude::*;
 use serde::{Deserialize, Serialize};
 
+pub const FETCH_SEEDING_SIZE_CONFIG_KEY: &str = "fetch_seeding_size";
+
 #[cfg(feature = "ssr")]
 #[derive(Clone)]
 pub struct ServerFnContext {
@@ -9,6 +11,7 @@ pub struct ServerFnContext {
     pub session_ttl_hours: u64,
     pub data_dir: std::path::PathBuf,
     pub site_registry: std::sync::Arc<pt_reseeder_core::site::registry::SiteRegistry>,
+    pub fetch_seeding_size: std::sync::Arc<std::sync::atomic::AtomicBool>,
     pub authenticated_user_id: Option<i64>,
 }
 
@@ -367,6 +370,13 @@ pub struct SiteDetailData {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ValidateSiteResult {
+    pub status: String,
+    pub message: String,
+    pub detail_json: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DownloaderInfo {
     pub id: i64,
     pub name: String,
@@ -535,8 +545,105 @@ pub async fn create_site(
         .await
         .map_err(|e| ServerFnError::new(format!("{e}")))?;
     }
-    let _ = probe_site(id).await;
     get_site_info(id).await
+}
+
+#[server]
+pub async fn validate_site(
+    name: String,
+    url: String,
+    api_url: String,
+    adapter_type: String,
+    cookie: String,
+    passkey: String,
+) -> Result<ValidateSiteResult, ServerFnError> {
+    use pt_reseeder_core::site::adapters::gazelle::GazelleAdapter;
+    use pt_reseeder_core::site::adapters::mteam::MTeamAdapter;
+    use pt_reseeder_core::site::adapters::nexusphp::NexusPhpAdapter;
+    use pt_reseeder_core::site::adapters::unit3d::Unit3dAdapter;
+    use pt_reseeder_core::site::adapters::zhuque::ZhuqueAdapter;
+    use pt_reseeder_core::site::definitions::load_all_definitions;
+    use pt_reseeder_core::site::models::UserInfoSelectors;
+    use pt_reseeder_core::site::probe::probe_site as run_site_probe;
+    use pt_reseeder_core::site::traits::UserInfoCapable;
+    use std::sync::Arc;
+
+    let context = server_context()?;
+    let adapter = adapter_type.to_ascii_lowercase();
+    let api_url_opt = (!api_url.trim().is_empty()).then_some(api_url);
+    let cookie_opt = (!cookie.trim().is_empty()).then_some(cookie);
+    let passkey_opt = (!passkey.trim().is_empty()).then_some(passkey);
+
+    let definitions = load_all_definitions(Some(&context.data_dir));
+    let selectors = definitions
+        .get(&name)
+        .and_then(|def| def.user_info.clone())
+        .unwrap_or_else(|| UserInfoSelectors {
+            profile_url_template: None,
+            uid_selector: None,
+            uploaded_selector: None,
+            downloaded_selector: None,
+            ratio_selector: None,
+            bonus_selector: None,
+            user_class_selector: None,
+            seeding_count_selector: None,
+            leeching_count_selector: None,
+            seeding_size_selector: None,
+            upload_time_selector: None,
+        });
+
+    let fetch_seeding_size = context
+        .fetch_seeding_size
+        .load(std::sync::atomic::Ordering::Relaxed);
+    let user_info: Arc<dyn UserInfoCapable> = match adapter.as_str() {
+        "nexusphp" => Arc::new(
+            NexusPhpAdapter::new(
+                name,
+                url,
+                api_url_opt,
+                cookie_opt,
+                passkey_opt,
+                None,
+                selectors,
+                100,
+            )
+            .with_fetch_seeding_size(fetch_seeding_size),
+        ),
+        "mteam" => Arc::new(MTeamAdapter::new(name, url, None, passkey_opt, 100)),
+        "unit3d" => Arc::new(Unit3dAdapter::new(name, url, None, passkey_opt, 100)),
+        "gazelle" => Arc::new(GazelleAdapter::new(name, url, cookie_opt, passkey_opt, 100)),
+        "zhuque" => Arc::new(ZhuqueAdapter::new(
+            name,
+            url,
+            None,
+            passkey_opt,
+            cookie_opt,
+            100,
+        )),
+        other => {
+            return Ok(ValidateSiteResult {
+                status: "failed".to_string(),
+                message: format!("不支持的站点架构：{other}"),
+                detail_json: None,
+            });
+        }
+    };
+
+    let probe = run_site_probe(None, Some(&user_info)).await;
+    let status = probe.status_str().to_string();
+    let detail = probe.to_json();
+    let message = match status.as_str() {
+        "ok" => "校验通过，站点连通正常".to_string(),
+        "partial" => "部分功能可用，建议检查凭证".to_string(),
+        "failed" => "校验失败，无法连接站点或凭证无效".to_string(),
+        _ => "校验结果未知".to_string(),
+    };
+
+    Ok(ValidateSiteResult {
+        status,
+        message,
+        detail_json: Some(detail),
+    })
 }
 
 #[server]
@@ -1213,10 +1320,29 @@ pub async fn get_app_config() -> Result<Vec<ConfigEntry>, ServerFnError> {
 pub async fn update_app_config(key: String, value: String) -> Result<(), ServerFnError> {
     use pt_reseeder_core::db::repo::Repository;
 
-    Repository::new(server_pool()?)
-        .set_config(&key, &value)
+    let context = server_context()?;
+    let normalized_value = if key == FETCH_SEEDING_SIZE_CONFIG_KEY {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "true" | "1" => "true".to_string(),
+            "false" | "0" => "false".to_string(),
+            _ => return Err(ServerFnError::new("做种大小开关的值必须为 true 或 false")),
+        }
+    } else {
+        value
+    };
+
+    Repository::new(context.pool.clone())
+        .set_config(&key, &normalized_value)
         .await
-        .map_err(|e| ServerFnError::new(format!("{e}")))
+        .map_err(|e| ServerFnError::new(format!("{e}")))?;
+
+    if key == FETCH_SEEDING_SIZE_CONFIG_KEY {
+        context.fetch_seeding_size.store(
+            normalized_value == "true",
+            std::sync::atomic::Ordering::Relaxed,
+        );
+    }
+    Ok(())
 }
 
 // ── Dashboard ───────────────────────────────────────────────────────────

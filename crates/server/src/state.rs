@@ -1,5 +1,5 @@
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{atomic::AtomicBool, Arc};
 
 use pt_reseeder_core::browser::RepostAutoFiller;
 use pt_reseeder_core::config::AppConfig;
@@ -47,6 +47,7 @@ pub struct AppStateInner {
     pub cancel_token: CancellationToken,
     pub start_time: std::time::Instant,
     pub site_registry: RwLock<SiteRegistry>,
+    pub fetch_seeding_size: Arc<AtomicBool>,
     pub cron_scheduler: RwLock<Option<Arc<CronScheduler>>>,
     pub file_watcher: RwLock<Option<Arc<FileWatcher>>>,
     pub repost_autofiller: Option<Arc<dyn RepostAutoFiller>>,
@@ -62,6 +63,7 @@ impl AppState {
         site_registry: SiteRegistry,
         repost_autofiller: Option<Arc<dyn RepostAutoFiller>>,
         repost_autofiller_error: Option<String>,
+        fetch_seeding_size: Arc<AtomicBool>,
     ) -> Self {
         let repo = Repository::new(db_pool.clone());
         let leptos_options = leptos::config::LeptosOptions::builder()
@@ -81,6 +83,7 @@ impl AppState {
                 cancel_token,
                 start_time: std::time::Instant::now(),
                 site_registry: RwLock::new(site_registry),
+                fetch_seeding_size,
                 cron_scheduler: RwLock::new(None),
                 file_watcher: RwLock::new(None),
                 repost_autofiller,
@@ -123,7 +126,12 @@ impl AppState {
         let sites = self.inner.repo.list_sites().await?;
         let mut registry = SiteRegistry::new();
         for site in sites.into_iter().filter(|site| site.enabled) {
-            if let Some(handle) = build_adapter_handle(&site, vault, &self.inner.config)? {
+            if let Some(handle) = build_adapter_handle(
+                &site,
+                vault,
+                &self.inner.config,
+                self.inner.fetch_seeding_size.clone(),
+            )? {
                 registry.register(SiteId::from(site.id), handle);
             }
         }
@@ -294,6 +302,7 @@ fn build_adapter_handle(
     site: &SiteRow,
     vault: &Vault,
     config: &AppConfig,
+    fetch_seeding_size: Arc<AtomicBool>,
 ) -> Result<Option<AdapterHandle>, CoreError> {
     let cookie = if let (Some(enc), Some(nonce)) = (&site.encrypted_cookie, &site.cookie_nonce) {
         Some(decrypt_credential(vault, enc, nonce)?)
@@ -325,16 +334,19 @@ fn build_adapter_handle(
 
     match site.adapter_type.as_str() {
         "nexusphp" => {
-            let adapter = Arc::new(NexusPhpAdapter::new(
-                site.name.clone(),
-                site.url.clone(),
-                site.api_url.clone(),
-                cookie,
-                passkey,
-                None,
-                selectors_for(site, &config.data_dir),
-                batch_size,
-            ));
+            let adapter = Arc::new(
+                NexusPhpAdapter::new(
+                    site.name.clone(),
+                    site.url.clone(),
+                    site.api_url.clone(),
+                    cookie,
+                    passkey,
+                    None,
+                    selectors_for(site, &config.data_dir),
+                    batch_size,
+                )
+                .with_fetch_seeding_size_switch(fetch_seeding_size),
+            );
             let core: Arc<dyn SiteCore> = adapter.clone();
             let reseed: Arc<dyn ReseedCapable> = adapter.clone();
             let repost: Arc<dyn RepostCapable> = adapter.clone();

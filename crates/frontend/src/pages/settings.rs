@@ -1,4 +1,6 @@
-use crate::server_fns::{get_app_config, update_app_config, ConfigEntry};
+use crate::server_fns::{
+    get_app_config, update_app_config, ConfigEntry, FETCH_SEEDING_SIZE_CONFIG_KEY,
+};
 use leptos::prelude::*;
 
 /// Known settings with human-readable labels and optional masking.
@@ -6,6 +8,11 @@ const KNOWN_KEYS: &[(&str, &str, bool)] = &[
     ("jackett_url", "Jackett URL", false),
     ("jackett_api_key", "Jackett API Key", true),
     ("session_ttl_hours", "会话有效期（小时）", false),
+    (
+        FETCH_SEEDING_SIZE_CONFIG_KEY,
+        "获取做种大小（额外请求）",
+        false,
+    ),
 ];
 
 fn label_for_key(key: &str) -> String {
@@ -133,15 +140,39 @@ where
             </td>
             <td>
                 <div class="setting-value">
-                    <input
-                        type=move || if revealed.get() { "text" } else { "password" }
-                        class="input"
-                        prop:value=move || value.get()
-                        on:input=move |ev| {
-                            set_value.set(event_target_value(&ev));
-                            set_save_result.set(None);
+                    {if key == FETCH_SEEDING_SIZE_CONFIG_KEY {
+                        view! {
+                            <label style="display: inline-flex; align-items: center; gap: 8px;">
+                                <input
+                                    type="checkbox"
+                                    prop:checked=move || value.get() == "true"
+                                    on:change=move |ev| {
+                                        set_value.set(if event_target_checked(&ev) {
+                                            "true".to_string()
+                                        } else {
+                                            "false".to_string()
+                                        });
+                                        set_save_result.set(None);
+                                    }
+                                />
+                                <span>{move || if value.get() == "true" { "已开启" } else { "已关闭" }}</span>
+                            </label>
                         }
-                    />
+                            .into_any()
+                    } else {
+                        view! {
+                            <input
+                                type=move || if revealed.get() { "text" } else { "password" }
+                                class="input"
+                                prop:value=move || value.get()
+                                on:input=move |ev| {
+                                    set_value.set(event_target_value(&ev));
+                                    set_save_result.set(None);
+                                }
+                            />
+                        }
+                            .into_any()
+                    }}
                     {if is_secret {
                         Some(
                             view! {
@@ -157,6 +188,15 @@ where
                         None
                     }}
                 </div>
+                {if key == FETCH_SEEDING_SIZE_CONFIG_KEY {
+                    Some(view! {
+                        <div class="text-muted" style="font-size: 12px; margin-top: 4px;">
+                            "开启后，NexusPHP 用户信息刷新会额外请求一次当前做种列表。"
+                        </div>
+                    })
+                } else {
+                    None
+                }}
                 {move || {
                     save_result.get().map(|r| match r {
                         Ok(()) => view! {

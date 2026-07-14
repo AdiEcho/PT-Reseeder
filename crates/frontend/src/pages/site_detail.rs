@@ -2,6 +2,9 @@ use leptos::prelude::*;
 use leptos_router::hooks::use_params_map;
 use serde::Deserialize;
 
+use crate::components::toast::{show_toast, ToastType};
+use crate::utils::{format_bytes, format_duration};
+
 #[derive(Debug, Deserialize)]
 struct ProbeDetail {
     api_reachable: Option<ProbeFieldDetail>,
@@ -35,38 +38,6 @@ fn probe_field_label(field_name: &str) -> &str {
         "seeding_size" => "做种体积",
         "upload_time_seconds" => "做种时间",
         _ => field_name,
-    }
-}
-
-fn format_bytes(bytes: i64) -> String {
-    const KB: f64 = 1024.0;
-    const MB: f64 = KB * 1024.0;
-    const GB: f64 = MB * 1024.0;
-    const TB: f64 = GB * 1024.0;
-    let b = bytes as f64;
-    if b >= TB {
-        format!("{:.2} TB", b / TB)
-    } else if b >= GB {
-        format!("{:.2} GB", b / GB)
-    } else if b >= MB {
-        format!("{:.2} MB", b / MB)
-    } else if b >= KB {
-        format!("{:.2} KB", b / KB)
-    } else {
-        format!("{} B", bytes)
-    }
-}
-
-fn format_duration(seconds: i64) -> String {
-    let days = seconds / 86400;
-    let hours = (seconds % 86400) / 3600;
-    if days > 0 {
-        format!("{}d {}h", days, hours)
-    } else if hours > 0 {
-        format!("{}h", hours)
-    } else {
-        let mins = seconds / 60;
-        format!("{}m", mins)
     }
 }
 
@@ -117,21 +88,44 @@ pub fn SiteDetailPage() -> impl IntoView {
 
     // Refetch detail after refresh or probe
     Effect::new(move |_| {
-        if refresh_action.value().get().is_some() {
-            detail.refetch();
+        if let Some(result) = refresh_action.value().get() {
+            match result {
+                Ok(_) => {
+                    show_toast("统计数据已刷新", ToastType::Success);
+                    detail.refetch();
+                }
+                Err(e) => show_toast(format!("刷新失败：{e}"), ToastType::Error),
+            }
         }
     });
 
     Effect::new(move |_| {
-        if probe_action.value().get().is_some() {
-            detail.refetch();
+        if let Some(result) = probe_action.value().get() {
+            match result {
+                Ok(r) => {
+                    let msg = match r.status.as_str() {
+                        "ok" => "连通测试通过",
+                        "partial" => "连通测试部分通过",
+                        _ => "连通测试失败",
+                    };
+                    show_toast(msg, ToastType::Info);
+                    detail.refetch();
+                }
+                Err(e) => show_toast(format!("连通测试失败：{e}"), ToastType::Error),
+            }
         }
     });
 
     Effect::new(move |_| {
-        if update_site_action.value().get().is_some() {
-            detail.refetch();
-            set_editing_url.set(false);
+        if let Some(result) = update_site_action.value().get() {
+            match result {
+                Ok(_) => {
+                    show_toast("站点已更新", ToastType::Success);
+                    detail.refetch();
+                    set_editing_url.set(false);
+                }
+                Err(e) => show_toast(format!("更新失败：{e}"), ToastType::Error),
+            }
         }
     });
 
@@ -309,17 +303,19 @@ pub fn SiteDetailPage() -> impl IntoView {
                                                         <div class="form-actions">
                                                             <button
                                                                 class="btn btn--outline"
+                                                                disabled=move || update_site_action.pending().get()
                                                                 on:click=move |_| set_editing_url.set(false)
                                                             >
                                                                 "取消"
                                                             </button>
                                                             <button
                                                                 class="btn btn-primary"
+                                                                disabled=move || update_site_action.pending().get()
                                                                 on:click=move |_| {
                                                                     update_site_action.dispatch((current_site_id, edit_url.get_untracked(), edit_api_url.get_untracked(), edit_cookie.get_untracked(), edit_passkey.get_untracked()));
                                                                 }
                                                             >
-                                                                "保存"
+                                                                {move || if update_site_action.pending().get() { "保存中..." } else { "保存" }}
                                                             </button>
                                                         </div>
                                                     }.into_any()
@@ -598,9 +594,15 @@ pub fn SiteDetailPage() -> impl IntoView {
                             }
                             Err(e) => {
                                 view! {
-                                    <p class="error">
-                                        {format!("站点详情加载失败：{e}")}
-                                    </p>
+                                    <div class="load-error">
+                                        <span>{format!("站点详情加载失败：{e}")}</span>
+                                        <button
+                                            class="btn btn--sm btn--outline"
+                                            on:click=move |_| detail.refetch()
+                                        >
+                                            "重试"
+                                        </button>
+                                    </div>
                                 }
                                     .into_any()
                             }

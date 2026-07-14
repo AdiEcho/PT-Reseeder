@@ -1,3 +1,6 @@
+use crate::components::confirm_modal::ConfirmModal;
+use crate::components::empty_state::EmptyState;
+use crate::components::toast::{show_toast, ToastType};
 use crate::server_fns::{
     create_downloader, create_downloader_pair, delete_downloader, delete_downloader_pair,
     get_downloader_pairs, get_downloaders, test_downloader, test_downloader_connection,
@@ -39,26 +42,56 @@ pub fn DownloadersPage() -> impl IntoView {
         delete_downloader_pair(id)
     });
 
+    // Page-level delete confirmation targets so modals mount outside <tbody>.
+    let (confirm_delete_dl, set_confirm_delete_dl) = signal(None::<(i64, String)>);
+    let (confirm_delete_pair, set_confirm_delete_pair) = signal(None::<(i64, String)>);
+
     // --- Refetch after mutations ---
     Effect::new(move |_| {
-        if create_dl_action.value().get().is_some() {
-            downloaders.refetch();
+        if let Some(result) = create_dl_action.value().get() {
+            match result {
+                Ok(_) => {
+                    show_toast("下载器创建成功", ToastType::Success);
+                    downloaders.refetch();
+                }
+                Err(e) => show_toast(format!("创建下载器失败：{e}"), ToastType::Error),
+            }
         }
     });
     Effect::new(move |_| {
-        if delete_dl_action.value().get().is_some() {
-            downloaders.refetch();
-            pairs.refetch();
+        if let Some(result) = delete_dl_action.value().get() {
+            match result {
+                Ok(_) => {
+                    show_toast("下载器已删除", ToastType::Success);
+                    set_confirm_delete_dl.set(None);
+                    downloaders.refetch();
+                    pairs.refetch();
+                }
+                Err(e) => show_toast(format!("删除下载器失败：{e}"), ToastType::Error),
+            }
         }
     });
     Effect::new(move |_| {
-        if create_pair_action.value().get().is_some() {
-            pairs.refetch();
+        if let Some(result) = create_pair_action.value().get() {
+            match result {
+                Ok(_) => {
+                    show_toast("迁移方向创建成功", ToastType::Success);
+                    pairs.refetch();
+                }
+                Err(e) => show_toast(format!("创建迁移方向失败：{e}"), ToastType::Error),
+            }
         }
     });
     Effect::new(move |_| {
-        if delete_pair_action.value().get().is_some() {
-            pairs.refetch();
+        if let Some(result) = delete_pair_action.value().get() {
+            match result {
+                Ok(_) => {
+                    show_toast("迁移方向已删除", ToastType::Success);
+                    set_confirm_delete_pair.set(None);
+                    pairs.refetch();
+                }
+                Err(e) => show_toast(format!("删除迁移方向失败：{e}"), ToastType::Error),
+            }
         }
     });
 
@@ -68,50 +101,12 @@ pub fn DownloadersPage() -> impl IntoView {
                 <h1>"下载器管理"</h1>
             </div>
 
-            // 操作错误反馈
-            {move || {
-                create_dl_action
-                    .value()
-                    .get()
-                    .and_then(|r| r.err())
-                    .map(|e| {
-                        view! { <p class="error">{format!("创建下载器失败：{e}")}</p> }
-                    })
-            }}
-            {move || {
-                delete_dl_action
-                    .value()
-                    .get()
-                    .and_then(|r| r.err())
-                    .map(|e| {
-                        view! { <p class="error">{format!("删除下载器失败：{e}")}</p> }
-                    })
-            }}
-            {move || {
-                create_pair_action
-                    .value()
-                    .get()
-                    .and_then(|r| r.err())
-                    .map(|e| {
-                        view! { <p class="error">{format!("创建迁移方向失败：{e}")}</p> }
-                    })
-            }}
-            {move || {
-                delete_pair_action
-                    .value()
-                    .get()
-                    .and_then(|r| r.err())
-                    .map(|e| {
-                        view! { <p class="error">{format!("删除迁移方向失败：{e}")}</p> }
-                    })
-            }}
-
             // Section 1: Downloaders
             <DownloadersSection
                 downloaders=downloaders
                 create_dl_action=create_dl_action
-                delete_dl_action=delete_dl_action
                 test_dl_action=test_dl_action
+                on_request_delete=move |id: i64, name: String| set_confirm_delete_dl.set(Some((id, name)))
             />
 
             // Section 2: Source-Destination Pairs
@@ -119,8 +114,41 @@ pub fn DownloadersPage() -> impl IntoView {
                 pairs=pairs
                 downloaders=downloaders
                 create_pair_action=create_pair_action
-                delete_pair_action=delete_pair_action
+                on_request_delete=move |id: i64, name: String| set_confirm_delete_pair.set(Some((id, name)))
             />
+
+            {move || {
+                confirm_delete_dl.get().map(|(id, name)| {
+                    view! {
+                        <ConfirmModal
+                            title="确认删除"
+                            message=format!("确定要删除下载器「{name}」吗？此操作不可撤销。")
+                            on_confirm=move || {
+                                delete_dl_action.dispatch(id);
+                            }
+                            on_cancel=move || set_confirm_delete_dl.set(None)
+                            confirm_label="确认删除"
+                            danger=true
+                        />
+                    }
+                })
+            }}
+            {move || {
+                confirm_delete_pair.get().map(|(id, name)| {
+                    view! {
+                        <ConfirmModal
+                            title="确认删除"
+                            message=format!("确定要删除迁移方向「{name}」吗？此操作不可撤销。")
+                            on_confirm=move || {
+                                delete_pair_action.dispatch(id);
+                            }
+                            on_cancel=move || set_confirm_delete_pair.set(None)
+                            confirm_label="确认删除"
+                            danger=true
+                        />
+                    }
+                })
+            }}
         </div>
     }
 }
@@ -138,32 +166,43 @@ fn default_port_for_type(dl_type: &str) -> &'static str {
     }
 }
 
-/// 前端表单校验，返回 None 表示通过，Some(msg) 表示错误
-fn validate_form(name: &str, host: &str, port_str: &str) -> Option<String> {
-    if name.trim().is_empty() {
-        return Some("名称不能为空".into());
-    }
-    if host.trim().is_empty() {
-        return Some("主机地址不能为空".into());
-    }
-    match port_str.parse::<i64>() {
-        Ok(p) if (1..=65535).contains(&p) => {}
-        Ok(_) => return Some("端口必须在 1–65535 范围内".into()),
-        Err(_) => return Some("端口必须为数字".into()),
-    }
-    None
+/// 前端表单校验：返回各字段错误；全 None 表示通过。
+fn validate_form_fields(
+    name: &str,
+    host: &str,
+    port_str: &str,
+) -> (Option<String>, Option<String>, Option<String>) {
+    let name_err = if name.trim().is_empty() {
+        Some("名称不能为空".into())
+    } else {
+        None
+    };
+    let host_err = if host.trim().is_empty() {
+        Some("主机地址不能为空".into())
+    } else {
+        None
+    };
+    let port_err = match port_str.parse::<i64>() {
+        Ok(p) if (1..=65535).contains(&p) => None,
+        Ok(_) => Some("端口必须在 1–65535 范围内".into()),
+        Err(_) => Some("端口必须为数字".into()),
+    };
+    (name_err, host_err, port_err)
 }
 
 #[component]
-fn DownloadersSection(
+fn DownloadersSection<F>(
     downloaders: Resource<Result<Vec<DownloaderInfo>, ServerFnError>>,
     create_dl_action: Action<
         (String, String, String, i64, String, String, String),
         Result<DownloaderInfo, ServerFnError>,
     >,
-    delete_dl_action: Action<i64, Result<(), ServerFnError>>,
     test_dl_action: Action<i64, Result<String, ServerFnError>>,
-) -> impl IntoView {
+    on_request_delete: F,
+) -> impl IntoView
+where
+    F: Fn(i64, String) + Copy + Send + Sync + 'static,
+{
     let (show_form, set_show_form) = signal(false);
 
     // Form fields
@@ -176,7 +215,9 @@ fn DownloadersSection(
     let (role, set_role) = signal("both".to_string());
 
     // Validation & connection test state
-    let (form_error, set_form_error) = signal(Option::<String>::None);
+    let (name_error, set_name_error) = signal(Option::<String>::None);
+    let (host_error, set_host_error) = signal(Option::<String>::None);
+    let (port_error, set_port_error) = signal(Option::<String>::None);
     // 连接测试状态：None=未测试, Some(Ok(msg))=成功, Some(Err(msg))=失败
     let (conn_tested, set_conn_tested) = signal(Option::<Result<String, String>>::None);
     let (conn_testing, set_conn_testing) = signal(false);
@@ -187,23 +228,32 @@ fn DownloadersSection(
         set_port.set(default_port_for_type(&new_type).to_string());
         set_dl_type.set(new_type);
         set_conn_tested.set(None);
-        set_form_error.set(None);
+        set_name_error.set(None);
+        set_host_error.set(None);
+        set_port_error.set(None);
     };
 
     // 任何字段变化时重置连接测试状态
     let field_changed = move || {
         set_conn_tested.set(None);
-        set_form_error.set(None);
+        set_name_error.set(None);
+        set_host_error.set(None);
+        set_port_error.set(None);
+    };
+
+    let apply_validation = move || -> bool {
+        let (n, h, p) = validate_form_fields(&name.get(), &host.get(), &port.get());
+        set_name_error.set(n.clone());
+        set_host_error.set(h.clone());
+        set_port_error.set(p.clone());
+        n.is_none() && h.is_none() && p.is_none()
     };
 
     // 连接测试
     let on_test = move |_| {
-        // 先做前端校验
-        if let Some(msg) = validate_form(&name.get(), &host.get(), &port.get()) {
-            set_form_error.set(Some(msg));
+        if !apply_validation() {
             return;
         }
-        set_form_error.set(None);
         set_conn_testing.set(true);
         set_conn_tested.set(None);
 
@@ -230,14 +280,29 @@ fn DownloadersSection(
         });
     };
 
+    // Close/reset form only after successful create.
+    Effect::new(move |_| {
+        if let Some(Ok(_)) = create_dl_action.value().get() {
+            set_name.set(String::new());
+            set_dl_type.set("qbittorrent".to_string());
+            set_host.set(String::new());
+            set_port.set("8080".to_string());
+            set_username.set(String::new());
+            set_password.set(String::new());
+            set_role.set("both".to_string());
+            set_name_error.set(None);
+            set_host_error.set(None);
+            set_port_error.set(None);
+            set_conn_tested.set(None);
+            set_show_form.set(false);
+        }
+    });
+
     // 提交创建
     let on_submit = move |_| {
-        // 前端校验
-        if let Some(msg) = validate_form(&name.get(), &host.get(), &port.get()) {
-            set_form_error.set(Some(msg));
+        if !apply_validation() {
             return;
         }
-        set_form_error.set(None);
 
         let port_val: i64 = port.get().parse().unwrap_or(0);
         create_dl_action.dispatch((
@@ -249,17 +314,6 @@ fn DownloadersSection(
             password.get(),
             role.get(),
         ));
-        // Reset form
-        set_name.set(String::new());
-        set_dl_type.set("qbittorrent".to_string());
-        set_host.set(String::new());
-        set_port.set("8080".to_string());
-        set_username.set(String::new());
-        set_password.set(String::new());
-        set_role.set("both".to_string());
-        set_form_error.set(None);
-        set_conn_tested.set(None);
-        set_show_form.set(false);
     };
 
     // 连接测试是否通过
@@ -286,13 +340,6 @@ fn DownloadersSection(
                 if show_form.get() {
                     Some(view! {
                         <div class="add-form">
-                            // 验证错误提示
-                            {move || {
-                                form_error.get().map(|msg| view! {
-                                    <div class="form-alert form-alert--error">{msg}</div>
-                                })
-                            }}
-
                             <div class="form-grid">
                                 <div class="form-group">
                                     <label>"名称" <span class="required">"*"</span></label>
@@ -305,6 +352,7 @@ fn DownloadersSection(
                                             field_changed();
                                         }
                                     />
+                                    {move || name_error.get().map(|e| view! { <p class="field-error">{e}</p> })}
                                 </div>
                                 <div class="form-group">
                                     <label>"类型"</label>
@@ -327,6 +375,7 @@ fn DownloadersSection(
                                             field_changed();
                                         }
                                     />
+                                    {move || host_error.get().map(|e| view! { <p class="field-error">{e}</p> })}
                                 </div>
                                 <div class="form-group">
                                     <label>"端口" <span class="required">"*"</span></label>
@@ -339,6 +388,7 @@ fn DownloadersSection(
                                             field_changed();
                                         }
                                     />
+                                    {move || port_error.get().map(|e| view! { <p class="field-error">{e}</p> })}
                                 </div>
                                 <div class="form-group">
                                     <label>"用户名"</label>
@@ -400,16 +450,18 @@ fn DownloadersSection(
                                 <button
                                     class="btn btn--primary"
                                     on:click=on_submit
-                                    disabled=move || !conn_ok()
+                                    disabled=move || !conn_ok() || create_dl_action.pending().get()
                                     title=move || {
-                                        if conn_ok() {
+                                        if create_dl_action.pending().get() {
+                                            "创建中...".to_string()
+                                        } else if conn_ok() {
                                             "创建下载器".to_string()
                                         } else {
                                             "请先测试连接".to_string()
                                         }
                                     }
                                 >
-                                    "创建"
+                                    {move || if create_dl_action.pending().get() { "创建中..." } else { "创建" }}
                                 </button>
                             </div>
                         </div>
@@ -424,10 +476,18 @@ fn DownloadersSection(
                 {move || {
                     downloaders.get().map(|result| match result {
                         Err(e) => view! {
-                            <p class="error">{format!("下载器加载失败：{e}")}</p>
+                            <div class="load-error">
+                                <span>{format!("下载器加载失败：{e}")}</span>
+                                <button
+                                    class="btn btn--sm btn--outline"
+                                    on:click=move |_| downloaders.refetch()
+                                >
+                                    "重试"
+                                </button>
+                            </div>
                         }.into_any(),
                         Ok(list) if list.is_empty() => view! {
-                            <p>"尚未配置任何下载器。"</p>
+                            <EmptyState icon="⬇" message="尚未配置任何下载器。" />
                         }.into_any(),
                         Ok(list) => view! {
                             <div class="table-wrap">
@@ -450,7 +510,7 @@ fn DownloadersSection(
                                                     <DownloaderRow
                                                         dl=dl
                                                         test_dl_action=test_dl_action
-                                                        delete_dl_action=delete_dl_action
+                                                        on_request_delete=on_request_delete
                                                     />
                                                 }
                                             })
@@ -481,13 +541,16 @@ fn DownloadersSection(
 }
 
 #[component]
-fn DownloaderRow(
+fn DownloaderRow<F>(
     dl: DownloaderInfo,
     test_dl_action: Action<i64, Result<String, ServerFnError>>,
-    delete_dl_action: Action<i64, Result<(), ServerFnError>>,
-) -> impl IntoView {
+    on_request_delete: F,
+) -> impl IntoView
+where
+    F: Fn(i64, String) + Copy + 'static,
+{
     let dl_id = dl.id;
-    let (confirm_delete, set_confirm_delete) = signal(false);
+    let dl_name = dl.name.clone();
     let enabled_class = if dl.enabled { "text-green" } else { "text-red" };
     let enabled_label = if dl.enabled { "是" } else { "否" };
     let host_port = format!("{}:{}", dl.host, dl.port);
@@ -500,7 +563,7 @@ fn DownloaderRow(
 
     view! {
         <tr>
-            <td>{dl.name}</td>
+            <td>{dl.name.clone()}</td>
             <td>{dl.dl_type}</td>
             <td>{host_port}</td>
             <td>{role_label}</td>
@@ -514,41 +577,12 @@ fn DownloaderRow(
                 >
                     "测试"
                 </button>
-                {move || {
-                    if confirm_delete.get() {
-                        view! {
-                            <span class="inline-form">
-                                <span class="text-red">"确认？"</span>
-                                <button
-                                    class="btn btn--sm btn--danger"
-                                    on:click=move |_| {
-                                        delete_dl_action.dispatch(dl_id);
-                                        set_confirm_delete.set(false);
-                                    }
-                                >
-                                    "是"
-                                </button>
-                                <button
-                                    class="btn btn--sm btn--outline"
-                                    on:click=move |_| set_confirm_delete.set(false)
-                                >
-                                    "否"
-                                </button>
-                            </span>
-                        }
-                            .into_any()
-                    } else {
-                        view! {
-                            <button
-                                class="btn btn--small btn--danger"
-                                on:click=move |_| set_confirm_delete.set(true)
-                            >
-                                "删除"
-                            </button>
-                        }
-                            .into_any()
-                    }
-                }}
+                <button
+                    class="btn btn--small btn--danger"
+                    on:click=move |_| on_request_delete(dl_id, dl_name.clone())
+                >
+                    "删除"
+                </button>
             </td>
         </tr>
     }
@@ -559,12 +593,15 @@ fn DownloaderRow(
 // ---------------------------------------------------------------------------
 
 #[component]
-fn PairsSection(
+fn PairsSection<F>(
     pairs: Resource<Result<Vec<DownloaderPairInfo>, ServerFnError>>,
     downloaders: Resource<Result<Vec<DownloaderInfo>, ServerFnError>>,
     create_pair_action: Action<(String, i64, i64), Result<DownloaderPairInfo, ServerFnError>>,
-    delete_pair_action: Action<i64, Result<(), ServerFnError>>,
-) -> impl IntoView {
+    on_request_delete: F,
+) -> impl IntoView
+where
+    F: Fn(i64, String) + Copy + Send + Sync + 'static,
+{
     let (show_form, set_show_form) = signal(false);
 
     // Form fields
@@ -572,34 +609,53 @@ fn PairsSection(
     let (source_id, set_source_id) = signal(String::new());
     let (dest_id, set_dest_id) = signal(String::new());
 
-    let (pair_error, set_pair_error) = signal(None::<String>);
+    let (name_error, set_name_error) = signal(None::<String>);
+    let (source_error, set_source_error) = signal(None::<String>);
+    let (dest_error, set_dest_error) = signal(None::<String>);
+
+    // Close/reset form only after successful create.
+    Effect::new(move |_| {
+        if let Some(Ok(_)) = create_pair_action.value().get() {
+            set_pair_name.set(String::new());
+            set_source_id.set(String::new());
+            set_dest_id.set(String::new());
+            set_name_error.set(None);
+            set_source_error.set(None);
+            set_dest_error.set(None);
+            set_show_form.set(false);
+        }
+    });
 
     let on_submit = move |_| {
         let name_val = pair_name.get();
+        let mut ok = true;
         if name_val.trim().is_empty() {
-            set_pair_error.set(Some("迁移方向名称不能为空".into()));
-            return;
+            set_name_error.set(Some("迁移方向名称不能为空".into()));
+            ok = false;
+        } else {
+            set_name_error.set(None);
         }
         let src: i64 = source_id.get().parse().unwrap_or(0);
         let dst: i64 = dest_id.get().parse().unwrap_or(0);
         if src == 0 {
-            set_pair_error.set(Some("请选择拉取端下载器".into()));
-            return;
+            set_source_error.set(Some("请选择拉取端下载器".into()));
+            ok = false;
+        } else {
+            set_source_error.set(None);
         }
         if dst == 0 {
-            set_pair_error.set(Some("请选择推送端下载器".into()));
+            set_dest_error.set(Some("请选择推送端下载器".into()));
+            ok = false;
+        } else if src != 0 && src == dst {
+            set_dest_error.set(Some("拉取端和推送端不能相同".into()));
+            ok = false;
+        } else {
+            set_dest_error.set(None);
+        }
+        if !ok {
             return;
         }
-        if src == dst {
-            set_pair_error.set(Some("拉取端和推送端不能相同".into()));
-            return;
-        }
-        set_pair_error.set(None);
         create_pair_action.dispatch((name_val, src, dst));
-        set_pair_name.set(String::new());
-        set_source_id.set(String::new());
-        set_dest_id.set(String::new());
-        set_show_form.set(false);
     };
 
     view! {
@@ -626,12 +682,6 @@ fn PairsSection(
 
                     Some(view! {
                         <div class="add-form">
-                            // 验证错误提示
-                            {move || {
-                                pair_error.get().map(|msg| view! {
-                                    <div class="form-alert form-alert--error">{msg}</div>
-                                })
-                            }}
                             <div class="form-row">
                                 <label>"名称" <span class="required">"*"</span></label>
                                 <input
@@ -640,15 +690,19 @@ fn PairsSection(
                                     prop:value=move || pair_name.get()
                                     on:input=move |ev| {
                                         set_pair_name.set(event_target_value(&ev));
-                                        set_pair_error.set(None);
+                                        set_name_error.set(None);
                                     }
                                 />
+                                {move || name_error.get().map(|e| view! { <p class="field-error">{e}</p> })}
                             </div>
                             <div class="form-row">
                                 <label>"从哪拉取" <span class="required">"*"</span></label>
                                 <select
                                     prop:value=move || source_id.get()
-                                    on:change=move |ev| set_source_id.set(event_target_value(&ev))
+                                    on:change=move |ev| {
+                                        set_source_id.set(event_target_value(&ev));
+                                        set_source_error.set(None);
+                                    }
                                 >
                                     <option value="">"-- 选择拉取端 --"</option>
                                     {dl_list
@@ -661,12 +715,16 @@ fn PairsSection(
                                         })
                                         .collect::<Vec<_>>()}
                                 </select>
+                                {move || source_error.get().map(|e| view! { <p class="field-error">{e}</p> })}
                             </div>
                             <div class="form-row">
-                                <label>"推送到哪"</label>
+                                <label>"推送到哪" <span class="required">"*"</span></label>
                                 <select
                                     prop:value=move || dest_id.get()
-                                    on:change=move |ev| set_dest_id.set(event_target_value(&ev))
+                                    on:change=move |ev| {
+                                        set_dest_id.set(event_target_value(&ev));
+                                        set_dest_error.set(None);
+                                    }
                                 >
                                     <option value="">"-- 选择推送端 --"</option>
                                     {dl_list2
@@ -679,10 +737,15 @@ fn PairsSection(
                                         })
                                         .collect::<Vec<_>>()}
                                 </select>
+                                {move || dest_error.get().map(|e| view! { <p class="field-error">{e}</p> })}
                             </div>
                             <div class="form-actions">
-                                <button class="btn btn--primary" on:click=on_submit>
-                                    "创建"
+                                <button
+                                    class="btn btn--primary"
+                                    disabled=move || create_pair_action.pending().get()
+                                    on:click=on_submit
+                                >
+                                    {move || if create_pair_action.pending().get() { "创建中..." } else { "创建" }}
                                 </button>
                             </div>
                         </div>
@@ -697,10 +760,18 @@ fn PairsSection(
                 {move || {
                     pairs.get().map(|result| match result {
                         Err(e) => view! {
-                            <p class="error">{format!("迁移方向加载失败：{e}")}</p>
+                            <div class="load-error">
+                                <span>{format!("迁移方向加载失败：{e}")}</span>
+                                <button
+                                    class="btn btn--sm btn--outline"
+                                    on:click=move |_| pairs.refetch()
+                                >
+                                    "重试"
+                                </button>
+                            </div>
                         }.into_any(),
                         Ok(list) if list.is_empty() => view! {
-                            <p>"尚未配置任何迁移方向。"</p>
+                            <EmptyState icon="↻" message="尚未配置任何迁移方向。" />
                         }.into_any(),
                         Ok(list) => view! {
                             <div class="table-wrap">
@@ -720,7 +791,7 @@ fn PairsSection(
                                                 view! {
                                                     <PairRow
                                                         pair=pair
-                                                        delete_pair_action=delete_pair_action
+                                                        on_request_delete=on_request_delete
                                                     />
                                                 }
                                             })
@@ -737,54 +808,28 @@ fn PairsSection(
 }
 
 #[component]
-fn PairRow(
+fn PairRow<F>(
     pair: DownloaderPairInfo,
-    delete_pair_action: Action<i64, Result<(), ServerFnError>>,
-) -> impl IntoView {
+    on_request_delete: F,
+) -> impl IntoView
+where
+    F: Fn(i64, String) + Copy + 'static,
+{
     let pair_id = pair.id;
-    let (confirm_delete, set_confirm_delete) = signal(false);
+    let pair_name = pair.name.clone();
 
     view! {
         <tr>
-            <td>{pair.name}</td>
+            <td>{pair.name.clone()}</td>
             <td>{pair.source_name}</td>
             <td>{pair.destination_name}</td>
             <td class="actions-cell">
-                {move || {
-                    if confirm_delete.get() {
-                        view! {
-                            <span class="inline-form">
-                                <span class="text-red">"确认？"</span>
-                                <button
-                                    class="btn btn--sm btn--danger"
-                                    on:click=move |_| {
-                                        delete_pair_action.dispatch(pair_id);
-                                        set_confirm_delete.set(false);
-                                    }
-                                >
-                                    "是"
-                                </button>
-                                <button
-                                    class="btn btn--sm btn--outline"
-                                    on:click=move |_| set_confirm_delete.set(false)
-                                >
-                                    "否"
-                                </button>
-                            </span>
-                        }
-                            .into_any()
-                    } else {
-                        view! {
-                            <button
-                                class="btn btn--small btn--danger"
-                                on:click=move |_| set_confirm_delete.set(true)
-                            >
-                                "删除"
-                            </button>
-                        }
-                            .into_any()
-                    }
-                }}
+                <button
+                    class="btn btn--small btn--danger"
+                    on:click=move |_| on_request_delete(pair_id, pair_name.clone())
+                >
+                    "删除"
+                </button>
             </td>
         </tr>
     }

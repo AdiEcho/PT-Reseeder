@@ -1,5 +1,7 @@
+use crate::components::confirm_modal::ConfirmModal;
+use crate::components::empty_state::EmptyState;
+use crate::components::toast::{show_toast, ToastType};
 use crate::server_fns::{create_folder, delete_folder, get_folders, FolderInfo};
-use leptos::ev;
 use leptos::prelude::*;
 
 #[component]
@@ -7,20 +9,27 @@ pub fn FoldersPage() -> impl IntoView {
     let (version, set_version) = signal(0u64);
 
     let folders = Resource::new(move || version.get(), |_| get_folders());
+    let (confirm_delete, set_confirm_delete) = signal(None::<(i64, String)>);
 
     // --- Add-folder form state ---
     let (path, set_path) = signal(String::new());
     let (scan_mode, set_scan_mode) = signal("local".to_string());
     let (downloader_id, set_downloader_id) = signal(String::new());
     let (form_error, set_form_error) = signal(None::<String>);
+    let (path_error, set_path_error) = signal(None::<String>);
+    let (dl_error, set_dl_error) = signal(None::<String>);
     let (submitting, set_submitting) = signal(false);
 
     let on_create = move |ev: leptos::ev::SubmitEvent| {
         ev.prevent_default();
         let p = path.get_untracked();
         let sm = scan_mode.get_untracked();
+        set_path_error.set(None);
+        set_dl_error.set(None);
+        set_form_error.set(None);
+
         if p.trim().is_empty() {
-            set_form_error.set(Some("文件夹路径不能为空。".into()));
+            set_path_error.set(Some("文件夹路径不能为空。".into()));
             return;
         }
         let dl_id = if sm == "downloader" {
@@ -28,7 +37,7 @@ pub fn FoldersPage() -> impl IntoView {
             match raw.trim().parse::<i64>() {
                 Ok(id) => Some(id),
                 Err(_) => {
-                    set_form_error.set(Some("下载器 ID 必须是有效数字。".into()));
+                    set_dl_error.set(Some("下载器 ID 必须是有效数字。".into()));
                     return;
                 }
             }
@@ -36,15 +45,16 @@ pub fn FoldersPage() -> impl IntoView {
             None
         };
         set_submitting.set(true);
-        set_form_error.set(None);
         leptos::task::spawn_local(async move {
             match create_folder(p, sm, dl_id).await {
                 Ok(_) => {
+                    show_toast("文件夹添加成功", ToastType::Success);
                     set_path.set(String::new());
                     set_downloader_id.set(String::new());
                     set_version.update(|v| *v += 1);
                 }
                 Err(e) => {
+                    show_toast(format!("添加失败：{e}"), ToastType::Error);
                     set_form_error.set(Some(format!("{e}")));
                 }
             }
@@ -63,20 +73,23 @@ pub fn FoldersPage() -> impl IntoView {
                 <h2>"添加文件夹"</h2>
                 <form class="inline-form" on:submit=on_create>
                     <label>
-                        "路径"
+                        "路径" <span class="required">"*"</span>
                         <input
                             type="text"
                             placeholder="/path/to/torrents"
                             prop:value=move || path.get()
                             on:input=move |ev| {
                                 set_path.set(event_target_value(&ev));
+                                set_path_error.set(None);
                             }
                         />
+                        {move || path_error.get().map(|e| view! { <p class="field-error">{e}</p> })}
                     </label>
                     <label>
                         "种子来源"
                         <select on:change=move |ev| {
                             set_scan_mode.set(event_target_value(&ev));
+                            set_dl_error.set(None);
                         }>
                             <option value="local" selected=true>
                                 "本机磁盘"
@@ -89,15 +102,17 @@ pub fn FoldersPage() -> impl IntoView {
                             Some(
                                 view! {
                                     <label>
-                                        "关联下载器 ID"
+                                        "关联下载器 ID" <span class="required">"*"</span>
                                         <input
-                                            type="text"
+                                            type="number"
                                             placeholder="关联下载器 ID"
                                             prop:value=move || downloader_id.get()
                                             on:input=move |ev| {
                                                 set_downloader_id.set(event_target_value(&ev));
+                                                set_dl_error.set(None);
                                             }
                                         />
+                                        {move || dl_error.get().map(|e| view! { <p class="field-error">{e}</p> })}
                                     </label>
                                 },
                             )
@@ -118,6 +133,31 @@ pub fn FoldersPage() -> impl IntoView {
                 }}
             </div>
 
+            // Page-level delete confirmation so modal mounts outside <tbody>.
+            {move || {
+                confirm_delete.get().map(|(folder_id, path)| {
+                    view! {
+                        <ConfirmModal
+                            title="确认删除"
+                            message=format!("确定要删除文件夹「{path}」吗？此操作不可撤销。")
+                            on_confirm=move || {
+                                set_confirm_delete.set(None);
+                                leptos::task::spawn_local(async move {
+                                    match delete_folder(folder_id).await {
+                                        Ok(_) => show_toast("文件夹已删除", ToastType::Success),
+                                        Err(e) => show_toast(format!("删除失败：{e}"), ToastType::Error),
+                                    }
+                                    set_version.update(|v| *v += 1);
+                                });
+                            }
+                            on_cancel=move || set_confirm_delete.set(None)
+                            confirm_label="确认删除"
+                            danger=true
+                        />
+                    }
+                })
+            }}
+
             // --- Folders Table ---
             <div class="stats-table-section">
                 <h2>"种子文件夹"</h2>
@@ -131,14 +171,20 @@ pub fn FoldersPage() -> impl IntoView {
                                 match result {
                                     Err(e) => {
                                         view! {
-                                            <p class="error">
-                                                {format!("文件夹加载失败：{e}")}
-                                            </p>
+                                            <div class="load-error">
+                                                <span>{format!("文件夹加载失败：{e}")}</span>
+                                                <button
+                                                    class="btn btn--sm btn--outline"
+                                                    on:click=move |_| set_version.update(|v| *v += 1)
+                                                >
+                                                    "重试"
+                                                </button>
+                                            </div>
                                         }
                                             .into_any()
                                     }
                                     Ok(list) if list.is_empty() => {
-                                        view! { <p>"尚未配置任何文件夹。"</p> }.into_any()
+                                        view! { <EmptyState icon="📁" message="尚未配置任何文件夹。" /> }.into_any()
                                     }
                                     Ok(list) => {
                                         view! {
@@ -161,8 +207,8 @@ pub fn FoldersPage() -> impl IntoView {
                                                                 view! {
                                                                     <FolderRow
                                                                         folder=folder
-                                                                        on_change=move || {
-                                                                            set_version.update(|v| *v += 1)
+                                                                        on_request_delete=move |id: i64, path: String| {
+                                                                            set_confirm_delete.set(Some((id, path)));
                                                                         }
                                                                     />
                                                                 }
@@ -184,27 +230,15 @@ pub fn FoldersPage() -> impl IntoView {
 }
 
 #[component]
-fn FolderRow(
+fn FolderRow<F>(
     folder: FolderInfo,
-    on_change: impl Fn() + Copy + Send + Sync + 'static,
-) -> impl IntoView {
+    on_request_delete: F,
+) -> impl IntoView
+where
+    F: Fn(i64, String) + Copy + 'static,
+{
     let folder_id = folder.id;
-    let (acting, set_acting) = signal(false);
-    let (confirm_delete, set_confirm_delete) = signal(false);
-
-    let on_delete = move |_: ev::MouseEvent| {
-        set_confirm_delete.set(true);
-    };
-
-    let do_delete = move |_: ev::MouseEvent| {
-        set_acting.set(true);
-        set_confirm_delete.set(false);
-        leptos::task::spawn_local(async move {
-            let _ = delete_folder(folder_id).await;
-            set_acting.set(false);
-            on_change();
-        });
-    };
+    let folder_path = folder.path.clone();
 
     let enabled_class = if folder.enabled {
         "text-green"
@@ -238,24 +272,10 @@ fn FolderRow(
             <td class="action-cell">
                 <button
                     class="btn btn--sm btn--danger"
-                    disabled=move || acting.get()
-                    on:click=on_delete
+                    on:click=move |_| on_request_delete(folder_id, folder_path.clone())
                 >
                     "删除"
                 </button>
-                {move || {
-                    if confirm_delete.get() {
-                        Some(view! {
-                            <div class="inline-form" style="margin-top: 6px;">
-                                <span class="text-red">"确认？"</span>
-                                <button class="btn btn--sm btn--danger" on:click=do_delete>"是"</button>
-                                <button class="btn btn--sm btn--outline" on:click=move |_| set_confirm_delete.set(false)>"否"</button>
-                            </div>
-                        })
-                    } else {
-                        None
-                    }
-                }}
             </td>
         </tr>
     }

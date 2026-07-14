@@ -17,6 +17,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 web-sys = { version = "0.3", features = ["WebSocket", "MessageEvent", "ErrorEvent", "CloseEvent", "BinaryType", "Window", "Location", "Request", "RequestInit", "RequestMode", "RequestCredentials", "Headers", "Response", "Storage", "Document", "Element", "HtmlElement"] }
 js-sys = "0.3"
+gloo-timers = { version = "0.3", features = ["futures"] }
 
 pt-reseeder-core = { path = "../core", optional = true }
 sqlx = { workspace = true, optional = true }

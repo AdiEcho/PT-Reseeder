@@ -1,4 +1,5 @@
 use crate::server_fns::{delete_repost, get_repost_queue, RepostEntry};
+use crate::components::empty_state::EmptyState;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::server_fns::{review_repost, submit_repost};
 use leptos::prelude::*;
@@ -291,15 +292,21 @@ pub fn RepostPage() -> impl IntoView {
                             match result {
                                 Err(e) => {
                                     view! {
-                                        <p class="error">
-                                            {format!("转种队列加载失败：{e}")}
-                                        </p>
+                                        <div class="load-error">
+                                            <span>{format!("转种队列加载失败：{e}")}</span>
+                                            <button
+                                                class="btn btn--sm btn--outline"
+                                                on:click=move |_| refetch()
+                                            >
+                                                "重试"
+                                            </button>
+                                        </div>
                                     }
                                         .into_any()
                                 }
                                 Ok(entries) => {
                                     if entries.is_empty() {
-                                        view! { <p>"队列中没有条目。"</p> }.into_any()
+                                        view! { <EmptyState icon="↻" message="队列中没有条目。" /> }.into_any()
                                     } else {
                                         view! {
                                             <RepostTable entries=entries on_mutated=refetch />

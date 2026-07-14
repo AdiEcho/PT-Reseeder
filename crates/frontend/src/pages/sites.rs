@@ -1,3 +1,6 @@
+use crate::components::confirm_modal::ConfirmModal;
+use crate::components::empty_state::EmptyState;
+use crate::components::toast::{show_toast, ToastType};
 use leptos::prelude::*;
 use serde::Deserialize;
 
@@ -177,38 +180,62 @@ pub fn SitesPage() -> impl IntoView {
 
     // Refetch sites after create/delete/probe/update
     Effect::new(move |_| {
-        if create_action.value().get().is_some() {
-            sites.refetch();
-            // Reset form
-            set_selected_preset.set(String::new());
-            set_name.set(String::new());
-            set_url.set(String::new());
-            set_api_url.set(String::new());
-            set_adapter_type.set("NexusPHP".to_string());
-            set_auth_type.set("cookie".to_string());
-            set_cookie.set(String::new());
-            set_passkey.set(String::new());
-            set_is_custom.set(true);
-            set_show_form.set(false);
+        if let Some(result) = create_action.value().get() {
+            match result {
+                Ok(_) => {
+                    show_toast("站点创建成功", ToastType::Success);
+                    sites.refetch();
+                    // Reset form
+                    set_selected_preset.set(String::new());
+                    set_name.set(String::new());
+                    set_url.set(String::new());
+                    set_api_url.set(String::new());
+                    set_adapter_type.set("NexusPHP".to_string());
+                    set_auth_type.set("cookie".to_string());
+                    set_cookie.set(String::new());
+                    set_passkey.set(String::new());
+                    set_is_custom.set(true);
+                    set_show_form.set(false);
+                }
+                Err(e) => show_toast(format!("创建失败：{e}"), ToastType::Error),
+            }
         }
     });
 
     Effect::new(move |_| {
-        if delete_action.value().get().is_some() {
-            sites.refetch();
+        if let Some(result) = delete_action.value().get() {
+            match result {
+                Ok(_) => {
+                    show_toast("站点已删除", ToastType::Success);
+                    sites.refetch();
+                }
+                Err(e) => show_toast(format!("删除失败：{e}"), ToastType::Error),
+            }
         }
     });
 
     Effect::new(move |_| {
-        if probe_action.value().get().is_some() {
-            sites.refetch();
+        if let Some(result) = probe_action.value().get() {
+            match result {
+                Ok(_) => {
+                    show_toast("连通测试完成", ToastType::Info);
+                    sites.refetch();
+                }
+                Err(e) => show_toast(format!("连通测试失败：{e}"), ToastType::Error),
+            }
         }
     });
 
     Effect::new(move |_| {
-        if update_site_action.value().get().is_some() {
-            sites.refetch();
-            set_edit_url_site.set(None);
+        if let Some(result) = update_site_action.value().get() {
+            match result {
+                Ok(_) => {
+                    show_toast("站点已更新", ToastType::Success);
+                    sites.refetch();
+                    set_edit_url_site.set(None);
+                }
+                Err(e) => show_toast(format!("更新失败：{e}"), ToastType::Error),
+            }
         }
     });
 
@@ -295,7 +322,7 @@ pub fn SitesPage() -> impl IntoView {
                                     </Suspense>
                                 </div>
                                 <div class="form-group">
-                                    <label>"名称"</label>
+                                    <label>"名称" <span class="required">"*"</span></label>
                                     <input
                                         type="text"
                                         placeholder="站点名称"
@@ -307,7 +334,7 @@ pub fn SitesPage() -> impl IntoView {
                                     />
                                 </div>
                                 <div class="form-group">
-                                    <label>"URL"</label>
+                                    <label>"URL" <span class="required">"*"</span></label>
                                     <input
                                         type="text"
                                         placeholder="https://example.com"
@@ -383,12 +410,20 @@ pub fn SitesPage() -> impl IntoView {
                             <div class="form-actions">
                                 <button
                                     class="btn btn-primary"
+                                    disabled=move || create_action.pending().get()
                                     on:click=move |_| { create_action.dispatch(()); }
                                 >
-                                    "创建站点"
+                                    {move || {
+                                        if create_action.pending().get() {
+                                            "创建中..."
+                                        } else {
+                                            "创建站点"
+                                        }
+                                    }}
                                 </button>
                                 <button
                                     class="btn btn--outline"
+                                    disabled=move || validate_action.pending().get()
                                     on:click=move |_| { validate_action.dispatch(()); }
                                 >
                                     {move || {
@@ -567,7 +602,7 @@ pub fn SitesPage() -> impl IntoView {
                                 if sites_list.is_empty() {
                                     view! {
                                         <div class="stats-table-section">
-                                            <p>"尚未配置任何站点，请在上方添加。"</p>
+                                            <EmptyState icon="◈" message="尚未配置任何站点，请在上方添加。" />
                                         </div>
                                     }
                                         .into_any()
@@ -665,7 +700,15 @@ pub fn SitesPage() -> impl IntoView {
                             }
                             Err(e) => {
                                 view! {
-                                    <p class="error">{format!("站点加载失败：{e}")}</p>
+                                    <div class="load-error">
+                                        <span>{format!("站点加载失败：{e}")}</span>
+                                        <button
+                                            class="btn btn--sm btn--outline"
+                                            on:click=move |_| sites.refetch()
+                                        >
+                                            "重试"
+                                        </button>
+                                    </div>
                                 }
                                     .into_any()
                             }
@@ -673,67 +716,32 @@ pub fn SitesPage() -> impl IntoView {
                 }}
             </Suspense>
 
-            // Edit site dialog
+            // Edit site dialog (Esc closes via ConfirmModal-style overlay)
             {move || {
                 edit_url_site.get().map(|(edit_id, _, _)| {
                     view! {
-                        <div class="confirm-overlay">
-                            <div class="confirm-dialog">
-                                <h3>"编辑站点"</h3>
-                                <div class="form-grid">
-                                    <div class="form-group">
-                                        <label>"URL"</label>
-                                        <input
-                                            type="text"
-                                            prop:value=move || edit_url.get()
-                                            on:input=move |ev| set_edit_url.set(event_target_value(&ev))
-                                        />
-                                    </div>
-                                    <div class="form-group">
-                                        <label>"API URL"</label>
-                                        <input
-                                            type="text"
-                                            prop:value=move || edit_api_url.get()
-                                            on:input=move |ev| set_edit_api_url.set(event_target_value(&ev))
-                                        />
-                                    </div>
-                                    <div class="form-group">
-                                        <label>"Cookie"</label>
-                                        <input
-                                            type="text"
-                                            placeholder="留空则保持不变"
-                                            prop:value=move || edit_cookie.get()
-                                            on:input=move |ev| set_edit_cookie.set(event_target_value(&ev))
-                                        />
-                                    </div>
-                                    <div class="form-group">
-                                        <label>"Passkey"</label>
-                                        <input
-                                            type="text"
-                                            placeholder="留空则保持不变"
-                                            prop:value=move || edit_passkey.get()
-                                            on:input=move |ev| set_edit_passkey.set(event_target_value(&ev))
-                                        />
-                                    </div>
-                                </div>
-                                <div class="form-actions">
-                                    <button
-                                        class="btn btn--outline"
-                                        on:click=move |_| set_edit_url_site.set(None)
-                                    >
-                                        "取消"
-                                    </button>
-                                    <button
-                                        class="btn btn-primary"
-                                        on:click=move |_| {
-                                            update_site_action.dispatch((edit_id, edit_url.get_untracked(), edit_api_url.get_untracked(), edit_cookie.get_untracked(), edit_passkey.get_untracked()));
-                                        }
-                                    >
-                                        "保存"
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
+                        <EditSiteModal
+                            edit_id=edit_id
+                            edit_url=edit_url
+                            set_edit_url=set_edit_url
+                            edit_api_url=edit_api_url
+                            set_edit_api_url=set_edit_api_url
+                            edit_cookie=edit_cookie
+                            set_edit_cookie=set_edit_cookie
+                            edit_passkey=edit_passkey
+                            set_edit_passkey=set_edit_passkey
+                            pending=Signal::derive(move || update_site_action.pending().get())
+                            on_cancel=move || set_edit_url_site.set(None)
+                            on_save=move || {
+                                update_site_action.dispatch((
+                                    edit_id,
+                                    edit_url.get_untracked(),
+                                    edit_api_url.get_untracked(),
+                                    edit_cookie.get_untracked(),
+                                    edit_passkey.get_untracked(),
+                                ));
+                            }
+                        />
                     }
                 })
             }}
@@ -742,32 +750,120 @@ pub fn SitesPage() -> impl IntoView {
             {move || {
                 confirm_delete_id.get().map(|del_id| {
                     view! {
-                        <div class="confirm-overlay">
-                            <div class="confirm-dialog">
-                                <h3>"确认删除"</h3>
-                                <p>"确定要删除该站点吗？此操作不可撤销。"</p>
-                                <div class="form-actions">
-                                    <button
-                                        class="btn btn--outline"
-                                        on:click=move |_| set_confirm_delete_id.set(None)
-                                    >
-                                        "取消"
-                                    </button>
-                                    <button
-                                        class="btn btn--danger"
-                                        on:click=move |_| {
-                                            delete_action.dispatch(del_id);
-                                            set_confirm_delete_id.set(None);
-                                        }
-                                    >
-                                        "确认删除"
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
+                        <ConfirmModal
+                            title="确认删除"
+                            message="确定要删除该站点吗？此操作不可撤销。".to_string()
+                            on_confirm=move || {
+                                delete_action.dispatch(del_id);
+                                set_confirm_delete_id.set(None);
+                            }
+                            on_cancel=move || set_confirm_delete_id.set(None)
+                            confirm_label="确认删除"
+                            danger=true
+                        />
                     }
                 })
             }}
+        </div>
+    }
+}
+
+#[component]
+fn EditSiteModal(
+    edit_id: i64,
+    edit_url: ReadSignal<String>,
+    set_edit_url: WriteSignal<String>,
+    edit_api_url: ReadSignal<String>,
+    set_edit_api_url: WriteSignal<String>,
+    edit_cookie: ReadSignal<String>,
+    set_edit_cookie: WriteSignal<String>,
+    edit_passkey: ReadSignal<String>,
+    set_edit_passkey: WriteSignal<String>,
+    pending: Signal<bool>,
+    on_cancel: impl Fn() + 'static + Clone,
+    on_save: impl Fn() + 'static + Clone,
+) -> impl IntoView {
+    let _ = edit_id;
+    let on_cancel_esc = on_cancel.clone();
+    let on_cancel_btn = on_cancel.clone();
+    let on_cancel_overlay = on_cancel.clone();
+    let overlay_ref = NodeRef::<leptos::html::Div>::new();
+
+    Effect::new(move |_| {
+        if let Some(el) = overlay_ref.get() {
+            let _ = el.focus();
+        }
+    });
+
+    let on_keydown = move |e: leptos::ev::KeyboardEvent| {
+        if e.key() == "Escape" {
+            on_cancel_esc.clone()();
+        }
+    };
+
+    view! {
+        <div
+            class="confirm-overlay"
+            tabindex="-1"
+            node_ref=overlay_ref
+            on:keydown=on_keydown
+            on:click=move |_| on_cancel_overlay.clone()()
+        >
+            <div class="confirm-dialog" role="dialog" aria-modal="true" on:click=move |e| e.stop_propagation()>
+                <h3>"编辑站点"</h3>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label>"URL"</label>
+                        <input
+                            type="text"
+                            prop:value=move || edit_url.get()
+                            on:input=move |ev| set_edit_url.set(event_target_value(&ev))
+                        />
+                    </div>
+                    <div class="form-group">
+                        <label>"API URL"</label>
+                        <input
+                            type="text"
+                            prop:value=move || edit_api_url.get()
+                            on:input=move |ev| set_edit_api_url.set(event_target_value(&ev))
+                        />
+                    </div>
+                    <div class="form-group">
+                        <label>"Cookie"</label>
+                        <input
+                            type="text"
+                            placeholder="留空则保持不变"
+                            prop:value=move || edit_cookie.get()
+                            on:input=move |ev| set_edit_cookie.set(event_target_value(&ev))
+                        />
+                    </div>
+                    <div class="form-group">
+                        <label>"Passkey"</label>
+                        <input
+                            type="text"
+                            placeholder="留空则保持不变"
+                            prop:value=move || edit_passkey.get()
+                            on:input=move |ev| set_edit_passkey.set(event_target_value(&ev))
+                        />
+                    </div>
+                </div>
+                <div class="form-actions">
+                    <button
+                        class="btn btn--outline"
+                        disabled=move || pending.get()
+                        on:click=move |_| on_cancel_btn.clone()()
+                    >
+                        "取消"
+                    </button>
+                    <button
+                        class="btn btn-primary"
+                        disabled=move || pending.get()
+                        on:click=move |_| on_save.clone()()
+                    >
+                        {move || if pending.get() { "保存中..." } else { "保存" }}
+                    </button>
+                </div>
+            </div>
         </div>
     }
 }

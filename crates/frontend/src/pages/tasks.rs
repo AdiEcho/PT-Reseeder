@@ -1,3 +1,6 @@
+use crate::components::confirm_modal::ConfirmModal;
+use crate::components::empty_state::EmptyState;
+use crate::components::toast::{show_toast, ToastType};
 use crate::server_fns::{
     create_task, delete_task, get_task_logs, get_tasks, trigger_task, TaskInfo, TaskLogInfo,
 };
@@ -18,6 +21,7 @@ pub fn TasksPage() -> impl IntoView {
     let (version, set_version) = signal(0u64);
 
     let tasks = Resource::new(move || version.get(), |_| get_tasks());
+    let (confirm_delete, set_confirm_delete) = signal(None::<(i64, String)>);
 
     // --- Create-task form state ---
     let (name, set_name) = signal(String::new());
@@ -25,6 +29,8 @@ pub fn TasksPage() -> impl IntoView {
     let (trigger_type, set_trigger_type) = signal("manual".to_string());
     let (cron_expr, set_cron_expr) = signal(String::new());
     let (form_error, set_form_error) = signal(None::<String>);
+    let (name_error, set_name_error) = signal(None::<String>);
+    let (cron_error, set_cron_error) = signal(None::<String>);
     let (submitting, set_submitting) = signal(false);
 
     let on_create = move |ev: leptos::ev::SubmitEvent| {
@@ -32,30 +38,35 @@ pub fn TasksPage() -> impl IntoView {
         let n = name.get_untracked();
         let tt = task_type.get_untracked();
         let tg = trigger_type.get_untracked();
+        set_name_error.set(None);
+        set_cron_error.set(None);
+        set_form_error.set(None);
+
+        if n.trim().is_empty() {
+            set_name_error.set(Some("任务名称不能为空。".into()));
+            return;
+        }
         let cron = if tg == "cron" {
             let c = cron_expr.get_untracked();
             if c.trim().is_empty() {
-                set_form_error.set(Some("Cron 触发器必须填写 Cron 表达式。".into()));
+                set_cron_error.set(Some("Cron 触发器必须填写 Cron 表达式。".into()));
                 return;
             }
             Some(c)
         } else {
             None
         };
-        if n.trim().is_empty() {
-            set_form_error.set(Some("任务名称不能为空。".into()));
-            return;
-        }
         set_submitting.set(true);
-        set_form_error.set(None);
         leptos::task::spawn_local(async move {
             match create_task(n, tt, tg, cron).await {
                 Ok(_) => {
+                    show_toast("任务创建成功", ToastType::Success);
                     set_name.set(String::new());
                     set_cron_expr.set(String::new());
                     set_version.update(|v| *v += 1);
                 }
                 Err(e) => {
+                    show_toast(format!("创建失败：{e}"), ToastType::Error);
                     set_form_error.set(Some(format!("{e}")));
                 }
             }
@@ -74,15 +85,17 @@ pub fn TasksPage() -> impl IntoView {
                 <h2>"创建任务"</h2>
                 <form class="inline-form" on:submit=on_create>
                     <label>
-                        "名称"
+                        "名称" <span class="required">"*"</span>
                         <input
                             type="text"
                             placeholder="任务名称"
                             prop:value=move || name.get()
                             on:input=move |ev| {
                                 set_name.set(event_target_value(&ev));
+                                set_name_error.set(None);
                             }
                         />
+                        {move || name_error.get().map(|e| view! { <p class="field-error">{e}</p> })}
                     </label>
                     <label>
                         "类型"
@@ -100,6 +113,7 @@ pub fn TasksPage() -> impl IntoView {
                         "触发方式"
                         <select on:change=move |ev| {
                             set_trigger_type.set(event_target_value(&ev));
+                            set_cron_error.set(None);
                         }>
                             <option value="manual" selected=true>
                                 "手动"
@@ -113,15 +127,17 @@ pub fn TasksPage() -> impl IntoView {
                             Some(
                                 view! {
                                     <label>
-                                        "Cron 表达式"
+                                        "Cron 表达式" <span class="required">"*"</span>
                                         <input
                                             type="text"
                                             placeholder="0 */5 * * * *"
                                             prop:value=move || cron_expr.get()
                                             on:input=move |ev| {
                                                 set_cron_expr.set(event_target_value(&ev));
+                                                set_cron_error.set(None);
                                             }
                                         />
+                                        {move || cron_error.get().map(|e| view! { <p class="field-error">{e}</p> })}
                                     </label>
                                 },
                             )
@@ -142,6 +158,31 @@ pub fn TasksPage() -> impl IntoView {
                 }}
             </div>
 
+            // Page-level delete confirmation so modal mounts outside <tbody>.
+            {move || {
+                confirm_delete.get().map(|(task_id, name)| {
+                    view! {
+                        <ConfirmModal
+                            title="确认删除"
+                            message=format!("确定要删除任务「{name}」吗？此操作不可撤销。")
+                            on_confirm=move || {
+                                set_confirm_delete.set(None);
+                                leptos::task::spawn_local(async move {
+                                    match delete_task(task_id).await {
+                                        Ok(_) => show_toast("任务已删除", ToastType::Success),
+                                        Err(e) => show_toast(format!("删除失败：{e}"), ToastType::Error),
+                                    }
+                                    set_version.update(|v| *v += 1);
+                                });
+                            }
+                            on_cancel=move || set_confirm_delete.set(None)
+                            confirm_label="确认删除"
+                            danger=true
+                        />
+                    }
+                })
+            }}
+
             // --- Tasks Table ---
             <div class="stats-table-section">
                 <h2>"任务列表"</h2>
@@ -155,12 +196,20 @@ pub fn TasksPage() -> impl IntoView {
                                 match result {
                                     Err(e) => {
                                         view! {
-                                            <p class="error">{format!("任务加载失败：{e}")}</p>
+                                            <div class="load-error">
+                                                <span>{format!("任务加载失败：{e}")}</span>
+                                                <button
+                                                    class="btn btn--sm btn--outline"
+                                                    on:click=move |_| set_version.update(|v| *v += 1)
+                                                >
+                                                    "重试"
+                                                </button>
+                                            </div>
                                         }
                                             .into_any()
                                     }
                                     Ok(list) if list.is_empty() => {
-                                        view! { <p>"尚未配置任何任务。"</p> }.into_any()
+                                        view! { <EmptyState icon="⏱" message="尚未配置任何任务。" /> }.into_any()
                                     }
                                     Ok(list) => {
                                         view! {
@@ -187,6 +236,9 @@ pub fn TasksPage() -> impl IntoView {
                                                                     <TaskRow
                                                                         task=task
                                                                         on_change=move || set_version.update(|v| *v += 1)
+                                                                        on_request_delete=move |id: i64, name: String| {
+                                                                            set_confirm_delete.set(Some((id, name)));
+                                                                        }
                                                                     />
                                                                 }
                                                             })
@@ -207,11 +259,19 @@ pub fn TasksPage() -> impl IntoView {
 }
 
 #[component]
-fn TaskRow(task: TaskInfo, on_change: impl Fn() + Copy + Send + Sync + 'static) -> impl IntoView {
+fn TaskRow<F, G>(
+    task: TaskInfo,
+    on_change: F,
+    on_request_delete: G,
+) -> impl IntoView
+where
+    F: Fn() + Copy + Send + Sync + 'static,
+    G: Fn(i64, String) + Copy + 'static,
+{
     let task_id = task.id;
+    let task_name = task.name.clone();
     let (expanded, set_expanded) = signal(false);
     let (acting, set_acting) = signal(false);
-    let (confirm_delete, set_confirm_delete) = signal(false);
 
     let logs = Resource::new(
         move || expanded.get(),
@@ -224,27 +284,22 @@ fn TaskRow(task: TaskInfo, on_change: impl Fn() + Copy + Send + Sync + 'static) 
         },
     );
 
-    let on_trigger = move |_| {
+    let on_trigger = move |ev: ev::MouseEvent| {
+        ev.stop_propagation();
         set_acting.set(true);
         leptos::task::spawn_local(async move {
-            let _ = trigger_task(task_id).await;
+            match trigger_task(task_id).await {
+                Ok(_) => show_toast("任务已触发", ToastType::Success),
+                Err(e) => show_toast(format!("触发失败：{e}"), ToastType::Error),
+            }
             set_acting.set(false);
             on_change();
         });
     };
 
-    let on_delete = move |_: ev::MouseEvent| {
-        set_confirm_delete.set(true);
-    };
-
-    let do_delete = move |_: ev::MouseEvent| {
-        set_acting.set(true);
-        set_confirm_delete.set(false);
-        leptos::task::spawn_local(async move {
-            let _ = delete_task(task_id).await;
-            set_acting.set(false);
-            on_change();
-        });
+    let on_delete = move |ev: ev::MouseEvent| {
+        ev.stop_propagation();
+        on_request_delete(task_id, task_name.clone());
     };
 
     let sc = status_class(&task.status);
@@ -309,24 +364,6 @@ fn TaskRow(task: TaskInfo, on_change: impl Fn() + Copy + Send + Sync + 'static) 
                     </button>
                 </td>
             </tr>
-            // Delete confirmation dialog
-            {move || {
-                if confirm_delete.get() {
-                    Some(view! {
-                        <tr class="expand-row">
-                            <td colspan="9">
-                                <div class="inline-form">
-                                    <span class="text-red">"确定要删除该任务吗？"</span>
-                                    <button class="btn btn--sm btn--danger" on:click=do_delete>"确认删除"</button>
-                                    <button class="btn btn--sm btn--outline" on:click=move |_| set_confirm_delete.set(false)>"取消"</button>
-                                </div>
-                            </td>
-                        </tr>
-                    })
-                } else {
-                    None
-                }
-            }}
             {move || {
                 if expanded.get() {
                     Some(

@@ -1,6 +1,7 @@
 use crate::server_fns::{
     get_app_config, update_app_config, ConfigEntry, FETCH_SEEDING_SIZE_CONFIG_KEY,
 };
+use crate::components::toast::{show_toast, ToastType};
 use leptos::prelude::*;
 
 /// Known settings with human-readable labels and optional masking.
@@ -58,9 +59,15 @@ pub fn SettingsPage() -> impl IntoView {
                             match result {
                                 Err(e) => {
                                     view! {
-                                        <p class="error">
-                                            {format!("设置加载失败：{e}")}
-                                        </p>
+                                        <div class="load-error">
+                                            <span>{format!("设置加载失败：{e}")}</span>
+                                            <button
+                                                class="btn btn--sm btn--outline"
+                                                on:click=move |_| refetch()
+                                            >
+                                                "重试"
+                                            </button>
+                                        </div>
                                     }
                                         .into_any()
                                 }
@@ -226,10 +233,12 @@ where
                             leptos::task::spawn_local(async move {
                                 match update_app_config(k, v).await {
                                     Ok(_) => {
+                                        show_toast("设置已保存", ToastType::Success);
                                         set_save_result.set(Some(Ok(())));
                                         on_saved();
                                     }
                                     Err(e) => {
+                                        show_toast(format!("保存失败：{e}"), ToastType::Error);
                                         set_save_result.set(Some(Err(format!("保存失败：{e}"))));
                                     }
                                 }
@@ -312,12 +321,14 @@ where
                         leptos::task::spawn_local(async move {
                             match update_app_config(k, v).await {
                                 Ok(_) => {
+                                    show_toast("设置项已添加", ToastType::Success);
                                     set_add_success.set(true);
                                     set_new_key.set(String::new());
                                     set_new_value.set(String::new());
                                     on_saved();
                                 }
                                 Err(e) => {
+                                    show_toast(format!("添加失败：{e}"), ToastType::Error);
                                     set_add_error.set(Some(format!("添加失败：{e}")));
                                 }
                             }

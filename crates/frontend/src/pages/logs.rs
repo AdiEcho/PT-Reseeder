@@ -1,3 +1,4 @@
+use crate::components::empty_state::EmptyState;
 use crate::server_fns::{get_log_files, get_logs, LogEntry, LogFileInfo};
 use crate::ws::use_logs_ws;
 use leptos::prelude::*;
@@ -228,7 +229,23 @@ pub fn LogsPage() -> impl IntoView {
                             match result {
                                 Err(e) => {
                                     view! {
-                                        <p class="error">{format!("日志加载失败：{e}")}</p>
+                                        <div class="load-error">
+                                            <span>{format!("日志加载失败：{e}")}</span>
+                                            <button
+                                                class="btn btn--sm btn--outline"
+                                                on:click=move |_| refetch()
+                                            >
+                                                "重试"
+                                            </button>
+                                        </div>
+                                    }
+                                        .into_any()
+                                }
+                                Ok(page) if page.entries.is_empty() => {
+                                    view! {
+                                        <div class="stats-table-section">
+                                            <EmptyState icon="📄" message="当前筛选条件下没有日志。" />
+                                        </div>
                                     }
                                         .into_any()
                                 }

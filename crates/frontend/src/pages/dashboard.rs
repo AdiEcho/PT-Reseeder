@@ -2,39 +2,9 @@ use crate::server_fns::{
     get_dashboard_data, DashboardData, DashboardOverview, SiteReseedStats, TrendPoint,
     UserInfoAggregate,
 };
+use crate::utils::{format_bytes, format_duration};
 use crate::ws::use_dashboard_ws;
 use leptos::prelude::*;
-
-fn format_bytes(bytes: i64) -> String {
-    const KB: f64 = 1024.0;
-    const MB: f64 = KB * 1024.0;
-    const GB: f64 = MB * 1024.0;
-    const TB: f64 = GB * 1024.0;
-    let b = bytes as f64;
-    if b >= TB {
-        format!("{:.2} TB", b / TB)
-    } else if b >= GB {
-        format!("{:.2} GB", b / GB)
-    } else if b >= MB {
-        format!("{:.2} MB", b / MB)
-    } else if b >= KB {
-        format!("{:.2} KB", b / KB)
-    } else {
-        format!("{} B", bytes)
-    }
-}
-
-fn format_duration(seconds: i64) -> String {
-    let days = seconds / 86400;
-    let hours = (seconds % 86400) / 3600;
-    if days > 0 {
-        format!("{}d {}h", days, hours)
-    } else if hours > 0 {
-        format!("{}h", hours)
-    } else {
-        format!("{}m", seconds / 60)
-    }
-}
 
 #[component]
 pub fn DashboardPage() -> impl IntoView {
@@ -123,9 +93,15 @@ pub fn DashboardPage() -> impl IntoView {
                         if overview.get().is_none() {
                             return Some(
                                 view! {
-                                    <p class="error">
-                                        {format!("仪表盘加载失败：{err}")}
-                                    </p>
+                                    <div class="load-error">
+                                        <span>{format!("仪表盘加载失败：{err}")}</span>
+                                        <button
+                                            class="btn btn--sm btn--outline"
+                                            on:click=move |_| dashboard_data.refetch()
+                                        >
+                                            "重试"
+                                        </button>
+                                    </div>
                                 }
                                     .into_any(),
                             );

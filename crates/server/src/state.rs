@@ -53,6 +53,7 @@ pub struct AppStateInner {
     pub file_watcher: RwLock<Option<Arc<FileWatcher>>>,
     pub repost_autofiller: Option<Arc<dyn RepostAutoFiller>>,
     pub repost_autofiller_error: Option<String>,
+    pub log_broadcast: tokio::sync::broadcast::Sender<String>,
 }
 
 impl AppState {
@@ -65,6 +66,7 @@ impl AppState {
         repost_autofiller: Option<Arc<dyn RepostAutoFiller>>,
         repost_autofiller_error: Option<String>,
         fetch_seeding_size: Arc<AtomicBool>,
+        log_broadcast: tokio::sync::broadcast::Sender<String>,
     ) -> Self {
         let repo = Repository::new(db_pool.clone());
         let leptos_options = leptos::config::LeptosOptions::builder()
@@ -90,6 +92,7 @@ impl AppState {
                 file_watcher: RwLock::new(None),
                 repost_autofiller,
                 repost_autofiller_error,
+                log_broadcast,
             }),
         }
     }

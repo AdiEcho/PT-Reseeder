@@ -154,6 +154,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/{*fn_name}", post(server_fn_handler))
         .nest("/api", api_routes)
         .route("/ws/dashboard", get(ws::ws_handler))
+        .route("/ws/logs", get(ws::ws_logs_handler))
         .fallback(static_fallback)
         .leptos_routes_with_context(
             &state,

@@ -17,11 +17,11 @@ use pt_reseeder_core::stats::user_info::UserInfoService;
 use std::time::Duration;
 use tokio::time::interval;
 
-pub async fn ws_handler(
-    ws: WebSocketUpgrade,
-    State(state): State<AppState>,
-    headers: HeaderMap,
-) -> Result<Response, axum::http::StatusCode> {
+/// Validate WebSocket authentication from headers (shared by all WS endpoints).
+async fn validate_ws_auth(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> Result<(), axum::http::StatusCode> {
     // Validate Origin header for CSRF
     if let Some(origin) = headers.get("origin") {
         let origin_str = origin.to_str().unwrap_or("");
@@ -71,6 +71,15 @@ pub async fn ws_handler(
         return Err(axum::http::StatusCode::UNAUTHORIZED);
     }
 
+    Ok(())
+}
+
+pub async fn ws_handler(
+    ws: WebSocketUpgrade,
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Response, axum::http::StatusCode> {
+    validate_ws_auth(&state, &headers).await?;
     Ok(ws.on_upgrade(move |socket| handle_socket(socket, state)))
 }
 
@@ -133,5 +142,56 @@ async fn build_dashboard_event(state: &AppState) -> WsEvent {
         overview,
         site_stats,
         user_info,
+    }
+}
+
+// ── WebSocket /ws/logs ──────────────────────────────────────────────────
+
+pub async fn ws_logs_handler(
+    ws: WebSocketUpgrade,
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Response, axum::http::StatusCode> {
+    validate_ws_auth(&state, &headers).await?;
+    Ok(ws.on_upgrade(move |socket| handle_logs_socket(socket, state)))
+}
+
+async fn handle_logs_socket(mut socket: WebSocket, state: AppState) {
+    let mut rx = state.inner.log_broadcast.subscribe();
+
+    loop {
+        tokio::select! {
+            result = rx.recv() => {
+                match result {
+                    Ok(line) => {
+                        let event = WsEvent::LogLine { line };
+                        let json = match serde_json::to_string(&event) {
+                            Ok(j) => j,
+                            Err(_) => continue,
+                        };
+                        if socket.send(Message::Text(json.into())).await.is_err() {
+                            break;
+                        }
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                }
+            }
+            msg = socket.recv() => {
+                match msg {
+                    Some(Ok(Message::Close(_))) | None => break,
+                    Some(Ok(Message::Ping(data))) => {
+                        if socket.send(Message::Pong(data)).await.is_err() {
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            _ = state.inner.cancel_token.cancelled() => {
+                let _ = socket.send(Message::Close(None)).await;
+                break;
+            }
+        }
     }
 }

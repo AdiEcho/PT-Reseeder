@@ -25,4 +25,8 @@ pub enum WsEvent {
         task_id: Option<i64>,
         progress: CoreReseedProgress,
     },
+    #[serde(rename = "log_line")]
+    LogLine {
+        line: String,
+    },
 }

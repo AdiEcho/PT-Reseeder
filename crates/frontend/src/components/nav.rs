@@ -88,6 +88,12 @@ const NAV: &[NavEntry] = &[
         exact: true,
     },
     NavEntry {
+        label: "日志",
+        href: "/logs",
+        icon: "📋",
+        exact: true,
+    },
+    NavEntry {
         label: "设置",
         href: "/settings",
         icon: "⚙",

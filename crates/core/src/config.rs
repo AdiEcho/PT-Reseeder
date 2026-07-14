@@ -9,6 +9,9 @@ pub struct AppConfig {
     pub session_ttl_hours: u64,
     pub data_dir: PathBuf,
     pub leptos_site_root: PathBuf,
+    pub log_dir: PathBuf,
+    pub log_retention_days: u32,
+    pub log_min_level: String,
 }
 
 impl Default for AppConfig {
@@ -19,6 +22,9 @@ impl Default for AppConfig {
             session_ttl_hours: 24,
             data_dir: PathBuf::from("data"),
             leptos_site_root: PathBuf::from("target/site"),
+            log_dir: PathBuf::from("logs"),
+            log_retention_days: 30,
+            log_min_level: "info".to_string(),
         }
     }
 }
@@ -42,6 +48,15 @@ impl AppConfig {
             leptos_site_root: std::env::var("LEPTOS_SITE_ROOT")
                 .map(PathBuf::from)
                 .unwrap_or_else(|_| Self::default().leptos_site_root),
+            log_dir: std::env::var("LOG_DIR")
+                .map(PathBuf::from)
+                .unwrap_or_else(|_| Self::default().log_dir),
+            log_retention_days: std::env::var("LOG_RETENTION_DAYS")
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(30),
+            log_min_level: std::env::var("LOG_MIN_LEVEL")
+                .unwrap_or_else(|_| Self::default().log_min_level),
         }
     }
 }
@@ -70,6 +85,14 @@ mod tests {
     }
 
     #[test]
+    fn default_config_has_log_defaults() {
+        let config = AppConfig::default();
+        assert_eq!(config.log_dir, PathBuf::from("logs"));
+        assert_eq!(config.log_retention_days, 30);
+        assert_eq!(config.log_min_level, "info");
+    }
+
+    #[test]
     fn default_config_serializes_to_json_and_back() {
         let config = AppConfig::default();
         let json = serde_json::to_string(&config).expect("serialize should succeed");
@@ -80,5 +103,8 @@ mod tests {
         assert_eq!(deserialized.session_ttl_hours, config.session_ttl_hours);
         assert_eq!(deserialized.data_dir, config.data_dir);
         assert_eq!(deserialized.leptos_site_root, config.leptos_site_root);
+        assert_eq!(deserialized.log_dir, config.log_dir);
+        assert_eq!(deserialized.log_retention_days, config.log_retention_days);
+        assert_eq!(deserialized.log_min_level, config.log_min_level);
     }
 }

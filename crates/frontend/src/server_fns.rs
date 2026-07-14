@@ -1533,6 +1533,184 @@ pub async fn update_app_config(key: String, value: String) -> Result<(), ServerF
     Ok(())
 }
 
+// ── Logs ────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LogFileInfo {
+    pub filename: String,
+    pub size: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LogEntry {
+    pub timestamp: String,
+    pub level: String,
+    pub target: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LogPage {
+    pub entries: Vec<LogEntry>,
+    pub total_lines: usize,
+    pub page: usize,
+    pub page_size: usize,
+}
+
+#[server]
+pub async fn get_log_files() -> Result<Vec<LogFileInfo>, ServerFnError> {
+    let context = server_context()?;
+    let log_dir = &context.data_dir;
+    // Use config log_dir from app_config table, fallback to "logs"
+    let log_dir_path = {
+        let repo = pt_reseeder_core::db::repo::Repository::new(context.pool.clone());
+        repo.get_config("log_dir")
+            .await
+            .ok()
+            .flatten()
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| std::path::PathBuf::from("logs"))
+    };
+    let _ = log_dir; // suppress unused
+
+    let mut files = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(&log_dir_path) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_file() {
+                if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                    if name.starts_with("pt-reseeder") {
+                        let size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+                        files.push(LogFileInfo {
+                            filename: name.to_string(),
+                            size,
+                        });
+                    }
+                }
+            }
+        }
+    }
+    files.sort_by(|a, b| b.filename.cmp(&a.filename));
+    Ok(files)
+}
+
+#[server]
+pub async fn get_logs(
+    filename: Option<String>,
+    page: Option<usize>,
+    page_size: Option<usize>,
+    level: Option<String>,
+    keyword: Option<String>,
+) -> Result<LogPage, ServerFnError> {
+    let context = server_context()?;
+    let log_dir_path = {
+        let repo = pt_reseeder_core::db::repo::Repository::new(context.pool.clone());
+        repo.get_config("log_dir")
+            .await
+            .ok()
+            .flatten()
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| std::path::PathBuf::from("logs"))
+    };
+
+    // Find the log file to read
+    let file_path = if let Some(ref name) = filename {
+        // Sanitize: prevent directory traversal
+        let sanitized = std::path::Path::new(name)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .ok_or_else(|| ServerFnError::new("无效的文件名"))?;
+        log_dir_path.join(sanitized)
+    } else {
+        // Find the most recent log file
+        let mut latest: Option<std::path::PathBuf> = None;
+        if let Ok(entries) = std::fs::read_dir(&log_dir_path) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_file() {
+                    if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                        if name.starts_with("pt-reseeder") {
+                            match &latest {
+                                None => latest = Some(path),
+                                Some(prev) => {
+                                    if path.file_name() > prev.file_name() {
+                                        latest = Some(path);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        latest.ok_or_else(|| ServerFnError::new("没有找到日志文件"))?
+    };
+
+    let content = std::fs::read_to_string(&file_path)
+        .map_err(|e| ServerFnError::new(format!("读取日志文件失败：{e}")))?;
+
+    let level_filter = level.as_deref().unwrap_or("").to_uppercase();
+    let keyword_filter = keyword.unwrap_or_default();
+
+    // Parse lines into LogEntry
+    let mut entries: Vec<LogEntry> = Vec::new();
+    for raw_line in content.lines() {
+        let entry = parse_log_line(raw_line);
+
+        // Level filter
+        if !level_filter.is_empty() && !entry.level.eq_ignore_ascii_case(&level_filter) {
+            continue;
+        }
+
+        // Keyword filter
+        if !keyword_filter.is_empty()
+            && !entry.message.contains(&keyword_filter)
+            && !entry.target.contains(&keyword_filter)
+        {
+            continue;
+        }
+
+        entries.push(entry);
+    }
+
+    let total_lines = entries.len();
+    let page = page.unwrap_or(1).max(1);
+    let page_size = page_size.unwrap_or(100).min(500);
+
+    // Reverse so newest entries come first, then paginate
+    entries.reverse();
+    let start = (page - 1) * page_size;
+    let page_entries: Vec<LogEntry> = entries.into_iter().skip(start).take(page_size).collect();
+
+    Ok(LogPage {
+        entries: page_entries,
+        total_lines,
+        page,
+        page_size,
+    })
+}
+
+#[cfg(feature = "ssr")]
+fn parse_log_line(line: &str) -> LogEntry {
+    // Format: "2026-07-13T12:34:56.789Z INFO target message..."
+    let parts: Vec<&str> = line.splitn(4, ' ').collect();
+    if parts.len() >= 4 {
+        LogEntry {
+            timestamp: parts[0].to_string(),
+            level: parts[1].to_string(),
+            target: parts[2].to_string(),
+            message: parts[3].to_string(),
+        }
+    } else {
+        LogEntry {
+            timestamp: String::new(),
+            level: String::new(),
+            target: String::new(),
+            message: line.to_string(),
+        }
+    }
+}
+
 // ── Dashboard ───────────────────────────────────────────────────────────
 
 #[server]

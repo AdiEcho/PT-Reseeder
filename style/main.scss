@@ -1240,3 +1240,132 @@ button:disabled {
 .sidebar-backdrop.visible {
     display: block;
 }
+
+// ── Log Viewer ──────────────────────────────────────────────────────────
+
+.log-toolbar {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-bottom: 16px;
+
+    .input {
+        min-width: 140px;
+        max-width: 240px;
+    }
+
+    select.input {
+        min-width: 120px;
+    }
+}
+
+.log-auto-scroll {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 14px;
+    color: var(--text-muted);
+    cursor: pointer;
+    white-space: nowrap;
+
+    input[type="checkbox"] {
+        accent-color: var(--accent);
+    }
+}
+
+.log-table {
+    font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+    font-size: 13px;
+
+    td, th {
+        padding: 6px 10px;
+        vertical-align: top;
+    }
+
+    .log-ts {
+        white-space: nowrap;
+        color: var(--text-muted);
+        font-size: 12px;
+        min-width: 200px;
+    }
+
+    .log-target {
+        white-space: nowrap;
+        color: var(--text-muted);
+        font-size: 12px;
+        max-width: 200px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .log-msg {
+        word-break: break-all;
+    }
+}
+
+.log-level {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: var(--radius-sm);
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.log-level--error {
+    background: rgba(239, 68, 68, 0.18);
+    color: #f87171;
+}
+
+.log-level--warn {
+    background: rgba(245, 158, 11, 0.18);
+    color: #fbbf24;
+}
+
+.log-level--info {
+    background: rgba(59, 130, 246, 0.18);
+    color: #93c5fd;
+}
+
+.log-level--debug {
+    background: rgba(168, 85, 247, 0.18);
+    color: #c084fc;
+}
+
+.log-level--trace {
+    background: rgba(148, 163, 184, 0.12);
+    color: #94a3b8;
+}
+
+.log-pagination {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 12px;
+    padding: 8px 0;
+}
+
+[data-theme="light"] {
+    .log-level--error {
+        background: rgba(239, 68, 68, 0.12);
+        color: #dc2626;
+    }
+    .log-level--warn {
+        background: rgba(245, 158, 11, 0.12);
+        color: #d97706;
+    }
+    .log-level--info {
+        background: rgba(59, 130, 246, 0.12);
+        color: #2563eb;
+    }
+    .log-level--debug {
+        background: rgba(168, 85, 247, 0.12);
+        color: #7c3aed;
+    }
+    .log-level--trace {
+        background: rgba(100, 116, 139, 0.1);
+        color: #64748b;
+    }
+}

@@ -1,6 +1,7 @@
 pub mod api;
 pub mod app;
 pub mod auth;
+pub mod log;
 pub mod state;
 pub mod ws;
 
@@ -49,6 +50,7 @@ async fn initialize_repost_autofiller() -> (
 pub async fn run_server(
     config: AppConfig,
     cancel_token: CancellationToken,
+    log_broadcast: tokio::sync::broadcast::Sender<String>,
 ) -> Result<BoundAddr, Box<dyn std::error::Error>> {
     // Init DB
     let pool = db::init_db(&config.database_url).await?;
@@ -74,6 +76,7 @@ pub async fn run_server(
         repost_autofiller,
         repost_autofiller_error,
         fetch_seeding_size,
+        log_broadcast,
     );
     state.start_task_runtime().await?;
 

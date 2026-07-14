@@ -53,7 +53,8 @@ fn main() {
                         config.data_dir = data_dir;
                         config.leptos_site_root = site_root;
 
-                        match pt_reseeder_server::run_server(config, server_cancel).await {
+                        let (log_tx, _) = tokio::sync::broadcast::channel::<String>(1024);
+                        match pt_reseeder_server::run_server(config, server_cancel, log_tx).await {
                             Ok(bound) => {
                                 let _ = addr_tx.send(Ok(bound.0));
                                 std::future::pending::<()>().await;

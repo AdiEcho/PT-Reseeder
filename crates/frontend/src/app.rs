@@ -3,6 +3,7 @@ use crate::pages::dashboard::DashboardPage;
 use crate::pages::downloaders::DownloadersPage;
 use crate::pages::folders::FoldersPage;
 use crate::pages::login::LoginPage;
+use crate::pages::logs::LogsPage;
 use crate::pages::repost::RepostPage;
 use crate::pages::settings::SettingsPage;
 use crate::pages::site_detail::SiteDetailPage;
@@ -61,6 +62,7 @@ pub fn App() -> impl IntoView {
                     <Route path=path!("/tasks") view=TasksPage />
                     <Route path=path!("/folders") view=FoldersPage />
                     <Route path=path!("/repost") view=RepostPage />
+                    <Route path=path!("/logs") view=LogsPage />
                     <Route path=path!("/settings") view=SettingsPage />
                     <Route path=path!("/") view=|| view! { <Redirect path="/dashboard" /> } />
                 </ParentRoute>

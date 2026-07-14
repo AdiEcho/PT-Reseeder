@@ -13,6 +13,9 @@ const KNOWN_KEYS: &[(&str, &str, bool)] = &[
         "获取做种大小（额外请求）",
         false,
     ),
+    ("log_dir", "日志目录", false),
+    ("log_retention_days", "日志保留天数", false),
+    ("log_min_level", "最低日志级别", false),
 ];
 
 fn label_for_key(key: &str) -> String {

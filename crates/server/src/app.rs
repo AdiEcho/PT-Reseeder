@@ -60,7 +60,7 @@ async fn validate_server_fn_request(
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .ok_or(StatusCode::UNAUTHORIZED)?;
-    if session.expires_at < chrono::Utc::now().to_rfc3339() {
+    if pt_reseeder_core::session::is_session_expired(&session.expires_at) {
         let _ = state.inner.repo.delete_session(session.id).await;
         return Err(StatusCode::UNAUTHORIZED);
     }
@@ -81,25 +81,7 @@ async fn server_fn_handler(State(state): State<AppState>, request: Request<Body>
         Ok(user_id) => user_id,
         Err(status) => return status.into_response(),
     };
-    let refresh_state = state.clone();
-    let context = pt_reseeder_frontend::server_fns::ServerFnContext {
-        pool: state.inner.db_pool.clone(),
-        vault: state.inner.vault.clone(),
-        session_ttl_hours: state.inner.config.session_ttl_hours,
-        data_dir: state.inner.config.data_dir.clone(),
-        site_registry: state.inner.site_registry.clone(),
-        refresh_site_registry: std::sync::Arc::new(move || {
-            let state = refresh_state.clone();
-            Box::pin(async move {
-                state
-                    .refresh_site_registry()
-                    .await
-                    .map_err(|error| error.to_string())
-            })
-        }),
-        fetch_seeding_size: state.inner.fetch_seeding_size.clone(),
-        authenticated_user_id: user_id,
-    };
+    let context = state.server_fn_context(user_id);
     leptos_axum::handle_server_fns_with_context(
         move || provide_server_fn_context(context.clone()),
         request,
@@ -160,25 +142,7 @@ pub fn build_router(state: AppState) -> Router {
             &state,
             routes,
             {
-                let refresh_state = state.clone();
-                let context = pt_reseeder_frontend::server_fns::ServerFnContext {
-                    pool: state.inner.db_pool.clone(),
-                    vault: state.inner.vault.clone(),
-                    session_ttl_hours: state.inner.config.session_ttl_hours,
-                    data_dir: state.inner.config.data_dir.clone(),
-                    site_registry: state.inner.site_registry.clone(),
-                    refresh_site_registry: std::sync::Arc::new(move || {
-                        let state = refresh_state.clone();
-                        Box::pin(async move {
-                            state
-                                .refresh_site_registry()
-                                .await
-                                .map_err(|error| error.to_string())
-                        })
-                    }),
-                    fetch_seeding_size: state.inner.fetch_seeding_size.clone(),
-                    authenticated_user_id: None,
-                };
+                let context = state.server_fn_context(None);
                 move || provide_server_fn_context(context.clone())
             },
             {

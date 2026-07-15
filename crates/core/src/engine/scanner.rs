@@ -1,5 +1,5 @@
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
 
 use tokio_util::sync::CancellationToken;
@@ -47,13 +47,15 @@ pub async fn scan_folder(
     let mut torrents: HashMap<String, TorrentMeta> = HashMap::new();
     let mut pieces_groups: HashMap<String, Vec<String>> = HashMap::new();
 
-    // Collect all .torrent file paths
-    let entries = collect_torrent_files(path)?;
+    // Collect all .torrent file paths off the async runtime.
+    let dir = path.to_path_buf();
+    let entries = tokio::task::spawn_blocking(move || collect_torrent_files(&dir))
+        .await
+        .map_err(|e| EngineError::ScanFailed(format!("directory walk task failed: {}", e)))??;
     tracing::info!(folder = %path.display(), count = entries.len(), "scanning torrent files");
 
-    // Batch parse
-    let mut cache_batch: Vec<BulkPiecesCacheItem> = Vec::new();
-
+    // Parse all files first so we can batch-check the cache.
+    let mut parsed: Vec<(PathBuf, TorrentMeta)> = Vec::with_capacity(entries.len());
     for entry_path in &entries {
         if cancel.is_cancelled() {
             return Err(EngineError::Cancelled.into());
@@ -61,22 +63,34 @@ pub async fn scan_folder(
 
         stats.scanned.fetch_add(1, Ordering::Relaxed);
 
-        let meta = match parser::parse_file(entry_path) {
-            Ok(m) => m,
+        match parser::parse_file(entry_path) {
+            Ok(meta) => parsed.push((entry_path.clone(), meta)),
             Err(e) => {
                 tracing::warn!(
                     path = %entry_path.display(),
                     error = %e,
                     "failed to parse torrent file, skipping"
                 );
-                continue;
             }
-        };
+        }
+    }
 
-        // Incremental: skip if info_hash already cached
-        if repo.find_by_info_hash(&meta.info_hash).await?.is_some() {
+    let info_hashes: Vec<String> = parsed
+        .iter()
+        .map(|(_, meta)| meta.info_hash.clone())
+        .collect();
+    let existing_hashes = repo.find_existing_info_hashes(&info_hashes).await?;
+
+    let mut cache_batch: Vec<BulkPiecesCacheItem> = Vec::new();
+
+    for (entry_path, meta) in parsed {
+        if cancel.is_cancelled() {
+            return Err(EngineError::Cancelled.into());
+        }
+
+        // Incremental: skip DB write if info_hash already cached
+        if existing_hashes.contains(&meta.info_hash) {
             stats.cached_skip.fetch_add(1, Ordering::Relaxed);
-            // Still track for matching
             pieces_groups
                 .entry(meta.pieces_hash.clone())
                 .or_default()
@@ -164,7 +178,7 @@ pub async fn scan_downloader(
 }
 
 /// Collect all .torrent file paths recursively from a directory.
-fn collect_torrent_files(dir: &Path) -> Result<Vec<std::path::PathBuf>, CoreError> {
+fn collect_torrent_files(dir: &Path) -> Result<Vec<PathBuf>, CoreError> {
     let mut result = Vec::new();
 
     if !dir.is_dir() {
@@ -173,7 +187,7 @@ fn collect_torrent_files(dir: &Path) -> Result<Vec<std::path::PathBuf>, CoreErro
         );
     }
 
-    fn walk(dir: &Path, out: &mut Vec<std::path::PathBuf>) -> Result<(), CoreError> {
+    fn walk(dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), CoreError> {
         let entries = std::fs::read_dir(dir).map_err(|e| {
             EngineError::ScanFailed(format!("cannot read dir {}: {}", dir.display(), e))
         })?;

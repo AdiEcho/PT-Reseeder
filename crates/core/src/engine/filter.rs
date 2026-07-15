@@ -53,7 +53,7 @@ pub fn filter_by_existing_hash(dest_hashes: &HashSet<String>, info_hash: &str) -
 }
 
 /// Extract the domain portion from a URL for comparison.
-fn extract_domain(url: &str) -> String {
+pub fn extract_domain(url: &str) -> String {
     // Strip protocol
     let without_proto = url
         .strip_prefix("https://")

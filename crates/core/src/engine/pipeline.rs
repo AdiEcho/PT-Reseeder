@@ -2,8 +2,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
 
+use futures::{stream, StreamExt};
 use serde::{Deserialize, Serialize};
-use tokio::sync::watch;
+use tokio::sync::{watch, Mutex};
 use tokio_util::sync::CancellationToken;
 use tracing;
 
@@ -15,9 +16,13 @@ use crate::site::models::SiteId;
 use crate::site::registry::SiteRegistry;
 
 use super::adder;
+use super::filter;
 use super::matcher;
 use super::scanner;
 use super::stats::{ReseedStats, ReseedStatsSnapshot};
+
+/// Max concurrent torrent download+add operations.
+const ADD_CONCURRENCY: usize = 8;
 
 /// Configuration for a reseed pipeline run.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -223,16 +228,17 @@ async fn run_pipeline(
         return Ok(());
     }
 
+    // Shared HTTP client for pack detection and add phase.
+    let http_client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| EngineError::ScanFailed(format!("http client: {}", e)))?;
+
     // ── Phase 1.5: Pack detection ────────────────────────────────────
     let mut pack_matched_torrents = Vec::new();
     if let Some(ref jackett_cfg) = config.jackett_config {
         update_progress(progress_tx, "pack_detection", stats, start);
         tracing::info!("phase 1.5: pack detection via Jackett");
-
-        let http_client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(30))
-            .build()
-            .map_err(|e| EngineError::ScanFailed(format!("http client: {}", e)))?;
 
         for meta in merged_scan.torrents.values() {
             if cancel.is_cancelled() {
@@ -329,31 +335,65 @@ async fn run_pipeline(
     update_progress(progress_tx, "adding", stats, start);
     tracing::info!(to_add = matched_torrents.len(), "phase 3: add");
 
-    let http_client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(30))
-        .build()
-        .map_err(|e| EngineError::AddFailed(format!("http client: {}", e)))?;
+    let dest_hashes = Arc::new(Mutex::new(std::mem::take(&mut merged_scan.dest_hashes)));
+    let auto_start = config.auto_start;
 
-    for matched in &matched_torrents {
-        if cancel.is_cancelled() {
-            // Graceful: in-flight batch done, partial results already in DB
-            tracing::info!("cancelled during add phase, partial results saved");
-            return Err(EngineError::Cancelled.into());
-        }
+    stream::iter(matched_torrents.into_iter())
+        .map(|matched| {
+            let http_client = http_client.clone();
+            let dest_hashes = Arc::clone(&dest_hashes);
+            let db_writer = db_writer.clone();
+            let cancel = cancel.clone();
+            async move {
+                if cancel.is_cancelled() {
+                    return Err(CoreError::from(EngineError::Cancelled));
+                }
 
-        adder::add_torrent(
-            matched,
-            &http_client,
-            dest_client,
-            &mut merged_scan.dest_hashes,
-            config.auto_start,
-            db_writer,
-            stats,
-        )
-        .await?;
+                // Optional site-level rate limiting for downloads.
+                // Soft-fail: a single site circuit/rate-limit should not abort
+                // the whole add phase for other sites.
+                if let Some(handle) = registry.get(&matched.site_id) {
+                    if let Err(e) = handle.rate_limiter.acquire().await {
+                        tracing::warn!(
+                            site_id = matched.site_id.0,
+                            error = %e,
+                            "rate limiter blocked torrent download, skipping"
+                        );
+                        stats.failed.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        return Ok(());
+                    }
+                }
 
-        update_progress(progress_tx, "adding", stats, start);
-    }
+                if let Err(e) = adder::add_torrent(
+                    &matched,
+                    &http_client,
+                    dest_client,
+                    &dest_hashes,
+                    auto_start,
+                    &db_writer,
+                    stats,
+                )
+                .await
+                {
+                    // add_torrent already records per-torrent failures as Ok(false);
+                    // unexpected errors are logged and counted without aborting siblings.
+                    tracing::error!(
+                        site_id = matched.site_id.0,
+                        error = %e,
+                        "add_torrent returned unexpected error"
+                    );
+                    stats.failed.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                }
+
+                update_progress(progress_tx, "adding", stats, start);
+                Ok::<(), CoreError>(())
+            }
+        })
+        .buffer_unordered(ADD_CONCURRENCY)
+        .collect::<Vec<_>>()
+        .await
+        .into_iter()
+        .collect::<Result<Vec<_>, _>>()?;
 
     // Flush pending writes
     db_writer.flush().await?;
@@ -376,30 +416,18 @@ fn site_id_for_jackett_tracker(
     tracker: &str,
 ) -> Option<SiteId> {
     let tracker_lower = tracker.to_lowercase();
-    let tracker_domain = extract_domain(tracker);
+    let tracker_domain = filter::extract_domain(tracker);
 
     target_site_ids.iter().copied().find(|site_id| {
         registry.get(site_id).is_some_and(|handle| {
             let site_name = handle.core.name().to_lowercase();
-            let site_domain = extract_domain(handle.core.base_url());
+            let site_domain = filter::extract_domain(handle.core.base_url());
             (!tracker_domain.is_empty() && tracker_domain == site_domain)
                 || (!tracker_lower.is_empty()
                     && !site_name.is_empty()
                     && (tracker_lower.contains(&site_name) || site_name.contains(&tracker_lower)))
         })
     })
-}
-
-fn extract_domain(url: &str) -> String {
-    let without_proto = url
-        .strip_prefix("https://")
-        .or_else(|| url.strip_prefix("http://"))
-        .unwrap_or(url);
-    without_proto
-        .split(|c| c == '/' || c == ':')
-        .next()
-        .unwrap_or("")
-        .to_lowercase()
 }
 
 fn update_progress(
@@ -505,24 +533,27 @@ mod tests {
 
     #[test]
     fn extract_domain_strips_https() {
-        assert_eq!(extract_domain("https://hdsky.me/announce"), "hdsky.me");
+        assert_eq!(
+            filter::extract_domain("https://hdsky.me/announce"),
+            "hdsky.me"
+        );
     }
 
     #[test]
     fn extract_domain_strips_http() {
         assert_eq!(
-            extract_domain("http://tracker.mteam.cc:8080/announce"),
+            filter::extract_domain("http://tracker.mteam.cc:8080/announce"),
             "tracker.mteam.cc"
         );
     }
 
     #[test]
     fn extract_domain_no_protocol() {
-        assert_eq!(extract_domain("example.com/path"), "example.com");
+        assert_eq!(filter::extract_domain("example.com/path"), "example.com");
     }
 
     #[test]
     fn extract_domain_empty_string() {
-        assert_eq!(extract_domain(""), "");
+        assert_eq!(filter::extract_domain(""), "");
     }
 }

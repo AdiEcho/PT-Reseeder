@@ -7,6 +7,9 @@ pub struct AppConfig {
     pub database_url: String,
     pub server_bind: SocketAddr,
     pub session_ttl_hours: u64,
+    /// When true, session cookies are marked Secure (HTTPS only).
+    /// Set via env `COOKIE_SECURE=true` behind TLS termination.
+    pub cookie_secure: bool,
     pub data_dir: PathBuf,
     pub leptos_site_root: PathBuf,
     pub log_dir: PathBuf,
@@ -20,6 +23,7 @@ impl Default for AppConfig {
             database_url: "sqlite://pt-reseeder.db?mode=rwc".to_string(),
             server_bind: "127.0.0.1:3000".parse().unwrap(),
             session_ttl_hours: 24,
+            cookie_secure: false,
             data_dir: PathBuf::from("data"),
             leptos_site_root: PathBuf::from("target/site"),
             log_dir: PathBuf::from("logs"),
@@ -42,6 +46,10 @@ impl AppConfig {
                 .ok()
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(24),
+            cookie_secure: std::env::var("COOKIE_SECURE")
+                .ok()
+                .map(|v| matches!(v.to_ascii_lowercase().as_str(), "1" | "true" | "yes"))
+                .unwrap_or(false),
             data_dir: std::env::var("DATA_DIR")
                 .map(PathBuf::from)
                 .unwrap_or_else(|_| Self::default().data_dir),
@@ -101,10 +109,16 @@ mod tests {
         assert_eq!(deserialized.database_url, config.database_url);
         assert_eq!(deserialized.server_bind, config.server_bind);
         assert_eq!(deserialized.session_ttl_hours, config.session_ttl_hours);
+        assert_eq!(deserialized.cookie_secure, config.cookie_secure);
         assert_eq!(deserialized.data_dir, config.data_dir);
         assert_eq!(deserialized.leptos_site_root, config.leptos_site_root);
         assert_eq!(deserialized.log_dir, config.log_dir);
         assert_eq!(deserialized.log_retention_days, config.log_retention_days);
         assert_eq!(deserialized.log_min_level, config.log_min_level);
+    }
+
+    #[test]
+    fn default_cookie_secure_is_false() {
+        assert!(!AppConfig::default().cookie_secure);
     }
 }

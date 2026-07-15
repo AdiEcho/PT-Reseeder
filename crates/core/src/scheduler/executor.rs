@@ -290,6 +290,7 @@ impl TaskExecutor {
     async fn execute_sync_stats(&self, task: &TaskRow) -> Result<(i64, i64, i64), CoreError> {
         use crate::db::models::UserStatRecord;
         use crate::site::models::SiteId;
+        use futures::future::join_all;
 
         // If the task has specific sites configured, only sync those;
         // otherwise sync all sites in the registry.
@@ -301,61 +302,82 @@ impl TaskExecutor {
         };
 
         let total = site_ids.len() as i64;
-        let mut succeeded: i64 = 0;
-        let mut failed: i64 = 0;
+        if self.cancel_token.is_cancelled() {
+            warn!("sync_stats cancelled before start");
+            return Ok((total, 0, 0));
+        }
 
-        for site_id in &site_ids {
-            if self.cancel_token.is_cancelled() {
-                warn!("sync_stats cancelled");
-                break;
-            }
-
-            let handle = match self.site_registry.get(site_id) {
-                Some(h) => h,
-                None => {
-                    warn!(site_id = site_id.0, "site not in registry, skipping");
-                    failed += 1;
-                    continue;
+        // Fetch all sites concurrently; each site respects its own rate limiter.
+        let fetches = site_ids.into_iter().map(|site_id| {
+            let registry = Arc::clone(&self.site_registry);
+            let repo = self.repo.clone();
+            let cancel = self.cancel_token.clone();
+            async move {
+                if cancel.is_cancelled() {
+                    return (0i64, 0i64);
                 }
-            };
 
-            let user_info_cap = match handle.user_info.as_ref() {
-                Some(ui) => ui,
-                None => {
-                    info!(site_id = site_id.0, "site has no user_info capability, skipping");
-                    continue;
+                let handle = match registry.get(&site_id) {
+                    Some(h) => h.clone(),
+                    None => {
+                        warn!(site_id = site_id.0, "site not in registry, skipping");
+                        return (0, 1);
+                    }
+                };
+
+                let user_info_cap = match handle.user_info.as_ref() {
+                    Some(ui) => Arc::clone(ui),
+                    None => {
+                        info!(site_id = site_id.0, "site has no user_info capability, skipping");
+                        return (0, 0);
+                    }
+                };
+
+                if let Err(e) = handle.rate_limiter.acquire().await {
+                    error!(site_id = site_id.0, %e, "rate limiter rejected stats fetch");
+                    return (0, 1);
                 }
-            };
 
-            match user_info_cap.fetch_user_info().await {
-                Ok(stats) => {
-                    let sid = site_id.0;
-                    let record = UserStatRecord {
-                        id: 0,
-                        site_id: sid,
-                        uploaded: stats.uploaded,
-                        downloaded: stats.downloaded,
-                        ratio: stats.ratio,
-                        bonus: stats.bonus,
-                        user_class: stats.user_class,
-                        seeding_count: stats.seeding_count,
-                        leeching_count: stats.leeching_count,
-                        seeding_size: stats.seeding_size,
-                        upload_time_seconds: stats.upload_time_seconds,
-                        fetched_at: String::new(),
-                    };
-                    if let Err(e) = self.repo.insert_user_stats(sid, &record).await {
-                        error!(site_id = sid, %e, "failed to store user stats");
-                        failed += 1;
-                    } else {
-                        succeeded += 1;
+                match user_info_cap.fetch_user_info().await {
+                    Ok(stats) => {
+                        handle.rate_limiter.record_success();
+                        let sid = site_id.0;
+                        let record = UserStatRecord {
+                            id: 0,
+                            site_id: sid,
+                            uploaded: stats.uploaded,
+                            downloaded: stats.downloaded,
+                            ratio: stats.ratio,
+                            bonus: stats.bonus,
+                            user_class: stats.user_class,
+                            seeding_count: stats.seeding_count,
+                            leeching_count: stats.leeching_count,
+                            seeding_size: stats.seeding_size,
+                            upload_time_seconds: stats.upload_time_seconds,
+                            fetched_at: String::new(),
+                        };
+                        if let Err(e) = repo.insert_user_stats(sid, &record).await {
+                            error!(site_id = sid, %e, "failed to store user stats");
+                            (0, 1)
+                        } else {
+                            (1, 0)
+                        }
+                    }
+                    Err(e) => {
+                        let _ = handle.rate_limiter.record_error().await;
+                        error!(site_id = site_id.0, %e, "failed to fetch user stats");
+                        (0, 1)
                     }
                 }
-                Err(e) => {
-                    error!(site_id = site_id.0, %e, "failed to fetch user stats");
-                    failed += 1;
-                }
             }
+        });
+
+        let results = join_all(fetches).await;
+        let mut succeeded: i64 = 0;
+        let mut failed: i64 = 0;
+        for (s, f) in results {
+            succeeded += s;
+            failed += f;
         }
 
         info!(

@@ -9,9 +9,11 @@ pub struct ServerFnContext {
     pub pool: sqlx::SqlitePool,
     pub vault: std::sync::Arc<tokio::sync::RwLock<Option<pt_reseeder_core::crypto::Vault>>>,
     pub session_ttl_hours: u64,
+    pub cookie_secure: bool,
     pub data_dir: std::path::PathBuf,
-    pub site_registry:
-        std::sync::Arc<tokio::sync::RwLock<pt_reseeder_core::site::registry::SiteRegistry>>,
+    pub site_registry: std::sync::Arc<
+        tokio::sync::RwLock<std::sync::Arc<pt_reseeder_core::site::registry::SiteRegistry>>,
+    >,
     pub refresh_site_registry: std::sync::Arc<
         dyn Fn() -> std::pin::Pin<
                 Box<dyn std::future::Future<Output = Result<(), String>> + Send + 'static>,
@@ -45,25 +47,29 @@ fn hash_token(raw_hex: &str) -> Option<Vec<u8>> {
 }
 
 #[cfg(feature = "ssr")]
-fn build_session_cookie(token: String) -> axum_extra::extract::cookie::Cookie<'static> {
+fn build_session_cookie(
+    token: String,
+    secure: bool,
+) -> axum_extra::extract::cookie::Cookie<'static> {
     use axum_extra::extract::cookie::{Cookie, SameSite};
 
     Cookie::build((SESSION_COOKIE_NAME, token))
         .path("/")
         .http_only(true)
         .same_site(SameSite::Strict)
-        .secure(false)
+        .secure(secure)
         .build()
 }
 
 #[cfg(feature = "ssr")]
-fn build_removal_cookie() -> axum_extra::extract::cookie::Cookie<'static> {
+fn build_removal_cookie(secure: bool) -> axum_extra::extract::cookie::Cookie<'static> {
     use axum_extra::extract::cookie::{Cookie, SameSite};
 
     Cookie::build((SESSION_COOKIE_NAME, ""))
         .path("/")
         .http_only(true)
         .same_site(SameSite::Strict)
+        .secure(secure)
         .max_age(time::Duration::ZERO)
         .build()
 }
@@ -117,7 +123,13 @@ async fn auth_register(username: String, password: String) -> Result<(), ServerF
         .await
         .map_err(|e| ServerFnError::new(format!("{e}")))?;
     *context.vault.write().await = Some(vault);
-    create_session_cookie(&repo, user_id, context.session_ttl_hours).await?;
+    create_session_cookie(
+        &repo,
+        user_id,
+        context.session_ttl_hours,
+        context.cookie_secure,
+    )
+    .await?;
     refresh_site_registry_best_effort(&context).await;
     Ok(())
 }
@@ -144,7 +156,13 @@ async fn auth_login(username: String, password: String) -> Result<(), ServerFnEr
     .map_err(|_| ServerFnError::new("Invalid username or password"))?;
     *context.vault.write().await = Some(vault);
     let _ = repo.update_last_login(user.id).await;
-    create_session_cookie(&repo, user.id, context.session_ttl_hours).await?;
+    create_session_cookie(
+        &repo,
+        user.id,
+        context.session_ttl_hours,
+        context.cookie_secure,
+    )
+    .await?;
     refresh_site_registry_best_effort(&context).await;
     Ok(())
 }
@@ -168,14 +186,15 @@ async fn create_session_cookie(
     repo: &pt_reseeder_core::db::repo::Repository,
     user_id: i64,
     ttl_hours: u64,
+    cookie_secure: bool,
 ) -> Result<(), ServerFnError> {
     let (raw_token, token_hash) = generate_session_token();
-    let expires_at = (chrono::Utc::now() + chrono::Duration::hours(ttl_hours as i64)).to_rfc3339();
+    let expires_at = pt_reseeder_core::session::session_expiry_from_now(ttl_hours);
     repo.create_session(user_id, &token_hash, &expires_at)
         .await
         .map_err(|e| ServerFnError::new(format!("{e}")))?;
     let _ = repo.update_last_login(user_id).await;
-    append_set_cookie(&build_session_cookie(raw_token))
+    append_set_cookie(&build_session_cookie(raw_token, cookie_secure))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -271,12 +290,13 @@ pub async fn logout() -> Result<(), ServerFnError> {
     use axum_extra::extract::cookie::CookieJar;
     use pt_reseeder_core::db::repo::Repository;
 
+    let context = server_context()?;
     let jar: CookieJar = leptos_axum::extract()
         .await
         .map_err(|e| ServerFnError::new(format!("{e}")))?;
     if let Some(cookie) = jar.get(SESSION_COOKIE_NAME) {
         if let Some(token_hash) = hash_token(cookie.value()) {
-            let repo = Repository::new(server_pool()?);
+            let repo = Repository::new(context.pool.clone());
             if let Some(session) = repo
                 .find_session_by_hash(&token_hash)
                 .await
@@ -286,7 +306,7 @@ pub async fn logout() -> Result<(), ServerFnError> {
             }
         }
     }
-    append_set_cookie(&build_removal_cookie())?;
+    append_set_cookie(&build_removal_cookie(context.cookie_secure))?;
     Ok(())
 }
 
@@ -320,7 +340,7 @@ pub async fn get_current_user() -> Result<Option<UserInfo>, ServerFnError> {
     else {
         return Ok(None);
     };
-    if session.expires_at < chrono::Utc::now().to_rfc3339() {
+    if pt_reseeder_core::session::is_session_expired(&session.expires_at) {
         let _ = repo.delete_session(session.id).await;
         return Ok(None);
     }
@@ -682,7 +702,7 @@ pub async fn create_site(
             use pt_reseeder_core::db::repo::Repository;
             use pt_reseeder_core::site::models::SiteId;
 
-            let registry = site_registry.read().await;
+            let registry = site_registry.read().await.clone();
             let handle = registry.get(&SiteId::from(site_id));
             let user_info_cap = handle.and_then(|h| h.user_info.as_ref());
             if let Some(ui) = user_info_cap {
@@ -842,10 +862,8 @@ pub async fn probe_site(id: i64) -> Result<ValidateSiteResult, ServerFnError> {
         .map_err(|e| ServerFnError::new(format!("{e}")))?
         .ok_or_else(|| ServerFnError::new("site not found"))?;
 
-    let handle = context
-        .site_registry
-        .read()
-        .await
+    let registry = context.site_registry.read().await.clone();
+    let handle = registry
         .get(&pt_reseeder_core::site::models::SiteId::from(site.id))
         .cloned()
         .ok_or_else(|| ServerFnError::new("站点适配器未注册，请确认凭证已解锁且站点架构受支持"))?;
@@ -1469,7 +1487,7 @@ pub async fn submit_repost(id: i64) -> Result<(), ServerFnError> {
     let context = server_context()?;
     let repo = Repository::new(context.pool.clone());
     let registry = context.site_registry.read().await.clone();
-    submitter::submit_entry(&repo, &registry, id)
+    submitter::submit_entry(&repo, registry.as_ref(), id)
         .await
         .map(|_| ())
         .map_err(|e| ServerFnError::new(format!("{e}")))

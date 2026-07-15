@@ -3,6 +3,7 @@ pub mod config;
 pub mod crypto;
 pub mod db;
 pub mod error;
+pub mod session;
 
 // P2 modules
 pub mod downloader;

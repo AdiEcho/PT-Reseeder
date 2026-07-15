@@ -27,21 +27,22 @@ pub fn hash_token(raw_hex: &str) -> Option<Vec<u8>> {
 }
 
 /// Build a session cookie with the given token value.
-pub fn build_session_cookie(token: String) -> Cookie<'static> {
+pub fn build_session_cookie(token: String, secure: bool) -> Cookie<'static> {
     Cookie::build((SESSION_COOKIE_NAME, token))
         .path("/")
         .http_only(true)
         .same_site(SameSite::Strict)
-        .secure(false) // Set to true in production behind TLS
+        .secure(secure)
         .build()
 }
 
 /// Build a removal cookie to clear the session.
-pub fn build_removal_cookie() -> Cookie<'static> {
+pub fn build_removal_cookie(secure: bool) -> Cookie<'static> {
     Cookie::build((SESSION_COOKIE_NAME, ""))
         .path("/")
         .http_only(true)
         .same_site(SameSite::Strict)
+        .secure(secure)
         .max_age(time::Duration::ZERO)
         .build()
 }
@@ -67,10 +68,7 @@ pub async fn require_auth(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .ok_or(StatusCode::UNAUTHORIZED)?;
 
-    // Check expiry: expires_at is stored as an ISO 8601 / SQLite datetime string
-    let now = chrono::Utc::now().to_rfc3339();
-    if session.expires_at < now {
-        // Session expired, clean it up
+    if pt_reseeder_core::session::is_session_expired(&session.expires_at) {
         let _ = state.inner.repo.delete_session(session.id).await;
         return Err(StatusCode::UNAUTHORIZED);
     }

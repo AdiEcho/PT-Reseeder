@@ -599,7 +599,7 @@ async fn test_adder_downloads_and_adds() {
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
     let dest_client = MockDownloader::new();
-    let mut dest_hashes: HashSet<String> = HashSet::new();
+    let dest_hashes = Arc::new(tokio::sync::Mutex::new(HashSet::new()));
 
     let matched = MatchedTorrent {
         pieces_hash: pieces_hash.clone(),
@@ -616,7 +616,7 @@ async fn test_adder_downloads_and_adds() {
         &matched,
         &http_client,
         &dest_client,
-        &mut dest_hashes,
+        &dest_hashes,
         true, // auto_start
         &db_writer,
         &stats,
@@ -633,7 +633,7 @@ async fn test_adder_downloads_and_adds() {
     );
     assert_eq!(stats.added.load(Ordering::Relaxed), 1);
     assert!(
-        dest_hashes.contains(&info_hash),
+        dest_hashes.lock().await.contains(&info_hash),
         "info_hash should be added to dest_hashes for dedup"
     );
 }
@@ -673,8 +673,9 @@ async fn test_adder_skips_existing_hash() {
 
     let dest_client = MockDownloader::new();
     // Pre-populate dest_hashes with the info_hash — simulates "already exists"
-    let mut dest_hashes: HashSet<String> = HashSet::new();
-    dest_hashes.insert(info_hash.clone());
+    let mut seed = HashSet::new();
+    seed.insert(info_hash.clone());
+    let dest_hashes = Arc::new(tokio::sync::Mutex::new(seed));
 
     let matched = MatchedTorrent {
         pieces_hash,
@@ -691,7 +692,7 @@ async fn test_adder_skips_existing_hash() {
         &matched,
         &http_client,
         &dest_client,
-        &mut dest_hashes,
+        &dest_hashes,
         false,
         &db_writer,
         &stats,

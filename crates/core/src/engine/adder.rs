@@ -1,6 +1,8 @@
 use std::collections::HashSet;
 use std::sync::atomic::Ordering;
+use std::sync::Arc;
 
+use tokio::sync::Mutex;
 use tracing;
 
 use crate::db::writer::{DbWriterHandle, WriteOp};
@@ -33,7 +35,7 @@ pub async fn add_torrent(
     matched: &MatchedTorrent,
     http_client: &reqwest::Client,
     dest_client: &dyn Downloader,
-    dest_hashes: &mut HashSet<String>,
+    dest_hashes: &Arc<Mutex<HashSet<String>>>,
     auto_start: bool,
     db_writer: &DbWriterHandle,
     stats: &ReseedStats,
@@ -64,24 +66,29 @@ pub async fn add_torrent(
         return Ok(false);
     }
 
-    // Filter 3: info_hash dedup — destination already has it
-    if dest_hashes.contains(&meta.info_hash) {
-        tracing::debug!(
-            info_hash = %meta.info_hash,
-            "destination already has this torrent, skipping"
-        );
-        record_history(
-            db_writer,
-            &matched.pieces_hash,
-            matched.site_id,
-            matched.torrent_id,
-            Some(&meta.info_hash),
-            "skipped",
-            Some("already in destination downloader"),
-        )
-        .await?;
-        stats.skipped_exists.fetch_add(1, Ordering::Relaxed);
-        return Ok(false);
+    // Filter 3: claim info_hash under the lock so concurrent adders cannot
+    // race past the same dedup check.
+    {
+        let mut hashes = dest_hashes.lock().await;
+        if !hashes.insert(meta.info_hash.clone()) {
+            tracing::debug!(
+                info_hash = %meta.info_hash,
+                "destination already has this torrent, skipping"
+            );
+            drop(hashes);
+            record_history(
+                db_writer,
+                &matched.pieces_hash,
+                matched.site_id,
+                matched.torrent_id,
+                Some(&meta.info_hash),
+                "skipped",
+                Some("already in destination downloader"),
+            )
+            .await?;
+            stats.skipped_exists.fetch_add(1, Ordering::Relaxed);
+            return Ok(false);
+        }
     }
 
     // Add to destination downloader
@@ -113,7 +120,6 @@ pub async fn add_torrent(
             )
             .await?;
             stats.added.fetch_add(1, Ordering::Relaxed);
-            dest_hashes.insert(meta.info_hash.clone());
             if auto_start {
                 if let Err(e) = dest_client.resume_torrent(&meta.info_hash).await {
                     tracing::warn!(
@@ -126,6 +132,7 @@ pub async fn add_torrent(
             Ok(true)
         }
         Ok(false) => {
+            // Keep the claim: downloader already has it (or equivalent).
             tracing::warn!(
                 info_hash = %meta.info_hash,
                 "downloader rejected torrent (already exists or other reason)"
@@ -144,6 +151,8 @@ pub async fn add_torrent(
             Ok(false)
         }
         Err(e) => {
+            // Release claim so a later retry can re-attempt.
+            dest_hashes.lock().await.remove(&meta.info_hash);
             tracing::error!(
                 info_hash = %meta.info_hash,
                 error = %e,

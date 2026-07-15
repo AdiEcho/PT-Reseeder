@@ -13,7 +13,7 @@ use crate::site::registry::SiteRegistry;
 
 use super::adder::MatchedTorrent;
 use super::filter;
-use super::scanner::{self, ScanResult};
+use super::scanner::ScanResult;
 use super::stats::ReseedStats;
 
 /// Per-site batch size, adaptive: starts at site definition value, halves on 413/400.
@@ -65,19 +65,25 @@ pub async fn match_all_sites(
         return Ok(Vec::new());
     }
 
-    let all_pieces_hashes: Vec<String> = scan.pieces_groups.keys().cloned().collect();
-    let present_info_hashes: HashSet<String> = scan
-        .dest_hashes
-        .iter()
-        .cloned()
-        .chain(scan.torrents.keys().cloned())
-        .collect();
+    let all_pieces_hashes: Arc<[String]> = scan.pieces_groups.keys().cloned().collect();
+    let present_info_hashes: Arc<HashSet<String>> = Arc::new(
+        scan.dest_hashes
+            .iter()
+            .cloned()
+            .chain(scan.torrents.keys().cloned())
+            .collect(),
+    );
 
     tracing::info!(
         sites = target_site_ids.len(),
         pieces_hashes = all_pieces_hashes.len(),
         "starting match phase"
     );
+
+    // Batch-load announce URLs for all pieces hashes once.
+    let announce_by_hash = repo
+        .find_announce_urls_by_pieces_hashes(all_pieces_hashes.as_ref())
+        .await?;
 
     // Launch one task per site, all in parallel
     let mut handles = Vec::new();
@@ -109,38 +115,51 @@ pub async fn match_all_sites(
 
         let initial_batch_size = reseed.batch_size().max(1);
 
-        let hashes = all_pieces_hashes.clone();
+        let hashes = Arc::clone(&all_pieces_hashes);
+        let present_info_hashes = Arc::clone(&present_info_hashes);
         let repo = repo.clone();
         let cancel = cancel.clone();
         let default_save_path = default_save_path.to_string();
         let tag = tag.map(String::from);
 
-        // Precompute filter-1 data: cached announce URLs per pieces_hash
+        // Filter-1: tracker pre-filter using preloaded announce URLs
         let mut tracker_filtered: HashSet<String> = HashSet::new();
-        for ph in &hashes {
-            let cached_urls = scanner::get_cached_announce_urls(&repo, ph).await?;
+        for ph in hashes.iter() {
+            let cached_urls = announce_by_hash.get(ph).cloned().unwrap_or_default();
             if filter::filter_by_tracker(&cached_urls, &base_url) {
                 tracker_filtered.insert(ph.clone());
                 stats.skipped_tracker.fetch_add(1, Ordering::Relaxed);
             }
         }
 
-        // Precompute filter-2: history check
+        // Remaining hashes after tracker filter
+        let remaining: Vec<String> = hashes
+            .iter()
+            .filter(|h| !tracker_filtered.contains(*h))
+            .cloned()
+            .collect();
+
+        // Filter-2: history check via batch load
+        let history_by_hash = repo
+            .find_successful_reseed_info_hashes(&remaining, site_id.0)
+            .await?;
         let mut history_filtered: HashSet<String> = HashSet::new();
-        for ph in &hashes {
-            if tracker_filtered.contains(ph) {
-                continue;
-            }
-            if filter::filter_by_history(&repo, ph, site_id, &present_info_hashes).await? {
-                history_filtered.insert(ph.clone());
-                stats.skipped_history.fetch_add(1, Ordering::Relaxed);
+        for ph in &remaining {
+            if let Some(success_hashes) = history_by_hash.get(ph) {
+                if success_hashes
+                    .iter()
+                    .any(|ih| present_info_hashes.contains(ih))
+                {
+                    history_filtered.insert(ph.clone());
+                    stats.skipped_history.fetch_add(1, Ordering::Relaxed);
+                }
             }
         }
 
         // Remaining hashes to query
-        let query_hashes: Vec<String> = hashes
+        let query_hashes: Vec<String> = remaining
             .into_iter()
-            .filter(|h| !tracker_filtered.contains(h) && !history_filtered.contains(h))
+            .filter(|h| !history_filtered.contains(h))
             .collect();
 
         if query_hashes.is_empty() {

@@ -66,8 +66,7 @@ async fn validate_ws_auth(
         .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?
         .ok_or(axum::http::StatusCode::UNAUTHORIZED)?;
 
-    let now = chrono::Utc::now().to_rfc3339();
-    if session.expires_at < now {
+    if pt_reseeder_core::session::is_session_expired(&session.expires_at) {
         return Err(axum::http::StatusCode::UNAUTHORIZED);
     }
 

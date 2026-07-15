@@ -1,7 +1,12 @@
+use std::collections::{HashMap, HashSet};
+
 use sqlx::SqlitePool;
 
 use super::models::*;
 use crate::error::{CoreError, DbError};
+
+/// Keep well under SQLite's ~999 bind-variable limit for `IN (...)` queries.
+const SQLITE_IN_CHUNK: usize = 400;
 
 #[derive(Clone)]
 pub struct Repository {
@@ -526,6 +531,83 @@ impl Repository {
         Ok(row)
     }
 
+    /// Batch lookup: which of the given info_hashes already exist in pieces_cache.
+    pub async fn find_existing_info_hashes(
+        &self,
+        info_hashes: &[String],
+    ) -> Result<HashSet<String>, CoreError> {
+        let mut existing = HashSet::new();
+        if info_hashes.is_empty() {
+            return Ok(existing);
+        }
+
+        for chunk in info_hashes.chunks(SQLITE_IN_CHUNK) {
+            let mut qb =
+                sqlx::QueryBuilder::new("SELECT info_hash FROM pieces_cache WHERE info_hash IN (");
+            {
+                let mut separated = qb.separated(", ");
+                for hash in chunk {
+                    separated.push_bind(hash);
+                }
+            }
+            qb.push(")");
+
+            let rows: Vec<(String,)> = qb
+                .build_query_as()
+                .fetch_all(&self.pool)
+                .await
+                .map_err(DbError::Sqlx)?;
+            existing.extend(rows.into_iter().map(|r| r.0));
+        }
+
+        Ok(existing)
+    }
+
+    /// Batch load announce URLs grouped by pieces_hash.
+    pub async fn find_announce_urls_by_pieces_hashes(
+        &self,
+        pieces_hashes: &[String],
+    ) -> Result<HashMap<String, HashSet<String>>, CoreError> {
+        let mut map: HashMap<String, HashSet<String>> = HashMap::new();
+        if pieces_hashes.is_empty() {
+            return Ok(map);
+        }
+
+        for chunk in pieces_hashes.chunks(SQLITE_IN_CHUNK) {
+            let mut qb = sqlx::QueryBuilder::new(
+                "SELECT pieces_hash, announce_url FROM pieces_cache WHERE pieces_hash IN (",
+            );
+            {
+                let mut separated = qb.separated(", ");
+                for hash in chunk {
+                    separated.push_bind(hash);
+                }
+            }
+            qb.push(")");
+
+            let rows: Vec<(String, Option<String>)> = qb
+                .build_query_as()
+                .fetch_all(&self.pool)
+                .await
+                .map_err(DbError::Sqlx)?;
+
+            for (pieces_hash, announce_url) in rows {
+                if let Some(url) = announce_url {
+                    map.entry(pieces_hash).or_default().insert(url);
+                } else {
+                    map.entry(pieces_hash).or_default();
+                }
+            }
+        }
+
+        // Ensure every requested hash has an entry (even if empty) for easy lookup.
+        for hash in pieces_hashes {
+            map.entry(hash.clone()).or_default();
+        }
+
+        Ok(map)
+    }
+
     // --- Reseed History ---
 
     pub async fn insert_reseed_history(
@@ -569,6 +651,48 @@ impl Repository {
         .await
         .map_err(DbError::Sqlx)?;
         Ok(rows)
+    }
+
+    /// Batch load successful reseed history info_hashes for a site, keyed by pieces_hash.
+    pub async fn find_successful_reseed_info_hashes(
+        &self,
+        pieces_hashes: &[String],
+        site_id: i64,
+    ) -> Result<HashMap<String, HashSet<String>>, CoreError> {
+        let mut map: HashMap<String, HashSet<String>> = HashMap::new();
+        if pieces_hashes.is_empty() {
+            return Ok(map);
+        }
+
+        for chunk in pieces_hashes.chunks(SQLITE_IN_CHUNK) {
+            let mut qb = sqlx::QueryBuilder::new(
+                "SELECT pieces_hash, info_hash FROM reseed_history \
+                 WHERE site_id = ",
+            );
+            qb.push_bind(site_id);
+            qb.push(" AND status = 'success' AND pieces_hash IN (");
+            {
+                let mut separated = qb.separated(", ");
+                for hash in chunk {
+                    separated.push_bind(hash);
+                }
+            }
+            qb.push(")");
+
+            let rows: Vec<(String, Option<String>)> = qb
+                .build_query_as()
+                .fetch_all(&self.pool)
+                .await
+                .map_err(DbError::Sqlx)?;
+
+            for (pieces_hash, info_hash) in rows {
+                if let Some(ih) = info_hash {
+                    map.entry(pieces_hash).or_default().insert(ih);
+                }
+            }
+        }
+
+        Ok(map)
     }
 
     // --- Folders ---
@@ -655,19 +779,28 @@ impl Repository {
         task_id: i64,
         folder_ids: &[i64],
     ) -> Result<(), CoreError> {
+        let mut tx = self.pool.begin().await.map_err(DbError::Sqlx)?;
         sqlx::query("DELETE FROM task_folders WHERE task_id = ?")
             .bind(task_id)
-            .execute(&self.pool)
+            .execute(&mut *tx)
             .await
             .map_err(DbError::Sqlx)?;
-        for &folder_id in folder_ids {
-            sqlx::query("INSERT INTO task_folders (task_id, folder_id) VALUES (?, ?)")
-                .bind(task_id)
-                .bind(folder_id)
-                .execute(&self.pool)
-                .await
-                .map_err(DbError::Sqlx)?;
+
+        if !folder_ids.is_empty() {
+            for chunk in folder_ids.chunks(SQLITE_IN_CHUNK) {
+                let mut qb =
+                    sqlx::QueryBuilder::new("INSERT INTO task_folders (task_id, folder_id) ");
+                qb.push_values(chunk, |mut b, &folder_id| {
+                    b.push_bind(task_id).push_bind(folder_id);
+                });
+                qb.build()
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(DbError::Sqlx)?;
+            }
         }
+
+        tx.commit().await.map_err(DbError::Sqlx)?;
         Ok(())
     }
 
@@ -684,19 +817,28 @@ impl Repository {
     // --- Task-Site Associations ---
 
     pub async fn set_task_sites(&self, task_id: i64, site_ids: &[i64]) -> Result<(), CoreError> {
+        let mut tx = self.pool.begin().await.map_err(DbError::Sqlx)?;
         sqlx::query("DELETE FROM task_sites WHERE task_id = ?")
             .bind(task_id)
-            .execute(&self.pool)
+            .execute(&mut *tx)
             .await
             .map_err(DbError::Sqlx)?;
-        for &site_id in site_ids {
-            sqlx::query("INSERT INTO task_sites (task_id, site_id) VALUES (?, ?)")
-                .bind(task_id)
-                .bind(site_id)
-                .execute(&self.pool)
-                .await
-                .map_err(DbError::Sqlx)?;
+
+        if !site_ids.is_empty() {
+            for chunk in site_ids.chunks(SQLITE_IN_CHUNK) {
+                let mut qb =
+                    sqlx::QueryBuilder::new("INSERT INTO task_sites (task_id, site_id) ");
+                qb.push_values(chunk, |mut b, &site_id| {
+                    b.push_bind(task_id).push_bind(site_id);
+                });
+                qb.build()
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(DbError::Sqlx)?;
+            }
         }
+
+        tx.commit().await.map_err(DbError::Sqlx)?;
         Ok(())
     }
 

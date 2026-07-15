@@ -168,7 +168,48 @@ impl DbWriter {
 
         let ops: Vec<WriteOp> = buffer.drain(..).collect();
 
-        // Run all ops in a single transaction
+        // Prefer a single transaction for the whole batch.
+        match Self::execute_ops_in_transaction(conn, &ops).await {
+            Ok(()) => Ok(()),
+            Err(batch_err) => {
+                tracing::warn!(
+                    error = %batch_err,
+                    op_count = ops.len(),
+                    "batch write failed; falling back to per-op execution"
+                );
+                // Fallback: execute each op in its own transaction so one bad op
+                // does not drop the rest of the batch. Surface residual failures
+                // so callers (e.g. flush) do not treat silent data loss as success.
+                let mut failed = 0usize;
+                let mut first_err: Option<CoreError> = None;
+                for op in &ops {
+                    if let Err(e) =
+                        Self::execute_ops_in_transaction(conn, std::slice::from_ref(op)).await
+                    {
+                        failed += 1;
+                        tracing::error!(error = %e, "single write op failed during fallback");
+                        if first_err.is_none() {
+                            first_err = Some(e);
+                        }
+                    }
+                }
+                if let Some(err) = first_err {
+                    return Err(CoreError::Internal(format!(
+                        "db write fallback failed for {}/{} ops: {}",
+                        failed,
+                        ops.len(),
+                        err
+                    )));
+                }
+                Ok(())
+            }
+        }
+    }
+
+    async fn execute_ops_in_transaction(
+        conn: &mut SqliteConnection,
+        ops: &[WriteOp],
+    ) -> Result<(), CoreError> {
         let mut tx = conn.begin().await.map_err(DbError::Sqlx)?;
 
         for op in ops {
@@ -186,12 +227,12 @@ impl DbWriter {
                          (pieces_hash, site_id, torrent_id, info_hash, status, error_reason) \
                          VALUES (?, ?, ?, ?, ?, ?)",
                     )
-                    .bind(&pieces_hash)
+                    .bind(pieces_hash)
                     .bind(site_id)
                     .bind(torrent_id)
-                    .bind(&info_hash)
-                    .bind(&status)
-                    .bind(&error_reason)
+                    .bind(info_hash)
+                    .bind(status)
+                    .bind(error_reason)
                     .execute(&mut *tx)
                     .await
                     .map_err(DbError::Sqlx)?;
@@ -216,12 +257,12 @@ impl DbWriter {
                          announce_url = excluded.announce_url, \
                          cached_at = datetime('now')",
                     )
-                    .bind(&pieces_hash)
-                    .bind(&info_hash)
-                    .bind(&torrent_name)
-                    .bind(&file_path)
+                    .bind(pieces_hash)
+                    .bind(info_hash)
+                    .bind(torrent_name)
+                    .bind(file_path)
                     .bind(total_size)
-                    .bind(&announce_url)
+                    .bind(announce_url)
                     .execute(&mut *tx)
                     .await
                     .map_err(DbError::Sqlx)?;
@@ -242,12 +283,12 @@ impl DbWriter {
                          VALUES (?, ?, ?, ?, ?, ?, ?)",
                     )
                     .bind(task_id)
-                    .bind(&status)
+                    .bind(status)
                     .bind(matched_count)
                     .bind(succeeded_count)
                     .bind(failed_count)
                     .bind(duration_ms)
-                    .bind(&log_text)
+                    .bind(log_text)
                     .execute(&mut *tx)
                     .await
                     .map_err(DbError::Sqlx)?;
@@ -275,7 +316,7 @@ impl DbWriter {
                     .bind(downloaded)
                     .bind(ratio)
                     .bind(bonus)
-                    .bind(&user_class)
+                    .bind(user_class)
                     .bind(seeding_count)
                     .bind(leeching_count)
                     .bind(seeding_size)

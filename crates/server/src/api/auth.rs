@@ -100,9 +100,8 @@ async fn register(
 
     // Create session
     let (raw_token, token_hash) = auth::generate_session_token();
-    let expires_at = (chrono::Utc::now()
-        + chrono::Duration::hours(state.inner.config.session_ttl_hours as i64))
-    .to_rfc3339();
+    let expires_at =
+        pt_reseeder_core::session::session_expiry_from_now(state.inner.config.session_ttl_hours);
 
     repo.create_session(user_id, &token_hash, &expires_at)
         .await
@@ -118,7 +117,10 @@ async fn register(
     // Update last login
     let _ = repo.update_last_login(user_id).await;
 
-    let jar = CookieJar::new().add(auth::build_session_cookie(raw_token));
+    let jar = CookieJar::new().add(auth::build_session_cookie(
+        raw_token,
+        state.inner.config.cookie_secure,
+    ));
 
     Ok((
         StatusCode::CREATED,
@@ -191,9 +193,8 @@ async fn login(
 
     // Create session token
     let (raw_token, token_hash) = auth::generate_session_token();
-    let expires_at = (chrono::Utc::now()
-        + chrono::Duration::hours(state.inner.config.session_ttl_hours as i64))
-    .to_rfc3339();
+    let expires_at =
+        pt_reseeder_core::session::session_expiry_from_now(state.inner.config.session_ttl_hours);
 
     // Store session hash in DB
     repo.create_session(user.id, &token_hash, &expires_at)
@@ -210,7 +211,10 @@ async fn login(
     // Update last login
     let _ = repo.update_last_login(user.id).await;
 
-    let jar = jar.add(auth::build_session_cookie(raw_token));
+    let jar = jar.add(auth::build_session_cookie(
+        raw_token,
+        state.inner.config.cookie_secure,
+    ));
 
     Ok((
         jar,
@@ -233,7 +237,9 @@ async fn logout(State(state): State<AppState>, jar: CookieJar) -> Result<CookieJ
     }
 
     // Clear cookie
-    Ok(jar.add(auth::build_removal_cookie()))
+    Ok(jar.add(auth::build_removal_cookie(
+        state.inner.config.cookie_secure,
+    )))
 }
 
 /// GET /api/auth/me
@@ -253,8 +259,7 @@ async fn me(State(state): State<AppState>, jar: CookieJar) -> Result<Json<UserIn
         .ok_or(StatusCode::UNAUTHORIZED)?;
 
     // Check expiry
-    let now = chrono::Utc::now().to_rfc3339();
-    if session.expires_at < now {
+    if pt_reseeder_core::session::is_session_expired(&session.expires_at) {
         let _ = state.inner.repo.delete_session(session.id).await;
         return Err(StatusCode::UNAUTHORIZED);
     }

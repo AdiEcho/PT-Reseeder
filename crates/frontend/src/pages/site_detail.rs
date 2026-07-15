@@ -2,6 +2,7 @@ use leptos::prelude::*;
 use leptos_router::hooks::use_params_map;
 use serde::Deserialize;
 
+use crate::components::empty_state::EmptyState;
 use crate::components::toast::{show_toast, ToastType};
 use crate::utils::{format_bytes, format_duration};
 
@@ -103,12 +104,12 @@ pub fn SiteDetailPage() -> impl IntoView {
         if let Some(result) = probe_action.value().get() {
             match result {
                 Ok(r) => {
-                    let msg = match r.status.as_str() {
-                        "ok" => "连通测试通过",
-                        "partial" => "连通测试部分通过",
-                        _ => "连通测试失败",
+                    let (msg, ty) = match r.status.as_str() {
+                        "ok" => ("连通测试通过", ToastType::Success),
+                        "partial" => ("连通测试部分通过", ToastType::Info),
+                        _ => ("连通测试失败", ToastType::Error),
                     };
-                    show_toast(msg, ToastType::Info);
+                    show_toast(msg, ty);
                     detail.refetch();
                 }
                 Err(e) => show_toast(format!("连通测试失败：{e}"), ToastType::Error),
@@ -136,80 +137,7 @@ pub fn SiteDetailPage() -> impl IntoView {
                 <a href="/sites" class="btn btn-outline">"返回站点列表"</a>
             </div>
 
-            // Error display for actions
-            {move || {
-                refresh_action
-                    .value()
-                    .get()
-                    .and_then(|r| r.err())
-                    .map(|e| {
-                        view! {
-                            <p class="error">{format!("刷新失败：{e}")}</p>
-                        }
-                    })
-            }}
-            {move || {
-                refresh_action
-                    .value()
-                    .get()
-                    .and_then(|r| r.ok())
-                    .map(|_| {
-                        view! {
-                            <div class="form-alert form-alert--success">"统计数据已刷新"</div>
-                        }
-                    })
-            }}
-            {move || {
-                probe_action
-                    .value()
-                    .get()
-                    .and_then(|r| r.err())
-                    .map(|e| {
-                        view! {
-                            <p class="error">{format!("连通测试失败：{e}")}</p>
-                        }
-                    })
-            }}
-            {move || {
-                probe_action
-                    .value()
-                    .get()
-                    .and_then(|r| r.ok())
-                    .map(|result| {
-                        let (class, icon) = match result.status.as_str() {
-                            "ok" => ("form-alert form-alert--success", "✅ "),
-                            "partial" => ("form-alert form-alert--warning", "⚠️ "),
-                            _ => ("form-alert form-alert--error", "❌ "),
-                        };
-                        view! {
-                            <div class=class>
-                                <div>{format!("{}{}", icon, result.message)}</div>
-                            </div>
-                        }
-                    })
-            }}
-            {move || {
-                update_site_action
-                    .value()
-                    .get()
-                    .and_then(|r| r.err())
-                    .map(|e| {
-                        view! {
-                            <p class="error">{format!("更新失败：{e}")}</p>
-                        }
-                    })
-            }}
-            {move || {
-                update_site_action
-                    .value()
-                    .get()
-                    .and_then(|r| r.ok())
-                    .map(|_| {
-                        view! {
-                            <div class="form-alert form-alert--success">"站点已更新"</div>
-                        }
-                    })
-            }}
+            // 页面级 mutation 结果仅走 toast；连通测试详情保留在下方站点信息区
 
             <Suspense fallback=move || view! { <p>"正在加载站点详情..."</p> }>
                 {move || {
@@ -289,6 +217,7 @@ pub fn SiteDetailPage() -> impl IntoView {
                                                                     prop:value=move || edit_cookie.get()
                                                                     on:input=move |ev| set_edit_cookie.set(event_target_value(&ev))
                                                                 />
+                                                                <p class="field-hint">"留空则保持现有凭证不变，不会清空已保存的 Cookie。"</p>
                                                             </div>
                                                             <div class="form-group">
                                                                 <label>"Passkey"</label>
@@ -298,6 +227,7 @@ pub fn SiteDetailPage() -> impl IntoView {
                                                                     prop:value=move || edit_passkey.get()
                                                                     on:input=move |ev| set_edit_passkey.set(event_target_value(&ev))
                                                                 />
+                                                                <p class="field-hint">"留空则保持现有凭证不变，不会清空已保存的 Passkey。"</p>
                                                             </div>
                                                         </div>
                                                         <div class="form-actions">
@@ -478,7 +408,7 @@ pub fn SiteDetailPage() -> impl IntoView {
                                                 view! {
                                                     <div class="stats-table-section">
                                                         <h2>"用户统计"</h2>
-                                                        <p>"暂无用户统计，请尝试刷新。"</p>
+                                                        <EmptyState icon="👤" message="暂无用户统计，请尝试刷新。" />
                                                     </div>
                                                 }
                                                     .into_any()
@@ -582,7 +512,7 @@ pub fn SiteDetailPage() -> impl IntoView {
                                                 view! {
                                                     <div class="stats-table-section">
                                                         <h2>"连通详情"</h2>
-                                                        <p>"暂无连通详情。"</p>
+                                                        <EmptyState icon="◈" message="暂无连通详情。" />
                                                     </div>
                                                 }
                                                     .into_any()

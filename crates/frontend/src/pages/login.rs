@@ -156,7 +156,7 @@ pub fn LoginPage() -> impl IntoView {
                                 >
                                     {move || {
                                         if pending.get() {
-                                            "加载中..."
+                                            if is_register.get() { "注册中..." } else { "登录中..." }
                                         } else if is_register.get() {
                                             "注册"
                                         } else {

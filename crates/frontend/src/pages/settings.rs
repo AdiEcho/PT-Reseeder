@@ -129,7 +129,7 @@ where
     let (value, set_value) = signal(entry.value.clone());
     let (revealed, set_revealed) = signal(!is_secret);
     let (saving, set_saving) = signal(false);
-    let (save_result, set_save_result) = signal(None::<Result<(), String>>);
+    let (save_error, set_save_error) = signal(None::<String>);
 
     let updated_display = if entry.updated_at.len() >= 16 {
         entry.updated_at[..16].to_string()
@@ -162,7 +162,7 @@ where
                                         } else {
                                             "false".to_string()
                                         });
-                                        set_save_result.set(None);
+                                        set_save_error.set(None);
                                     }
                                 />
                                 <span>{move || if value.get() == "true" { "已开启" } else { "已关闭" }}</span>
@@ -177,7 +177,7 @@ where
                                 prop:value=move || value.get()
                                 on:input=move |ev| {
                                     set_value.set(event_target_value(&ev));
-                                    set_save_result.set(None);
+                                    set_save_error.set(None);
                                 }
                             />
                         }
@@ -208,13 +208,8 @@ where
                     None
                 }}
                 {move || {
-                    save_result.get().map(|r| match r {
-                        Ok(()) => view! {
-                            <span class="text-green" style="font-size: 12px;">"已保存"</span>
-                        }.into_any(),
-                        Err(msg) => view! {
-                            <span class="text-red" style="font-size: 12px;">{msg}</span>
-                        }.into_any(),
+                    save_error.get().map(|msg| view! {
+                        <span class="text-red" style="font-size: 12px;">{msg}</span>
                     })
                 }}
             </td>
@@ -229,17 +224,16 @@ where
                             let k = save_key.clone();
                             let v = value.get();
                             set_saving.set(true);
-                            set_save_result.set(None);
+                            set_save_error.set(None);
                             leptos::task::spawn_local(async move {
                                 match update_app_config(k, v).await {
                                     Ok(_) => {
                                         show_toast("设置已保存", ToastType::Success);
-                                        set_save_result.set(Some(Ok(())));
                                         on_saved();
                                     }
                                     Err(e) => {
                                         show_toast(format!("保存失败：{e}"), ToastType::Error);
-                                        set_save_result.set(Some(Err(format!("保存失败：{e}"))));
+                                        set_save_error.set(Some(format!("保存失败：{e}")));
                                     }
                                 }
                                 set_saving.set(false);
@@ -263,35 +257,27 @@ where
     let (new_value, set_new_value) = signal(String::new());
     let (saving, set_saving) = signal(false);
     let (add_error, set_add_error) = signal(None::<String>);
-    let (add_success, set_add_success) = signal(false);
 
     view! {
         <div class="add-setting-form">
             <h3>"添加设置项"</h3>
+            <div class="form-risk-hint">
+                "可自由添加任意键名，但错误的键/值可能导致功能异常。建议仅添加你明确了解的配置项；未知键不会做 schema 校验。"
+            </div>
             {move || {
                 add_error.get().map(|msg| view! {
                     <div class="form-alert form-alert--error">{msg}</div>
                 })
             }}
-            {move || {
-                if add_success.get() {
-                    Some(view! {
-                        <div class="form-alert form-alert--success">"设置项已添加"</div>
-                    })
-                } else {
-                    None
-                }
-            }}
             <div class="form-row">
                 <input
                     type="text"
-                    placeholder="设置项名称"
+                    placeholder="设置项名称（如 jackett_url）"
                     class="input"
                     prop:value=move || new_key.get()
                     on:input=move |ev| {
                         set_new_key.set(event_target_value(&ev));
                         set_add_error.set(None);
-                        set_add_success.set(false);
                     }
                 />
                 <input
@@ -302,7 +288,6 @@ where
                     on:input=move |ev| {
                         set_new_value.set(event_target_value(&ev));
                         set_add_error.set(None);
-                        set_add_success.set(false);
                     }
                 />
                 <button
@@ -315,14 +300,16 @@ where
                             set_add_error.set(Some("设置项名称不能为空".into()));
                             return;
                         }
+                        if k.trim().contains(' ') {
+                            set_add_error.set(Some("设置项名称不能包含空格".into()));
+                            return;
+                        }
                         set_saving.set(true);
                         set_add_error.set(None);
-                        set_add_success.set(false);
                         leptos::task::spawn_local(async move {
                             match update_app_config(k, v).await {
                                 Ok(_) => {
                                     show_toast("设置项已添加", ToastType::Success);
-                                    set_add_success.set(true);
                                     set_new_key.set(String::new());
                                     set_new_value.set(String::new());
                                     on_saved();

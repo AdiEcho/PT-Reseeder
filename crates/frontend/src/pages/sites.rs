@@ -106,7 +106,7 @@ fn probe_failure_details(detail_json: Option<&str>) -> Vec<String> {
 #[component]
 pub fn SitesPage() -> impl IntoView {
     let (show_form, set_show_form) = signal(false);
-    let (confirm_delete_id, set_confirm_delete_id) = signal(None::<i64>);
+    let (confirm_delete, set_confirm_delete) = signal(None::<(i64, String)>);
     let (edit_url_site, set_edit_url_site) = signal(None::<(i64, String, String)>);
 
     // Form field signals
@@ -217,8 +217,8 @@ pub fn SitesPage() -> impl IntoView {
     Effect::new(move |_| {
         if let Some(result) = probe_action.value().get() {
             match result {
+                // 成功详情由下方 form-alert 展示，避免 toast + 粘性成功叠用
                 Ok(_) => {
-                    show_toast("连通测试完成", ToastType::Info);
                     sites.refetch();
                 }
                 Err(e) => show_toast(format!("连通测试失败：{e}"), ToastType::Error),
@@ -488,25 +488,7 @@ pub fn SitesPage() -> impl IntoView {
                 }
             }}
 
-            // Error display for actions
-            {move || {
-                create_action
-                    .value()
-                    .get()
-                    .and_then(|r| r.err())
-                    .map(|e| {
-                        view! { <p class="error">{format!("创建失败：{e}")}</p> }
-                    })
-            }}
-            {move || {
-                delete_action
-                    .value()
-                    .get()
-                    .and_then(|r| r.err())
-                    .map(|e| {
-                        view! { <p class="error">{format!("删除失败：{e}")}</p> }
-                    })
-            }}
+            // 创建/删除结果仅走 toast，避免与粘性 error 叠用
             {move || {
                 validate_action
                     .value()
@@ -573,24 +555,7 @@ pub fn SitesPage() -> impl IntoView {
                         }
                     })
             }}
-            {move || {
-                update_site_action
-                    .value()
-                    .get()
-                    .and_then(|r| r.err())
-                    .map(|e| {
-                        view! { <p class="error">{format!("更新失败：{e}")}</p> }
-                    })
-            }}
-            {move || {
-                update_site_action
-                    .value()
-                    .get()
-                    .and_then(|r| r.ok())
-                    .map(|_| {
-                        view! { <div class="form-alert form-alert--success">"站点已更新"</div> }
-                    })
-            }}
+            // 更新结果仅走 toast，避免与粘性 form-alert 叠用
 
             // Sites table
             <Suspense fallback=move || view! { <p>"正在加载站点..."</p> }>
@@ -627,6 +592,7 @@ pub fn SitesPage() -> impl IntoView {
                                                             .into_iter()
                                                             .map(|site| {
                                                                 let site_id = site.id;
+                                                                let site_name = site.name.clone();
                                                                 let site_url = site.url.clone();
                                                                 let site_api_url = site.api_url.clone().unwrap_or_default();
                                                                 let detail_href = format!(
@@ -681,7 +647,7 @@ pub fn SitesPage() -> impl IntoView {
                                                                             </button>
                                                                             <button
                                                                                 class="btn btn--sm btn--danger"
-                                                                                on:click=move |_| { set_confirm_delete_id.set(Some(site_id)); }
+                                                                                on:click=move |_| { set_confirm_delete.set(Some((site_id, site_name.clone()))); }
                                                                             >
                                                                                 "删除"
                                                                             </button>
@@ -748,16 +714,16 @@ pub fn SitesPage() -> impl IntoView {
 
             // Delete confirmation dialog
             {move || {
-                confirm_delete_id.get().map(|del_id| {
+                confirm_delete.get().map(|(del_id, site_name)| {
                     view! {
                         <ConfirmModal
                             title="确认删除"
-                            message="确定要删除该站点吗？此操作不可撤销。".to_string()
+                            message=format!("确定要删除站点「{site_name}」吗？此操作不可撤销。")
                             on_confirm=move || {
                                 delete_action.dispatch(del_id);
-                                set_confirm_delete_id.set(None);
+                                set_confirm_delete.set(None);
                             }
-                            on_cancel=move || set_confirm_delete_id.set(None)
+                            on_cancel=move || set_confirm_delete.set(None)
                             confirm_label="确认删除"
                             danger=true
                         />
@@ -836,6 +802,7 @@ fn EditSiteModal(
                             prop:value=move || edit_cookie.get()
                             on:input=move |ev| set_edit_cookie.set(event_target_value(&ev))
                         />
+                        <p class="field-hint">"留空则保持现有凭证不变，不会清空已保存的 Cookie。"</p>
                     </div>
                     <div class="form-group">
                         <label>"Passkey"</label>
@@ -845,6 +812,7 @@ fn EditSiteModal(
                             prop:value=move || edit_passkey.get()
                             on:input=move |ev| set_edit_passkey.set(event_target_value(&ev))
                         />
+                        <p class="field-hint">"留空则保持现有凭证不变，不会清空已保存的 Passkey。"</p>
                     </div>
                 </div>
                 <div class="form-actions">

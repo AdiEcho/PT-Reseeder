@@ -1,14 +1,18 @@
 use crate::components::confirm_modal::ConfirmModal;
 use crate::components::empty_state::EmptyState;
 use crate::components::toast::{show_toast, ToastType};
-use crate::server_fns::{create_folder, delete_folder, get_folders, FolderInfo};
+use crate::server_fns::{
+    create_folder, delete_folder, get_downloaders, get_folders, DownloaderInfo, FolderInfo,
+};
 use leptos::prelude::*;
 
 #[component]
 pub fn FoldersPage() -> impl IntoView {
     let (version, set_version) = signal(0u64);
+    let (show_form, set_show_form) = signal(false);
 
     let folders = Resource::new(move || version.get(), |_| get_folders());
+    let downloaders = Resource::new(|| (), |_| get_downloaders());
     let (confirm_delete, set_confirm_delete) = signal(None::<(i64, String)>);
 
     // --- Add-folder form state ---
@@ -37,7 +41,7 @@ pub fn FoldersPage() -> impl IntoView {
             match raw.trim().parse::<i64>() {
                 Ok(id) => Some(id),
                 Err(_) => {
-                    set_dl_error.set(Some("下载器 ID 必须是有效数字。".into()));
+                    set_dl_error.set(Some("请选择关联下载器。".into()));
                     return;
                 }
             }
@@ -51,6 +55,7 @@ pub fn FoldersPage() -> impl IntoView {
                     show_toast("文件夹添加成功", ToastType::Success);
                     set_path.set(String::new());
                     set_downloader_id.set(String::new());
+                    set_show_form.set(false);
                     set_version.update(|v| *v += 1);
                 }
                 Err(e) => {
@@ -66,72 +71,135 @@ pub fn FoldersPage() -> impl IntoView {
         <div class="dashboard">
             <div class="dashboard-header">
                 <h1>"文件夹管理"</h1>
+                <button
+                    class="btn btn-primary"
+                    on:click=move |_| set_show_form.update(|v| *v = !*v)
+                >
+                    {move || if show_form.get() { "取消" } else { "添加文件夹" }}
+                </button>
             </div>
 
-            // --- Add Folder Form ---
-            <div class="form-section">
-                <h2>"添加文件夹"</h2>
-                <form class="inline-form" on:submit=on_create>
-                    <label>
-                        "路径" <span class="required">"*"</span>
-                        <input
-                            type="text"
-                            placeholder="/path/to/torrents"
-                            prop:value=move || path.get()
-                            on:input=move |ev| {
-                                set_path.set(event_target_value(&ev));
-                                set_path_error.set(None);
-                            }
-                        />
-                        {move || path_error.get().map(|e| view! { <p class="field-error">{e}</p> })}
-                    </label>
-                    <label>
-                        "种子来源"
-                        <select on:change=move |ev| {
-                            set_scan_mode.set(event_target_value(&ev));
-                            set_dl_error.set(None);
-                        }>
-                            <option value="local" selected=true>
-                                "本机磁盘"
-                            </option>
-                            <option value="downloader">"从下载器读取"</option>
-                        </select>
-                    </label>
-                    {move || {
-                        if scan_mode.get() == "downloader" {
-                            Some(
-                                view! {
-                                    <label>
-                                        "关联下载器 ID" <span class="required">"*"</span>
-                                        <input
-                                            type="number"
-                                            placeholder="关联下载器 ID"
-                                            prop:value=move || downloader_id.get()
-                                            on:input=move |ev| {
-                                                set_downloader_id.set(event_target_value(&ev));
-                                                set_dl_error.set(None);
-                                            }
-                                        />
-                                        {move || dl_error.get().map(|e| view! { <p class="field-error">{e}</p> })}
-                                    </label>
-                                },
-                            )
-                        } else {
-                            None
-                        }
-                    }}
-                    <button type="submit" disabled=move || submitting.get()>
-                        {move || if submitting.get() { "添加中..." } else { "添加" }}
-                    </button>
-                </form>
-                {move || {
-                    form_error
-                        .get()
-                        .map(|e| {
-                            view! { <p class="error">{e}</p> }
-                        })
-                }}
-            </div>
+            // --- Add Folder Form (collapsible) ---
+            {move || {
+                if show_form.get() {
+                    view! {
+                        <div class="form-section">
+                            <h2>"添加文件夹"</h2>
+                            <form class="inline-form" on:submit=on_create>
+                                <label>
+                                    "路径" <span class="required">"*"</span>
+                                    <input
+                                        type="text"
+                                        placeholder="/path/to/torrents"
+                                        prop:value=move || path.get()
+                                        on:input=move |ev| {
+                                            set_path.set(event_target_value(&ev));
+                                            set_path_error.set(None);
+                                        }
+                                    />
+                                    {move || path_error.get().map(|e| view! { <p class="field-error">{e}</p> })}
+                                </label>
+                                <label>
+                                    "种子来源"
+                                    <select on:change=move |ev| {
+                                        set_scan_mode.set(event_target_value(&ev));
+                                        set_dl_error.set(None);
+                                    }>
+                                        <option value="local" selected=true>
+                                            "本机磁盘"
+                                        </option>
+                                        <option value="downloader">"从下载器读取"</option>
+                                    </select>
+                                </label>
+                                {move || {
+                                    if scan_mode.get() == "downloader" {
+                                        Some(
+                                            view! {
+                                                <label>
+                                                    "关联下载器" <span class="required">"*"</span>
+                                                    <Suspense fallback=move || view! {
+                                                        <select class="input" disabled=true>
+                                                            <option>"加载下载器..."</option>
+                                                        </select>
+                                                    }>
+                                                        {move || {
+                                                            downloaders.get().map(|result| match result {
+                                                                Ok(list) => {
+                                                                    view! {
+                                                                        <select
+                                                                            class="input"
+                                                                            prop:value=move || downloader_id.get()
+                                                                            on:change=move |ev| {
+                                                                                set_downloader_id.set(event_target_value(&ev));
+                                                                                set_dl_error.set(None);
+                                                                            }
+                                                                        >
+                                                                            <option value="">"请选择下载器"</option>
+                                                                            {list
+                                                                                .into_iter()
+                                                                                .map(|dl: DownloaderInfo| {
+                                                                                    let id = dl.id.to_string();
+                                                                                    let label = format!("{} (#{})", dl.name, dl.id);
+                                                                                    view! {
+                                                                                        <option value=id.clone()>{label}</option>
+                                                                                    }
+                                                                                })
+                                                                                .collect::<Vec<_>>()}
+                                                                        </select>
+                                                                        <p class="field-hint">
+                                                                            "从「下载器管理」中已配置的客户端里选择；列表显示名称与 ID。"
+                                                                        </p>
+                                                                    }
+                                                                        .into_any()
+                                                                }
+                                                                Err(e) => {
+                                                                    view! {
+                                                                        <div>
+                                                                            <input
+                                                                                type="number"
+                                                                                placeholder="下载器 ID（数字）"
+                                                                                prop:value=move || downloader_id.get()
+                                                                                on:input=move |ev| {
+                                                                                    set_downloader_id.set(event_target_value(&ev));
+                                                                                    set_dl_error.set(None);
+                                                                                }
+                                                                            />
+                                                                            <p class="field-hint">
+                                                                                {format!("下载器列表加载失败（{e}），可临时填写数字 ID。")}
+                                                                            </p>
+                                                                        </div>
+                                                                    }
+                                                                        .into_any()
+                                                                }
+                                                            })
+                                                        }}
+                                                    </Suspense>
+                                                    {move || dl_error.get().map(|e| view! { <p class="field-error">{e}</p> })}
+                                                </label>
+                                            },
+                                        )
+                                    } else {
+                                        None
+                                    }
+                                }}
+                                <button type="submit" disabled=move || submitting.get()>
+                                    {move || if submitting.get() { "添加中..." } else { "添加" }}
+                                </button>
+                            </form>
+                            {move || {
+                                form_error
+                                    .get()
+                                    .map(|e| {
+                                        view! { <p class="field-error">{e}</p> }
+                                    })
+                            }}
+                        </div>
+                    }
+                        .into_any()
+                } else {
+                    view! { <div></div> }.into_any()
+                }
+            }}
 
             // Page-level delete confirmation so modal mounts outside <tbody>.
             {move || {
@@ -187,6 +255,13 @@ pub fn FoldersPage() -> impl IntoView {
                                         view! { <EmptyState icon="📁" message="尚未配置任何文件夹。" /> }.into_any()
                                     }
                                     Ok(list) => {
+                                        let dl_map = downloaders
+                                            .get()
+                                            .and_then(|r| r.ok())
+                                            .unwrap_or_default()
+                                            .into_iter()
+                                            .map(|d| (d.id, d.name))
+                                            .collect::<std::collections::HashMap<_, _>>();
                                         view! {
                                             <div class="table-wrap">
                                                 <table class="stats-table">
@@ -196,7 +271,7 @@ pub fn FoldersPage() -> impl IntoView {
                                                             <th>"种子来源"</th>
                                                             <th>"下载器"</th>
                                                             <th>"启用"</th>
-                                                            <th>"上次扫描"</th>
+                                                            <th class="col-secondary">"上次扫描"</th>
                                                             <th>"操作"</th>
                                                         </tr>
                                                     </thead>
@@ -204,9 +279,19 @@ pub fn FoldersPage() -> impl IntoView {
                                                         {list
                                                             .into_iter()
                                                             .map(|folder| {
+                                                                let dl_label = folder
+                                                                    .downloader_id
+                                                                    .map(|id| {
+                                                                        dl_map
+                                                                            .get(&id)
+                                                                            .map(|n| format!("{n} (#{id})"))
+                                                                            .unwrap_or_else(|| format!("#{id}"))
+                                                                    })
+                                                                    .unwrap_or_else(|| "-".into());
                                                                 view! {
                                                                     <FolderRow
                                                                         folder=folder
+                                                                        downloader_label=dl_label
                                                                         on_request_delete=move |id: i64, path: String| {
                                                                             set_confirm_delete.set(Some((id, path)));
                                                                         }
@@ -232,6 +317,7 @@ pub fn FoldersPage() -> impl IntoView {
 #[component]
 fn FolderRow<F>(
     folder: FolderInfo,
+    downloader_label: String,
     on_request_delete: F,
 ) -> impl IntoView
 where
@@ -251,10 +337,6 @@ where
         "downloader" => "从下载器读取".to_string(),
         other => other.to_string(),
     };
-    let downloader_display = folder
-        .downloader_id
-        .map(|id| id.to_string())
-        .unwrap_or_else(|| "-".into());
     let last_scanned = folder
         .last_scanned_at
         .as_deref()
@@ -266,9 +348,9 @@ where
         <tr>
             <td>{folder.path.clone()}</td>
             <td>{scan_mode_label}</td>
-            <td class="text-muted">{downloader_display}</td>
+            <td class="text-muted">{downloader_label}</td>
             <td class=enabled_class>{enabled_label}</td>
-            <td class="text-muted">{last_scanned}</td>
+            <td class="text-muted col-secondary">{last_scanned}</td>
             <td class="action-cell">
                 <button
                     class="btn btn--sm btn--danger"

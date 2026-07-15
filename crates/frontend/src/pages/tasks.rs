@@ -19,6 +19,7 @@ fn status_class(status: &str) -> &'static str {
 #[component]
 pub fn TasksPage() -> impl IntoView {
     let (version, set_version) = signal(0u64);
+    let (show_form, set_show_form) = signal(false);
 
     let tasks = Resource::new(move || version.get(), |_| get_tasks());
     let (confirm_delete, set_confirm_delete) = signal(None::<(i64, String)>);
@@ -63,6 +64,7 @@ pub fn TasksPage() -> impl IntoView {
                     show_toast("任务创建成功", ToastType::Success);
                     set_name.set(String::new());
                     set_cron_expr.set(String::new());
+                    set_show_form.set(false);
                     set_version.update(|v| *v += 1);
                 }
                 Err(e) => {
@@ -78,85 +80,103 @@ pub fn TasksPage() -> impl IntoView {
         <div class="dashboard">
             <div class="dashboard-header">
                 <h1>"任务管理"</h1>
+                <button
+                    class="btn btn-primary"
+                    on:click=move |_| set_show_form.update(|v| *v = !*v)
+                >
+                    {move || if show_form.get() { "取消" } else { "创建任务" }}
+                </button>
             </div>
 
-            // --- Create Task Form ---
-            <div class="form-section">
-                <h2>"创建任务"</h2>
-                <form class="inline-form" on:submit=on_create>
-                    <label>
-                        "名称" <span class="required">"*"</span>
-                        <input
-                            type="text"
-                            placeholder="任务名称"
-                            prop:value=move || name.get()
-                            on:input=move |ev| {
-                                set_name.set(event_target_value(&ev));
-                                set_name_error.set(None);
-                            }
-                        />
-                        {move || name_error.get().map(|e| view! { <p class="field-error">{e}</p> })}
-                    </label>
-                    <label>
-                        "类型"
-                        <select on:change=move |ev| {
-                            set_task_type.set(event_target_value(&ev));
-                        }>
-                            <option value="reseed" selected=true>
-                                "辅种"
-                            </option>
-                            <option value="repost">"转种"</option>
-                            <option value="sync_stats">"数据同步"</option>
-                        </select>
-                    </label>
-                    <label>
-                        "触发方式"
-                        <select on:change=move |ev| {
-                            set_trigger_type.set(event_target_value(&ev));
-                            set_cron_error.set(None);
-                        }>
-                            <option value="manual" selected=true>
-                                "手动"
-                            </option>
-                            <option value="cron">"定时"</option>
-                            <option value="file_watch">"文件监控"</option>
-                        </select>
-                    </label>
-                    {move || {
-                        if trigger_type.get() == "cron" {
-                            Some(
-                                view! {
-                                    <label>
-                                        "Cron 表达式" <span class="required">"*"</span>
-                                        <input
-                                            type="text"
-                                            placeholder="0 */5 * * * *"
-                                            prop:value=move || cron_expr.get()
-                                            on:input=move |ev| {
-                                                set_cron_expr.set(event_target_value(&ev));
-                                                set_cron_error.set(None);
-                                            }
-                                        />
-                                        {move || cron_error.get().map(|e| view! { <p class="field-error">{e}</p> })}
-                                    </label>
-                                },
-                            )
-                        } else {
-                            None
-                        }
-                    }}
-                    <button type="submit" disabled=move || submitting.get()>
-                        {move || if submitting.get() { "创建中..." } else { "创建" }}
-                    </button>
-                </form>
-                {move || {
-                    form_error
-                        .get()
-                        .map(|e| {
-                            view! { <p class="error">{e}</p> }
-                        })
-                }}
-            </div>
+            // --- Create Task Form (collapsible) ---
+            {move || {
+                if show_form.get() {
+                    view! {
+                        <div class="form-section">
+                            <h2>"创建任务"</h2>
+                            <form class="inline-form" on:submit=on_create>
+                                <label>
+                                    "名称" <span class="required">"*"</span>
+                                    <input
+                                        type="text"
+                                        placeholder="任务名称"
+                                        prop:value=move || name.get()
+                                        on:input=move |ev| {
+                                            set_name.set(event_target_value(&ev));
+                                            set_name_error.set(None);
+                                        }
+                                    />
+                                    {move || name_error.get().map(|e| view! { <p class="field-error">{e}</p> })}
+                                </label>
+                                <label>
+                                    "类型"
+                                    <select on:change=move |ev| {
+                                        set_task_type.set(event_target_value(&ev));
+                                    }>
+                                        <option value="reseed" selected=true>
+                                            "辅种"
+                                        </option>
+                                        <option value="repost">"转种"</option>
+                                        <option value="sync_stats">"数据同步"</option>
+                                    </select>
+                                </label>
+                                <label>
+                                    "触发方式"
+                                    <select on:change=move |ev| {
+                                        set_trigger_type.set(event_target_value(&ev));
+                                        set_cron_error.set(None);
+                                    }>
+                                        <option value="manual" selected=true>
+                                            "手动"
+                                        </option>
+                                        <option value="cron">"定时"</option>
+                                        <option value="file_watch">"文件监控"</option>
+                                    </select>
+                                </label>
+                                {move || {
+                                    if trigger_type.get() == "cron" {
+                                        Some(
+                                            view! {
+                                                <label>
+                                                    "Cron 表达式" <span class="required">"*"</span>
+                                                    <input
+                                                        type="text"
+                                                        placeholder="0 */5 * * * *"
+                                                        prop:value=move || cron_expr.get()
+                                                        on:input=move |ev| {
+                                                            set_cron_expr.set(event_target_value(&ev));
+                                                            set_cron_error.set(None);
+                                                        }
+                                                    />
+                                                    <p class="field-hint">
+                                                        "使用 6 段表达式：秒 分 时 日 月 周。例如每 5 分钟：0 */5 * * * *"
+                                                    </p>
+                                                    {move || cron_error.get().map(|e| view! { <p class="field-error">{e}</p> })}
+                                                </label>
+                                            },
+                                        )
+                                    } else {
+                                        None
+                                    }
+                                }}
+                                <button type="submit" disabled=move || submitting.get()>
+                                    {move || if submitting.get() { "创建中..." } else { "创建" }}
+                                </button>
+                            </form>
+                            {move || {
+                                form_error
+                                    .get()
+                                    .map(|e| {
+                                        view! { <p class="field-error">{e}</p> }
+                                    })
+                            }}
+                        </div>
+                    }
+                        .into_any()
+                } else {
+                    view! { <div></div> }.into_any()
+                }
+            }}
 
             // Page-level delete confirmation so modal mounts outside <tbody>.
             {move || {
@@ -220,10 +240,10 @@ pub fn TasksPage() -> impl IntoView {
                                                             <th>"名称"</th>
                                                             <th>"类型"</th>
                                                             <th>"触发方式"</th>
-                                                            <th>"Cron"</th>
+                                                            <th class="col-secondary">"Cron"</th>
                                                             <th>"状态"</th>
-                                                            <th>"上次运行"</th>
-                                                            <th>"下次运行"</th>
+                                                            <th class="col-secondary">"上次运行"</th>
+                                                            <th class="col-secondary">"下次运行"</th>
                                                             <th>"运行次数"</th>
                                                             <th>"操作"</th>
                                                         </tr>
@@ -322,6 +342,7 @@ where
         .unwrap_or("-")
         .to_string();
     let cron_display = task.cron_expression.clone().unwrap_or_else(|| "-".into());
+    let cron_title = cron_display.clone();
 
     view! {
         <>
@@ -342,10 +363,10 @@ where
                     "file_watch" => "文件监控".to_string(),
                     other => other.to_string(),
                 }}</td>
-                <td class="text-muted">{cron_display}</td>
+                <td class="text-muted col-secondary table-col--secondary" title=cron_title>{cron_display}</td>
                 <td class=sc>{status_label}</td>
-                <td class="text-muted">{last_run}</td>
-                <td class="text-muted">{next_run}</td>
+                <td class="text-muted col-secondary">{last_run}</td>
+                <td class="text-muted col-secondary">{next_run}</td>
                 <td>{task.run_count}</td>
                 <td class="action-cell">
                     <button

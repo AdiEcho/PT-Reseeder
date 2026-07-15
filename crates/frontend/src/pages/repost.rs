@@ -1,5 +1,7 @@
-use crate::server_fns::{delete_repost, get_repost_queue, RepostEntry};
+use crate::components::confirm_modal::ConfirmModal;
 use crate::components::empty_state::EmptyState;
+use crate::components::toast::{show_toast, ToastType};
+use crate::server_fns::{delete_repost, get_repost_queue, RepostEntry};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::server_fns::{review_repost, submit_repost};
 use leptos::prelude::*;
@@ -21,6 +23,17 @@ struct AutofillResponse {
 #[derive(Debug, Deserialize)]
 struct ApiErrorResponse {
     error: String,
+}
+
+#[derive(Clone)]
+enum ConfirmKind {
+    Submit { id: i64, label: String },
+    Delete { id: i64, label: String },
+    Reject {
+        id: i64,
+        label: String,
+        notes: Option<String>,
+    },
 }
 
 const STATUSES: &[(&str, Option<&str>)] = &[
@@ -52,6 +65,13 @@ fn status_badge_class(status: &str) -> &'static str {
         "rejected" => "badge badge--gray",
         _ => "badge",
     }
+}
+
+fn entry_label(entry: &RepostEntry) -> String {
+    format!(
+        "{} → {}（种子 {}）",
+        entry.source_site_name, entry.target_site_name, entry.source_torrent_id
+    )
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -245,9 +265,8 @@ async fn inject_desktop_autofill(_id: i64) -> Result<(), String> {
 #[component]
 pub fn RepostPage() -> impl IntoView {
     let (status_filter, set_status_filter) = signal(None::<String>);
-
-    // A version counter bumped after every mutation so the resource refetches.
     let (version, set_version) = signal(0u32);
+    let (confirm, set_confirm) = signal(None::<ConfirmKind>);
 
     let queue = Resource::new(
         move || (status_filter.get(), version.get()),
@@ -282,6 +301,82 @@ pub fn RepostPage() -> impl IntoView {
                 </div>
             </div>
 
+            {move || {
+                confirm.get().map(|kind| {
+                    let (title, message, confirm_label, danger) = match &kind {
+                        ConfirmKind::Submit { label, .. } => (
+                            "确认提交",
+                            format!("确定要提交转种「{label}」吗？提交后将向目标站上传。"),
+                            "确认提交",
+                            false,
+                        ),
+                        ConfirmKind::Delete { label, .. } => (
+                            "确认删除",
+                            format!("确定要删除转种条目「{label}」吗？此操作不可撤销。"),
+                            "确认删除",
+                            true,
+                        ),
+                        ConfirmKind::Reject { label, .. } => (
+                            "确认拒绝",
+                            format!("确定要拒绝转种「{label}」吗？"),
+                            "确认拒绝",
+                            true,
+                        ),
+                    };
+
+                    view! {
+                        <ConfirmModal
+                            title=title
+                            message=message
+                            confirm_label=confirm_label
+                            danger=danger
+                            on_confirm=move || {
+                                let kind = kind.clone();
+                                set_confirm.set(None);
+                                leptos::task::spawn_local(async move {
+                                    match kind {
+                                        ConfirmKind::Submit { id, .. } => {
+                                            match submit_repost_core(id).await {
+                                                Ok(_) => {
+                                                    show_toast("已提交转种", ToastType::Success);
+                                                    refetch();
+                                                }
+                                                Err(e) => {
+                                                    show_toast(format!("提交失败：{e}"), ToastType::Error)
+                                                }
+                                            }
+                                        }
+                                        ConfirmKind::Delete { id, .. } => {
+                                            match delete_repost(id).await {
+                                                Ok(_) => {
+                                                    show_toast("转种条目已删除", ToastType::Success);
+                                                    refetch();
+                                                }
+                                                Err(e) => {
+                                                    show_toast(format!("删除失败：{e}"), ToastType::Error)
+                                                }
+                                            }
+                                        }
+                                        ConfirmKind::Reject { id, notes, .. } => {
+                                            match review_repost_core(id, "rejected".into(), notes).await {
+                                                Ok(_) => {
+                                                    show_toast("已拒绝转种", ToastType::Success);
+                                                    refetch();
+                                                }
+                                                Err(e) => {
+                                                    show_toast(format!("拒绝失败：{e}"), ToastType::Error)
+                                                }
+                                            }
+                                        }
+                                    }
+                                });
+                            }
+                            on_cancel=move || set_confirm.set(None)
+                        />
+                    }
+                })
+            }}
+
             <Suspense fallback=move || {
                 view! { <p>"正在加载转种队列..."</p> }
             }>
@@ -309,7 +404,11 @@ pub fn RepostPage() -> impl IntoView {
                                         view! { <EmptyState icon="↻" message="队列中没有条目。" /> }.into_any()
                                     } else {
                                         view! {
-                                            <RepostTable entries=entries on_mutated=refetch />
+                                            <RepostTable
+                                                entries=entries
+                                                on_mutated=refetch
+                                                on_confirm=move |kind: ConfirmKind| set_confirm.set(Some(kind))
+                                            />
                                         }
                                             .into_any()
                                     }
@@ -323,9 +422,10 @@ pub fn RepostPage() -> impl IntoView {
 }
 
 #[component]
-fn RepostTable<F>(entries: Vec<RepostEntry>, on_mutated: F) -> impl IntoView
+fn RepostTable<F, G>(entries: Vec<RepostEntry>, on_mutated: F, on_confirm: G) -> impl IntoView
 where
     F: Fn() + Copy + Send + Sync + 'static,
+    G: Fn(ConfirmKind) + Copy + Send + Sync + 'static,
 {
     view! {
         <div class="stats-table-section">
@@ -337,9 +437,8 @@ where
                             <th>"种子 ID"</th>
                             <th>"目标站点"</th>
                             <th>"状态"</th>
-                            <th>"备注"</th>
-                            <th>"提交时间"</th>
-                            <th>"创建时间"</th>
+                            <th class="col-secondary">"备注"</th>
+                            <th class="col-secondary">"时间"</th>
                             <th>"操作"</th>
                         </tr>
                     </thead>
@@ -347,7 +446,13 @@ where
                         {entries
                             .into_iter()
                             .map(|entry| {
-                                view! { <RepostRow entry=entry on_mutated=on_mutated /> }
+                                view! {
+                                    <RepostRow
+                                        entry=entry
+                                        on_mutated=on_mutated
+                                        on_confirm=on_confirm
+                                    />
+                                }
                             })
                             .collect::<Vec<_>>()}
                     </tbody>
@@ -358,14 +463,16 @@ where
 }
 
 #[component]
-fn RepostRow<F>(entry: RepostEntry, on_mutated: F) -> impl IntoView
+fn RepostRow<F, G>(entry: RepostEntry, on_mutated: F, on_confirm: G) -> impl IntoView
 where
     F: Fn() + Copy + Send + Sync + 'static,
+    G: Fn(ConfirmKind) + Copy + Send + Sync + 'static,
 {
     let id = entry.id;
     let status = entry.status.clone();
     let badge_class = status_badge_class(&status);
     let status_text = status_label(&status);
+    let label = entry_label(&entry);
 
     let submitted_display = entry
         .submitted_at
@@ -385,7 +492,20 @@ where
         entry.created_at.clone()
     };
 
+    let time_display = if submitted_display != "-" {
+        submitted_display.clone()
+    } else {
+        created_display.clone()
+    };
+    let time_title = format!("提交：{submitted_display} / 创建：{created_display}");
+
     let notes_display = entry.review_notes.clone().unwrap_or_default();
+    let notes_title = notes_display.clone();
+    let notes_cell = if notes_display.is_empty() {
+        "-".to_string()
+    } else {
+        notes_display
+    };
 
     view! {
         <tr>
@@ -395,47 +515,68 @@ where
             <td>
                 <span class=badge_class>{status_text}</span>
             </td>
-            <td class="text-muted">{notes_display}</td>
-            <td class="text-muted">{submitted_display}</td>
-            <td class="text-muted">{created_display}</td>
-            <td>
-                <RowActions id=id status=status on_mutated=on_mutated />
+            <td class="text-muted table-col--secondary" title=notes_title>
+                {notes_cell}
+            </td>
+            <td class="text-muted col-secondary" title=time_title>
+                {time_display}
+            </td>
+            <td class="action-cell">
+                <RowActions
+                    id=id
+                    status=status
+                    label=label
+                    on_mutated=on_mutated
+                    on_confirm=on_confirm
+                />
             </td>
         </tr>
     }
 }
 
 #[component]
-fn RowActions<F>(id: i64, status: String, on_mutated: F) -> impl IntoView
+fn RowActions<F, G>(id: i64, status: String, label: String, on_mutated: F, on_confirm: G) -> impl IntoView
 where
     F: Fn() + Copy + Send + Sync + 'static,
+    G: Fn(ConfirmKind) + Copy + Send + Sync + 'static,
 {
     match status.as_str() {
-        "pending" => view! { <PendingActions id=id on_mutated=on_mutated /> }.into_any(),
-        "approved" => view! {
-            <div class="btn-group">
-                <button
-                    class="btn btn--green btn--sm"
-                    on:click=move |_| {
-                        leptos::task::spawn_local(async move {
-                            let _ = submit_repost_core(id).await;
-                            on_mutated();
-                        });
-                    }
-                >
-                    "提交"
-                </button>
-                <AutofillAction id=id />
-            </div>
+        "pending" => view! {
+            <PendingActions id=id label=label on_mutated=on_mutated on_confirm=on_confirm />
         }
         .into_any(),
+        "approved" => {
+            let label_submit = label.clone();
+            view! {
+                <div class="btn-group">
+                    <button
+                        class="btn btn--green btn--sm"
+                        on:click=move |_| {
+                            on_confirm(ConfirmKind::Submit {
+                                id,
+                                label: label_submit.clone(),
+                            });
+                        }
+                    >
+                        "提交"
+                    </button>
+                    <AutofillAction id=id />
+                </div>
+            }
+            .into_any()
+        }
         "failed" => view! {
             <button
                 class="btn btn--blue btn--sm"
                 on:click=move |_| {
                     leptos::task::spawn_local(async move {
-                        let _ = review_repost_core(id, "approved".into(), None).await;
-                        on_mutated();
+                        match review_repost_core(id, "approved".into(), None).await {
+                            Ok(_) => {
+                                show_toast("已重新批准，可再次提交", ToastType::Success);
+                                on_mutated();
+                            }
+                            Err(e) => show_toast(format!("重试失败：{e}"), ToastType::Error),
+                        }
                     });
                 }
             >
@@ -444,20 +585,23 @@ where
         }
         .into_any(),
         "submitted" => view! { <span class="text-green">"✓"</span> }.into_any(),
-        "rejected" => view! {
-            <button
-                class="btn btn--red btn--sm"
-                on:click=move |_| {
-                    leptos::task::spawn_local(async move {
-                        let _ = delete_repost(id).await;
-                        on_mutated();
-                    });
-                }
-            >
-                "删除"
-            </button>
+        "rejected" => {
+            let label_delete = label.clone();
+            view! {
+                <button
+                    class="btn btn--red btn--sm"
+                    on:click=move |_| {
+                        on_confirm(ConfirmKind::Delete {
+                            id,
+                            label: label_delete.clone(),
+                        });
+                    }
+                >
+                    "删除"
+                </button>
+            }
+            .into_any()
         }
-        .into_any(),
         _ => view! { <span class="text-muted">"-"</span> }.into_any(),
     }
 }
@@ -465,7 +609,6 @@ where
 #[component]
 fn AutofillAction(id: i64) -> impl IntoView {
     let (is_desktop, set_is_desktop) = signal(false);
-    let (message, set_message) = signal(None::<String>);
     let (busy, set_busy) = signal(false);
 
     #[cfg(target_arch = "wasm32")]
@@ -490,7 +633,6 @@ fn AutofillAction(id: i64) -> impl IntoView {
                 }
                 on:click=move |_| {
                     set_busy.set(true);
-                    set_message.set(None);
                     leptos::task::spawn_local(async move {
                         let result = if is_desktop.get_untracked() {
                             inject_desktop_autofill(id)
@@ -515,8 +657,8 @@ fn AutofillAction(id: i64) -> impl IntoView {
                             })
                         };
                         match result {
-                            Ok(msg) => set_message.set(Some(msg)),
-                            Err(e) => set_message.set(Some(format!("自动填表不可用：{e}"))),
+                            Ok(msg) => show_toast(msg, ToastType::Info),
+                            Err(e) => show_toast(format!("自动填表不可用：{e}"), ToastType::Error),
                         }
                         set_busy.set(false);
                     });
@@ -531,24 +673,21 @@ fn AutofillAction(id: i64) -> impl IntoView {
                     view! { <span class="badge badge--blue">"无头浏览器"</span> }.into_any()
                 }
             }}
-            {move || {
-                message
-                    .get()
-                    .map(|msg| view! { <span class="text-muted">{msg}</span> })
-            }}
         </span>
     }
 }
 
 #[component]
-fn PendingActions<F>(id: i64, on_mutated: F) -> impl IntoView
+fn PendingActions<F, G>(id: i64, label: String, on_mutated: F, on_confirm: G) -> impl IntoView
 where
     F: Fn() + Copy + Send + Sync + 'static,
+    G: Fn(ConfirmKind) + Copy + Send + Sync + 'static,
 {
     let (notes, set_notes) = signal(String::new());
     let (show_notes, set_show_notes) = signal(false);
-    // Which action is pending: "approve" or "reject"
     let (pending_action, set_pending_action) = signal(None::<String>);
+    let (acting, set_acting) = signal(false);
+    let label_for_reject = label.clone();
 
     view! {
         <div class="action-group">
@@ -557,6 +696,7 @@ where
                     let action = pending_action.get().unwrap_or_default();
                     let action_label = if action == "approve" { "批准" } else { "拒绝" };
                     let action_clone = action.clone();
+                    let label_for_reject = label_for_reject.clone();
                     view! {
                         <div class="inline-notes">
                             <input
@@ -564,22 +704,41 @@ where
                                 placeholder="备注（可选）"
                                 class="input input--sm"
                                 on:input=move |ev| {
-                                    set_notes
-                                        .set(event_target_value(&ev));
+                                    set_notes.set(event_target_value(&ev));
                                 }
                                 prop:value=move || notes.get()
                             />
                             <button
                                 class="btn btn--green btn--sm"
+                                disabled=move || acting.get()
                                 on:click={
                                     let action = action_clone.clone();
                                     move |_| {
                                         let action = action.clone();
                                         let n = notes.get();
                                         let review_notes = if n.is_empty() { None } else { Some(n) };
+                                        if action == "reject" {
+                                            on_confirm(ConfirmKind::Reject {
+                                                id,
+                                                label: label_for_reject.clone(),
+                                                notes: review_notes,
+                                            });
+                                            set_show_notes.set(false);
+                                            set_pending_action.set(None);
+                                            return;
+                                        }
+                                        set_acting.set(true);
                                         leptos::task::spawn_local(async move {
-                                            let _ = review_repost_core(id, action, review_notes).await;
-                                            on_mutated();
+                                            match review_repost_core(id, action, review_notes).await {
+                                                Ok(_) => {
+                                                    show_toast("已批准转种", ToastType::Success);
+                                                    on_mutated();
+                                                }
+                                                Err(e) => {
+                                                    show_toast(format!("批准失败：{e}"), ToastType::Error)
+                                                }
+                                            }
+                                            set_acting.set(false);
                                         });
                                     }
                                 }

@@ -376,13 +376,9 @@ a:hover {
 }
 
 .btn--sm,
-.btn-sm {
-    padding: 5px 10px;
-    font-size: 12px;
-}
-
+.btn-sm,
 .btn--small {
-    padding: 4px 9px;
+    padding: 5px 10px;
     font-size: 12px;
 }
 
@@ -777,8 +773,39 @@ textarea:focus {
 .field-error {
     margin: 4px 0 0;
     font-size: 12px;
-    color: var(--red);
     line-height: 1.35;
+    color: var(--red);
+}
+
+.field-hint {
+    margin: 4px 0 0;
+    font-size: 12px;
+    color: var(--text-muted);
+    line-height: 1.4;
+}
+
+.form-risk-hint {
+    margin: 0 0 12px;
+    padding: 10px 12px;
+    border-radius: var(--radius-sm);
+    border: 1px solid rgba(245, 158, 11, 0.35);
+    background: rgba(245, 158, 11, 0.08);
+    color: var(--amber, #f59e0b);
+    font-size: 12.5px;
+    line-height: 1.45;
+}
+
+.table-col--secondary {
+    max-width: 140px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.stats-table th.col-secondary,
+.stats-table td.col-secondary {
+    color: var(--text-muted);
+    font-size: 12.5px;
 }
 
 .load-error {

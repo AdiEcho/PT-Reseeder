@@ -8,10 +8,38 @@ pub fn LogsPage() -> impl IntoView {
     let (version, set_version) = signal(0u32);
     let (selected_file, set_selected_file) = signal(None::<String>);
     let (level_filter, set_level_filter) = signal(String::new());
+    // Immediate input value; debounced into `keyword` to avoid refetch on every keystroke.
+    let (keyword_input, set_keyword_input) = signal(String::new());
     let (keyword, set_keyword) = signal(String::new());
+    let (keyword_seq, set_keyword_seq) = signal(0u64);
     let (current_page, set_current_page) = signal(1usize);
     let (auto_scroll, set_auto_scroll) = signal(true);
     let (live_lines, set_live_lines) = signal(Vec::<LogEntry>::new());
+
+    // Debounce keyword updates (~400ms). Only the latest generation may commit.
+    Effect::new(move |_| {
+        let value = keyword_input.get();
+        set_keyword_seq.update(|n| *n += 1);
+        let my_seq = keyword_seq.get_untracked();
+        #[cfg(target_arch = "wasm32")]
+        {
+            leptos::task::spawn_local(async move {
+                gloo_timers::future::TimeoutFuture::new(400).await;
+                if keyword_seq.get_untracked() == my_seq && keyword.get_untracked() != value {
+                    set_keyword.set(value);
+                    set_current_page.set(1);
+                }
+            });
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let _ = my_seq;
+            if keyword.get_untracked() != value {
+                set_keyword.set(value);
+                set_current_page.set(1);
+            }
+        }
+    });
 
     let log_files = Resource::new(move || version.get(), |_| get_log_files());
 
@@ -86,7 +114,10 @@ pub fn LogsPage() -> impl IntoView {
                             .get()
                             .map(|result| {
                                 match result {
-                                    Err(_) => view! { <span></span> }.into_any(),
+                                    Err(e) => view! {
+                                        <span class="field-error">{format!("日志文件列表加载失败：{e}")}</span>
+                                    }
+                                    .into_any(),
                                     Ok(files) => {
                                         view! {
                                             <select
@@ -143,15 +174,14 @@ pub fn LogsPage() -> impl IntoView {
                     <option value="TRACE">"TRACE"</option>
                 </select>
 
-                // Keyword search
+                // Keyword search (debounced)
                 <input
                     type="text"
                     class="input"
-                    placeholder="搜索关键词..."
-                    prop:value=move || keyword.get()
+                    placeholder="搜索关键词（输入后稍候自动查询）..."
+                    prop:value=move || keyword_input.get()
                     on:input=move |ev| {
-                        set_keyword.set(event_target_value(&ev));
-                        set_current_page.set(1);
+                        set_keyword_input.set(event_target_value(&ev));
                     }
                 />
 

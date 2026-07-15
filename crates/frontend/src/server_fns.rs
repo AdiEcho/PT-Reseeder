@@ -1736,7 +1736,7 @@ pub async fn get_dashboard_data(days: i64) -> Result<DashboardData, ServerFnErro
     use pt_reseeder_core::stats::reseed::ReseedStatsService;
     use pt_reseeder_core::stats::user_info::UserInfoService;
 
-    let pool: sqlx::SqlitePool = expect_context();
+    let pool = server_context()?.pool;
 
     let reseed_svc = ReseedStatsService::new(pool.clone());
     let user_svc = UserInfoService::new(pool);

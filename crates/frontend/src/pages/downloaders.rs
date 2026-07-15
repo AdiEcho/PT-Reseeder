@@ -570,7 +570,7 @@ where
             <td class=enabled_class>{enabled_label}</td>
             <td class="actions-cell">
                 <button
-                    class="btn btn--small btn--outline"
+                    class="btn btn--sm btn--outline"
                     on:click=move |_| {
                         test_dl_action.dispatch(dl_id);
                     }
@@ -578,7 +578,7 @@ where
                     "测试"
                 </button>
                 <button
-                    class="btn btn--small btn--danger"
+                    class="btn btn--sm btn--danger"
                     on:click=move |_| on_request_delete(dl_id, dl_name.clone())
                 >
                     "删除"
@@ -825,7 +825,7 @@ where
             <td>{pair.destination_name}</td>
             <td class="actions-cell">
                 <button
-                    class="btn btn--small btn--danger"
+                    class="btn btn--sm btn--danger"
                     on:click=move |_| on_request_delete(pair_id, pair_name.clone())
                 >
                     "删除"

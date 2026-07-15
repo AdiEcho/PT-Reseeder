@@ -1,3 +1,4 @@
+use crate::components::empty_state::EmptyState;
 use crate::server_fns::{
     get_dashboard_data, DashboardData, DashboardOverview, SiteReseedStats, TrendPoint,
     UserInfoAggregate,
@@ -186,7 +187,13 @@ fn StatCard(label: &'static str, value: String, accent: &'static str) -> impl In
 #[component]
 fn TrendChart(points: Vec<TrendPoint>) -> impl IntoView {
     if points.is_empty() {
-        return view! { <div class="trend-chart"><p>"暂无趋势数据。"</p></div> }.into_any();
+        return view! {
+            <div class="trend-chart">
+                <h2>"辅种趋势"</h2>
+                <EmptyState icon="📈" message="暂无趋势数据。" />
+            </div>
+        }
+        .into_any();
     }
 
     let max_val = points
@@ -329,7 +336,7 @@ fn SiteStatsTable(stats: Vec<SiteReseedStats>) -> impl IntoView {
         <div class="stats-table-section">
             <h2>"站点辅种统计"</h2>
             {if stats.is_empty() {
-                view! { <p>"暂无辅种记录。"</p> }.into_any()
+                view! { <EmptyState icon="◈" message="暂无辅种记录。" /> }.into_any()
             } else {
                 view! {
                     <div class="table-wrap">
@@ -407,7 +414,7 @@ fn UserInfoTable(info: UserInfoAggregate) -> impl IntoView {
             </div>
 
             {if info.sites.is_empty() {
-                view! { <p>"暂无用户统计数据。"</p> }.into_any()
+                view! { <EmptyState icon="👤" message="暂无用户统计数据。" /> }.into_any()
             } else {
                 view! {
                     <div class="table-wrap">
@@ -419,12 +426,12 @@ fn UserInfoTable(info: UserInfoAggregate) -> impl IntoView {
                                     <th>"下载量"</th>
                                     <th>"分享率"</th>
                                     <th>"积分"</th>
-                                    <th>"等级"</th>
+                                    <th class="col-secondary">"等级"</th>
                                     <th>"做种数"</th>
-                                    <th>"吸血数"</th>
-                                    <th>"做种体积"</th>
-                                    <th>"上传时间统计"</th>
-                                    <th>"更新时间"</th>
+                                    <th class="col-secondary">"吸血数"</th>
+                                    <th class="col-secondary">"做种体积"</th>
+                                    <th class="col-secondary">"上传时间"</th>
+                                    <th class="col-secondary">"更新时间"</th>
                                 </tr>
                             </thead>
                             <tbody>

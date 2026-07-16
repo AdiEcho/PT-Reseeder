@@ -1,5 +1,4 @@
 use leptos::prelude::*;
-use std::sync::OnceLock;
 
 #[derive(Clone, Debug)]
 pub enum ToastType {
@@ -15,20 +14,35 @@ pub struct Toast {
     pub toast_type: ToastType,
 }
 
-fn toast_signal() -> RwSignal<Vec<Toast>> {
-    static TOASTS: OnceLock<RwSignal<Vec<Toast>>> = OnceLock::new();
-    TOASTS.get_or_init(|| RwSignal::new(Vec::new())).clone()
+#[derive(Clone, Copy)]
+struct ToastState {
+    toasts: RwSignal<Vec<Toast>>,
+    counter: RwSignal<u64>,
 }
 
-fn toast_counter() -> RwSignal<u64> {
-    static COUNTER: OnceLock<RwSignal<u64>> = OnceLock::new();
-    COUNTER.get_or_init(|| RwSignal::new(0)).clone()
+impl ToastState {
+    fn new() -> Self {
+        Self {
+            toasts: RwSignal::new(Vec::new()),
+            counter: RwSignal::new(0),
+        }
+    }
+}
+
+pub fn provide_toast_context() {
+    provide_context(ToastState::new());
+}
+
+fn toast_state() -> Option<ToastState> {
+    use_context::<ToastState>()
 }
 
 pub fn show_toast(message: impl Into<String>, toast_type: ToastType) {
-    let counter = toast_counter();
-    let id = counter.get_untracked() + 1;
-    counter.set(id);
+    let Some(state) = toast_state() else {
+        return;
+    };
+    let id = state.counter.get_untracked() + 1;
+    state.counter.set(id);
 
     let toast = Toast {
         id,
@@ -36,7 +50,7 @@ pub fn show_toast(message: impl Into<String>, toast_type: ToastType) {
         toast_type,
     };
 
-    toast_signal().update(|toasts| {
+    state.toasts.update(|toasts| {
         toasts.push(toast);
     });
 
@@ -52,7 +66,10 @@ pub fn show_toast(message: impl Into<String>, toast_type: ToastType) {
 }
 
 pub fn dismiss_toast(id: u64) {
-    toast_signal().update(|toasts| {
+    let Some(state) = toast_state() else {
+        return;
+    };
+    state.toasts.update(|toasts| {
         toasts.retain(|t| t.id != id);
     });
 }
@@ -60,7 +77,9 @@ pub fn dismiss_toast(id: u64) {
 /// Mount this once at the top level (e.g. in App or AppLayout).
 #[component]
 pub fn ToastContainer() -> impl IntoView {
-    let toasts = toast_signal();
+    let toasts = toast_state()
+        .expect("toast context should be provided by App")
+        .toasts;
 
     view! {
         <div class="toast-container">
@@ -96,5 +115,25 @@ pub fn ToastContainer() -> impl IntoView {
                     .collect::<Vec<_>>()
             }}
         </div>
+    }
+}
+
+#[cfg(all(test, feature = "ssr"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn toast_state_is_scoped_to_each_reactive_owner() {
+        for _ in 0..2 {
+            let owner = Owner::new();
+            owner.with(|| {
+                provide_toast_context();
+                show_toast("test", ToastType::Info);
+
+                let state = toast_state().expect("toast context should exist");
+                assert_eq!(state.toasts.get_untracked().len(), 1);
+                assert_eq!(state.counter.get_untracked(), 1);
+            });
+        }
     }
 }

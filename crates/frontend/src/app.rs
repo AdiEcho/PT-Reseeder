@@ -1,5 +1,5 @@
 use crate::components::nav::AppLayout;
-use crate::components::toast::ToastContainer;
+use crate::components::toast::{provide_toast_context, ToastContainer};
 use crate::pages::dashboard::DashboardPage;
 use crate::pages::downloaders::DownloadersPage;
 use crate::pages::folders::FoldersPage;
@@ -50,6 +50,8 @@ pub fn shell(options: LeptosOptions) -> impl IntoView {
 
 #[component]
 pub fn App() -> impl IntoView {
+    provide_toast_context();
+
     view! {
         <ToastContainer />
         <Router>

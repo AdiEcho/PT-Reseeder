@@ -1,5 +1,4 @@
 use leptos::prelude::*;
-use std::sync::OnceLock;
 
 /// Available color schemes.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -72,25 +71,12 @@ fn apply_theme(theme: Theme) {
     }
 }
 
-/// Global theme signal. Initialized lazily from localStorage (default dark),
-/// then kept in sync with `data-theme` on `<html>`.
-fn theme_signal() -> RwSignal<Theme> {
-    static THEME: OnceLock<RwSignal<Theme>> = OnceLock::new();
-    THEME
-        .get_or_init(|| {
-            let initial = read_stored_theme();
-            // Apply the initial theme on the client so SSR (which always emits
-            // dark) is reconciled with the user's stored preference on hydrate.
-            apply_theme(initial);
-            RwSignal::new(initial)
-        })
-        .clone()
-}
-
 /// A compact icon button that toggles between dark and light mode.
 #[component]
 pub fn ThemeToggle() -> impl IntoView {
-    let theme = theme_signal();
+    let initial = read_stored_theme();
+    apply_theme(initial);
+    let theme = RwSignal::new(initial);
 
     view! {
         <button

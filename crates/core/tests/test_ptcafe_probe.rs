@@ -3,10 +3,13 @@ use std::sync::Arc;
 use pt_reseeder_core::site::adapters::nexusphp::NexusPhpAdapter;
 use pt_reseeder_core::site::models::UserInfoSelectors;
 use pt_reseeder_core::site::probe::probe_site;
-use pt_reseeder_core::site::traits::UserInfoCapable;
+use pt_reseeder_core::site::traits::{ReseedCapable, UserInfoCapable};
+use serde::Deserialize;
 
 const COOKIE: &str = "c_secure_pass=eyJ1c2VyX2lkIjoiMTMxNTQiLCJleHBpcmVzIjoxODE1NDA4OTEyfS42ZDE5ZWY3ZWI4OGUxNjViMmE0ZGZkN2RmMWRmMGQ3NDY1NjVhNjNiOTY5N2Q1NjA0NDY1YzQ2ZGY1MGY4ZGU2";
 const BASE_URL: &str = "https://ptcafe.club";
+const API_URL: &str = "https://ptcafe.club/api/pieces-hash";
+const PASSKEY: &str = "d00c0a703aa19a5a9331b6b266eec9ee";
 
 fn ptcafe_selectors() -> UserInfoSelectors {
     UserInfoSelectors {
@@ -178,6 +181,223 @@ async fn test_ptcafe_probe_status() {
         downloaded.map_or(false, |f| f.success),
         "downloaded 字段应该解析成功"
     );
+}
+
+/// 诊断测试：直接请求 PTCafe pieces-hash API，打印原始响应并尝试解析。
+/// 用于定位 "failed to parse pieces_hash response: error decoding response body"。
+#[tokio::test]
+async fn test_ptcafe_pieces_hash_raw_response() {
+    let dummy_hash = "0000000000000000000000000000000000000000".to_string();
+    let body = serde_json::json!({
+        "passkey": PASSKEY,
+        "pieces_hash": [dummy_hash],
+    });
+
+    let client = reqwest::Client::builder()
+        .use_rustls_tls()
+        .timeout(std::time::Duration::from_secs(30))
+        .user_agent("PT-Reseeder/0.1")
+        .build()
+        .expect("failed to build client");
+
+    println!("=== 请求 PTCafe pieces-hash API ===");
+    println!("POST {API_URL}");
+    println!("body: {}", serde_json::to_string_pretty(&body).unwrap());
+
+    let resp = client
+        .post(API_URL)
+        .json(&body)
+        .send()
+        .await
+        .expect("HTTP 请求失败");
+
+    let status = resp.status();
+    let headers = resp.headers().clone();
+    let content_type = headers
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("<missing>")
+        .to_string();
+    let raw = resp.text().await.expect("读取响应 body 失败");
+
+    println!("\n=== 原始响应 ===");
+    println!("status: {status}");
+    println!("content-type: {content_type}");
+    println!("body length: {} bytes", raw.len());
+    println!("body (first 2000 chars):\n{}", truncate(&raw, 2000));
+
+    // 1) 尝试按当前 adapter 结构解析
+    #[derive(Debug, Deserialize)]
+    struct PiecesHashResponse {
+        #[serde(default)]
+        data: Vec<PiecesHashMatch>,
+    }
+    #[derive(Debug, Deserialize)]
+    struct PiecesHashMatch {
+        pieces_hash: String,
+        torrent_id: i64,
+    }
+
+    println!("\n=== 解析尝试 A: 当前 adapter 结构 {{ data: [{{pieces_hash, torrent_id}}] }} ===");
+    match serde_json::from_str::<PiecesHashResponse>(&raw) {
+        Ok(parsed) => {
+            println!("✅ 解析成功, matches={}", parsed.data.len());
+            for (i, m) in parsed.data.iter().take(5).enumerate() {
+                println!("  [{i}] pieces_hash={}, torrent_id={}", m.pieces_hash, m.torrent_id);
+            }
+        }
+        Err(e) => {
+            println!("❌ 解析失败: {e}");
+            println!("  line={}, column={}", e.line(), e.column());
+        }
+    }
+
+    // 2) 尝试更宽松的结构：data 可能是 map / torrent_id 可能是字符串
+    #[derive(Debug, Deserialize)]
+    struct LooseMatch {
+        #[serde(default)]
+        pieces_hash: Option<String>,
+        #[serde(default)]
+        torrent_id: Option<serde_json::Value>,
+        #[serde(flatten)]
+        extra: serde_json::Map<String, serde_json::Value>,
+    }
+    #[derive(Debug, Deserialize)]
+    struct LooseResponse {
+        #[serde(default)]
+        data: Option<serde_json::Value>,
+        #[serde(default)]
+        code: Option<serde_json::Value>,
+        #[serde(default)]
+        msg: Option<serde_json::Value>,
+        #[serde(default)]
+        message: Option<serde_json::Value>,
+        #[serde(default)]
+        success: Option<serde_json::Value>,
+        #[serde(default)]
+        ret: Option<serde_json::Value>,
+        #[serde(flatten)]
+        extra: serde_json::Map<String, serde_json::Value>,
+    }
+
+    println!("\n=== 解析尝试 B: 宽松结构（看真实字段形状）===");
+    match serde_json::from_str::<LooseResponse>(&raw) {
+        Ok(parsed) => {
+            println!("✅ JSON 顶层可解析");
+            println!("  code={:?}", parsed.code);
+            println!("  msg={:?}", parsed.msg);
+            println!("  message={:?}", parsed.message);
+            println!("  success={:?}", parsed.success);
+            println!("  ret={:?}", parsed.ret);
+            println!(
+                "  extra keys={:?}",
+                parsed.extra.keys().collect::<Vec<_>>()
+            );
+            match &parsed.data {
+                Some(serde_json::Value::Array(arr)) => {
+                    println!("  data: Array(len={})", arr.len());
+                    for (i, item) in arr.iter().take(3).enumerate() {
+                        println!("    [{i}] {item}");
+                        if let Ok(m) = serde_json::from_value::<LooseMatch>(item.clone()) {
+                            println!(
+                                "        pieces_hash={:?}, torrent_id={:?}, extra={:?}",
+                                m.pieces_hash, m.torrent_id, m.extra
+                            );
+                        }
+                    }
+                }
+                Some(serde_json::Value::Object(map)) => {
+                    println!("  data: Object(keys={:?})", map.keys().collect::<Vec<_>>());
+                    let preview = serde_json::Value::Object(map.clone()).to_string();
+                    println!("  data preview: {}", truncate(&preview, 500));
+                }
+                Some(other) => println!("  data: 其他类型 = {other}"),
+                None => println!("  data: 缺失"),
+            }
+        }
+        Err(e) => {
+            println!("❌ 连宽松结构都解析失败: {e}");
+            // 可能不是 JSON
+            if raw.trim_start().starts_with('<') {
+                println!("  响应看起来像 HTML/XML，可能是登录页、WAF 或错误页");
+            } else if raw.is_empty() {
+                println!("  响应 body 为空");
+            } else {
+                println!("  响应不是合法 JSON");
+            }
+        }
+    }
+
+    // 3) 原始 Value 打印
+    println!("\n=== 解析尝试 C: serde_json::Value ===");
+    match serde_json::from_str::<serde_json::Value>(&raw) {
+        Ok(v) => println!("✅ Value 解析成功:\n{}", truncate(&pretty_json(&v), 2000)),
+        Err(e) => println!("❌ Value 解析失败: {e}"),
+    }
+}
+
+/// 端到端：adapter + probe_site 应把 PTCafe 空对象 data 识别为可达（无命中）。
+#[tokio::test]
+async fn test_ptcafe_query_pieces_hash_via_adapter() {
+    let adapter = NexusPhpAdapter::new(
+        "ptcafe".to_string(),
+        BASE_URL.to_string(),
+        Some(API_URL.to_string()),
+        Some(COOKIE.to_string()),
+        Some(PASSKEY.to_string()),
+        None,
+        ptcafe_selectors(),
+        100,
+    );
+
+    let dummy_hashes = vec!["0000000000000000000000000000000000000000".to_string()];
+    println!("=== 通过 NexusPhpAdapter::query_pieces_hash 调用 ===");
+    let matches = adapter
+        .query_pieces_hash(&dummy_hashes)
+        .await
+        .expect("query_pieces_hash 应该成功解析 PTCafe 的 data:{} 响应");
+    println!("✅ query_pieces_hash 成功, matches={}", matches.len());
+    assert!(
+        matches.is_empty(),
+        "dummy hash 不应命中任何种子, 实际 matches={matches:?}"
+    );
+
+    let reseed: Arc<dyn ReseedCapable> = Arc::new(adapter);
+    let result = probe_site(Some(&reseed), None).await;
+    println!("\n=== probe_site(reseed only) ===");
+    println!("overall_status: {:?}", result.overall_status);
+    if let Some(api) = &result.api_reachable {
+        println!(
+            "api_reachable: success={}, error={:?}",
+            api.success, api.error
+        );
+        assert!(
+            api.success,
+            "辅种 API 连通应成功，错误: {:?}",
+            api.error
+        );
+    } else {
+        panic!("api_reachable 不应为 None");
+    }
+    assert_eq!(
+        result.status_str(),
+        "ok",
+        "仅测 reseed 且成功时应为 ok，实际: {}",
+        result.status_str()
+    );
+}
+
+fn truncate(s: &str, max: usize) -> String {
+    if s.chars().count() <= max {
+        s.to_string()
+    } else {
+        let head: String = s.chars().take(max).collect();
+        format!("{head}... [truncated, total {} chars]", s.chars().count())
+    }
+}
+
+fn pretty_json(v: &serde_json::Value) -> String {
+    serde_json::to_string_pretty(v).unwrap_or_else(|_| v.to_string())
 }
 
 /// 单元测试：验证 :contains() 选择器解析在本地 HTML 上正常工作

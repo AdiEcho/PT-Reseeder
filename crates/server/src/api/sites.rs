@@ -240,19 +240,23 @@ async fn run_probe(
     site: &SiteRow,
     vault: &Vault,
 ) -> Result<(), (StatusCode, Json<ApiError>)> {
-    let adapter = build_adapter(
-        site,
-        vault,
-        &state.inner.config.data_dir,
-        state
-            .inner
-            .fetch_seeding_size
-            .load(std::sync::atomic::Ordering::Relaxed),
-    )
-    .await?;
-    let adapter_arc: Arc<dyn UserInfoCapable> = Arc::new(adapter);
+    let adapter = Arc::new(
+        build_adapter(
+            site,
+            vault,
+            &state.inner.config.data_dir,
+            state
+                .inner
+                .fetch_seeding_size
+                .load(std::sync::atomic::Ordering::Relaxed),
+        )
+        .await?,
+    );
+    // NexusPhpAdapter 同时实现 reseed / user_info；连通测试两边都要测。
+    let reseed: Arc<dyn ReseedCapable> = adapter.clone();
+    let user_info: Arc<dyn UserInfoCapable> = adapter;
 
-    let probe_result = probe_site(None, Some(&adapter_arc)).await;
+    let probe_result = probe_site(Some(&reseed), Some(&user_info)).await;
     let status_str = probe_result.status_str().to_string();
     let detail_json = probe_result.to_json();
 

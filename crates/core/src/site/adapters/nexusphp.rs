@@ -31,16 +31,125 @@ pub struct NexusPhpAdapter {
     fetch_seeding_size: Arc<AtomicBool>,
 }
 
-#[derive(Deserialize)]
+/// NexusPHP `/api/pieces-hash` 常见返回：
+/// ```json
+/// { "ret": 0, "msg": "...", "data": { "<pieces_hash>": <torrent_id>, ... } }
+/// ```
+/// 无命中时 `data` 是 `{}` 而不是 `[]`。部分站点也可能返回数组形式。
+#[derive(Debug, Deserialize)]
 struct PiecesHashResponse {
     #[serde(default)]
-    data: Vec<PiecesHashMatch>,
+    ret: Option<i64>,
+    #[serde(default)]
+    msg: Option<String>,
+    #[serde(default)]
+    data: serde_json::Value,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 struct PiecesHashMatch {
+    #[serde(default, alias = "piecesHash")]
     pieces_hash: String,
+    #[serde(default, alias = "torrentId", deserialize_with = "deserialize_torrent_id")]
     torrent_id: i64,
+}
+
+fn deserialize_torrent_id<'de, D>(deserializer: D) -> Result<i64, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de::{self, Unexpected};
+
+    struct TorrentIdVisitor;
+
+    impl<'de> de::Visitor<'de> for TorrentIdVisitor {
+        type Value = i64;
+
+        fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+            f.write_str("torrent id as number or numeric string")
+        }
+
+        fn visit_i64<E: de::Error>(self, v: i64) -> Result<i64, E> {
+            Ok(v)
+        }
+
+        fn visit_u64<E: de::Error>(self, v: u64) -> Result<i64, E> {
+            i64::try_from(v).map_err(|_| de::Error::invalid_value(Unexpected::Unsigned(v), &self))
+        }
+
+        fn visit_str<E: de::Error>(self, v: &str) -> Result<i64, E> {
+            v.trim()
+                .parse::<i64>()
+                .map_err(|_| de::Error::invalid_value(Unexpected::Str(v), &self))
+        }
+    }
+
+    deserializer.deserialize_any(TorrentIdVisitor)
+}
+
+/// 把 pieces-hash API 的 `data` 字段归一成 `(pieces_hash, torrent_id)` 列表。
+///
+/// 兼容：
+/// - 对象 map：`{ "abc...": 123 }`（NexusPHP 主流）
+/// - 空对象 / null：`{}` / `null`
+/// - 数组：`[{ "pieces_hash": "...", "torrent_id": 123 }]`
+fn normalize_pieces_hash_data(
+    data: serde_json::Value,
+) -> Result<Vec<(String, i64)>, String> {
+    match data {
+        serde_json::Value::Null => Ok(Vec::new()),
+        serde_json::Value::Object(map) => {
+            let mut out = Vec::with_capacity(map.len());
+            for (pieces_hash, torrent_id) in map {
+                // 个别站点会把请求字段原样回显到 data 里，直接跳过
+                if pieces_hash == "passkey" || pieces_hash == "pieces_hash" {
+                    continue;
+                }
+                let id = match torrent_id {
+                    serde_json::Value::Number(n) => n
+                        .as_i64()
+                        .or_else(|| n.as_u64().and_then(|u| i64::try_from(u).ok()))
+                        .ok_or_else(|| {
+                            format!("invalid torrent_id number for pieces_hash {pieces_hash}: {n}")
+                        })?,
+                    serde_json::Value::String(s) => s.trim().parse::<i64>().map_err(|_| {
+                        format!("invalid torrent_id string for pieces_hash {pieces_hash}: {s}")
+                    })?,
+                    other => {
+                        return Err(format!(
+                            "unsupported torrent_id type for pieces_hash {pieces_hash}: {other}"
+                        ));
+                    }
+                };
+                out.push((pieces_hash, id));
+            }
+            Ok(out)
+        }
+        serde_json::Value::Array(items) => {
+            let mut out = Vec::with_capacity(items.len());
+            for (idx, item) in items.into_iter().enumerate() {
+                let m: PiecesHashMatch = serde_json::from_value(item).map_err(|e| {
+                    format!("invalid pieces_hash array item at index {idx}: {e}")
+                })?;
+                if m.pieces_hash.is_empty() {
+                    return Err(format!(
+                        "pieces_hash missing in array item at index {idx}"
+                    ));
+                }
+                out.push((m.pieces_hash, m.torrent_id));
+            }
+            Ok(out)
+        }
+        other => Err(format!(
+            "unexpected pieces_hash data type, expected object/array/null, got {}",
+            match other {
+                serde_json::Value::Bool(_) => "bool",
+                serde_json::Value::Number(_) => "number",
+                serde_json::Value::String(_) => "string",
+                _ => "unknown",
+            }
+        )),
+    }
 }
 
 impl NexusPhpAdapter {
@@ -649,25 +758,47 @@ impl ReseedCapable for NexusPhpAdapter {
             .map_err(|e| SiteError::HttpError(e.to_string()))?;
 
         let status = resp.status();
+        let body = resp.text().await.map_err(|e| {
+            SiteError::HttpError(format!("failed to read pieces_hash response body: {e}"))
+        })?;
+
         if !status.is_success() {
-            return Err(SiteError::HttpError(format!("HTTP {status} from pieces_hash API")).into());
+            let preview: String = body.chars().take(200).collect();
+            return Err(SiteError::HttpError(format!(
+                "HTTP {status} from pieces_hash API: {preview}"
+            ))
+            .into());
         }
 
-        let parsed: PiecesHashResponse = resp.json().await.map_err(|e| {
+        let parsed: PiecesHashResponse = serde_json::from_str(&body).map_err(|e| {
+            let preview: String = body.chars().take(200).collect();
+            SiteError::ParseError(format!(
+                "failed to parse pieces_hash response: {e}; body={preview}"
+            ))
+        })?;
+
+        // 部分站点带 ret 字段：0 表示成功，其它为业务错误
+        if let Some(ret) = parsed.ret {
+            if ret != 0 {
+                let msg = parsed.msg.unwrap_or_else(|| "unknown error".into());
+                return Err(SiteError::ParseError(format!(
+                    "pieces_hash API returned ret={ret}: {msg}"
+                ))
+                .into());
+            }
+        }
+
+        let matches = normalize_pieces_hash_data(parsed.data).map_err(|e| {
             SiteError::ParseError(format!("failed to parse pieces_hash response: {e}"))
         })?;
 
         debug!(
             site = %self.name,
-            matches = parsed.data.len(),
+            matches = matches.len(),
             "pieces hash query completed"
         );
 
-        Ok(parsed
-            .data
-            .into_iter()
-            .map(|m| (m.pieces_hash, m.torrent_id))
-            .collect())
+        Ok(matches)
     }
 
     fn build_download_url(&self, torrent_id: i64) -> String {
@@ -1346,7 +1477,10 @@ fn extract_images(html: &Html, selector_str: &str) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{extract_seeding_ajax_user_id, parse_seeding_size_summary};
+    use super::{
+        extract_seeding_ajax_user_id, normalize_pieces_hash_data, parse_seeding_size_summary,
+        PiecesHashResponse,
+    };
 
     #[test]
     fn extracts_ptcafe_seeding_ajax_user_id() {
@@ -1380,5 +1514,76 @@ mod tests {
             parse_seeding_size_summary("<div><b>33</b> 条记录</div>"),
             None
         );
+    }
+
+    #[test]
+    fn normalizes_empty_object_data_as_no_matches() {
+        // PTCafe 无命中时返回 data: {}
+        let raw = r#"{"ret":0,"msg":"torrent.querybypieceshash","data":{},"time":0.2,"rid":"x"}"#;
+        let parsed: PiecesHashResponse = serde_json::from_str(raw).unwrap();
+        assert_eq!(parsed.ret, Some(0));
+        let matches = normalize_pieces_hash_data(parsed.data).unwrap();
+        assert!(matches.is_empty());
+    }
+
+    #[test]
+    fn normalizes_object_map_data() {
+        let raw = r#"{
+            "ret": 0,
+            "msg": "ok",
+            "data": {
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": 1001,
+                "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb": "2002",
+                "passkey": "should-skip",
+                "pieces_hash": "should-skip"
+            }
+        }"#;
+        let parsed: PiecesHashResponse = serde_json::from_str(raw).unwrap();
+        let mut matches = normalize_pieces_hash_data(parsed.data).unwrap();
+        matches.sort_by(|a, b| a.0.cmp(&b.0));
+        assert_eq!(
+            matches,
+            vec![
+                (
+                    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string(),
+                    1001
+                ),
+                (
+                    "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_string(),
+                    2002
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn normalizes_array_data() {
+        let raw = r#"{
+            "data": [
+                {"pieces_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "torrent_id": 42},
+                {"piecesHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "torrentId": "43"}
+            ]
+        }"#;
+        let parsed: PiecesHashResponse = serde_json::from_str(raw).unwrap();
+        let matches = normalize_pieces_hash_data(parsed.data).unwrap();
+        assert_eq!(
+            matches,
+            vec![
+                (
+                    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string(),
+                    42
+                ),
+                (
+                    "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_string(),
+                    43
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn normalizes_null_data_as_no_matches() {
+        let matches = normalize_pieces_hash_data(serde_json::Value::Null).unwrap();
+        assert!(matches.is_empty());
     }
 }

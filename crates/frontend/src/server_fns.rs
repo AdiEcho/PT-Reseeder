@@ -755,7 +755,7 @@ pub async fn validate_site(
     use pt_reseeder_core::site::definitions::load_all_definitions;
     use pt_reseeder_core::site::models::UserInfoSelectors;
     use pt_reseeder_core::site::probe::probe_site as run_site_probe;
-    use pt_reseeder_core::site::traits::UserInfoCapable;
+    use pt_reseeder_core::site::traits::{ReseedCapable, UserInfoCapable};
     use std::sync::Arc;
 
     let context = server_context()?;
@@ -785,41 +785,60 @@ pub async fn validate_site(
     let fetch_seeding_size = context
         .fetch_seeding_size
         .load(std::sync::atomic::Ordering::Relaxed);
-    let user_info: Arc<dyn UserInfoCapable> = match adapter.as_str() {
-        "nexusphp" => Arc::new(
-            NexusPhpAdapter::new(
-                name,
-                url,
-                api_url_opt,
-                cookie_opt,
-                passkey_opt,
-                None,
-                selectors,
-                100,
-            )
-            .with_fetch_seeding_size(fetch_seeding_size),
-        ),
-        "mteam" => Arc::new(MTeamAdapter::new(name, url, None, passkey_opt, 100)),
-        "unit3d" => Arc::new(Unit3dAdapter::new(name, url, None, passkey_opt, 100)),
-        "gazelle" => Arc::new(GazelleAdapter::new(name, url, cookie_opt, passkey_opt, 100)),
-        "zhuque" => Arc::new(ZhuqueAdapter::new(
-            name,
-            url,
-            None,
-            passkey_opt,
-            cookie_opt,
-            100,
-        )),
-        other => {
-            return Ok(ValidateSiteResult {
-                status: "failed".to_string(),
-                message: format!("不支持的站点架构：{other}"),
-                detail_json: None,
-            });
-        }
-    };
 
-    let probe = run_site_probe(None, Some(&user_info)).await;
+    // 同时持有 reseed + user_info，有 api_url/passkey 时连通测试会真正打辅种 API。
+    let (reseed, user_info): (Option<Arc<dyn ReseedCapable>>, Option<Arc<dyn UserInfoCapable>>) =
+        match adapter.as_str() {
+            "nexusphp" => {
+                let adapter = Arc::new(
+                    NexusPhpAdapter::new(
+                        name,
+                        url,
+                        api_url_opt,
+                        cookie_opt,
+                        passkey_opt,
+                        None,
+                        selectors,
+                        100,
+                    )
+                    .with_fetch_seeding_size(fetch_seeding_size),
+                );
+                (Some(adapter.clone()), Some(adapter))
+            }
+            "mteam" => {
+                let adapter = Arc::new(MTeamAdapter::new(name, url, None, passkey_opt, 100));
+                (Some(adapter.clone()), Some(adapter))
+            }
+            "unit3d" => {
+                let adapter = Arc::new(Unit3dAdapter::new(name, url, None, passkey_opt, 100));
+                (Some(adapter.clone()), Some(adapter))
+            }
+            "gazelle" => {
+                let adapter =
+                    Arc::new(GazelleAdapter::new(name, url, cookie_opt, passkey_opt, 100));
+                (Some(adapter.clone()), Some(adapter))
+            }
+            "zhuque" => {
+                let adapter = Arc::new(ZhuqueAdapter::new(
+                    name,
+                    url,
+                    None,
+                    passkey_opt,
+                    cookie_opt,
+                    100,
+                ));
+                (Some(adapter.clone()), Some(adapter))
+            }
+            other => {
+                return Ok(ValidateSiteResult {
+                    status: "failed".to_string(),
+                    message: format!("不支持的站点架构：{other}"),
+                    detail_json: None,
+                });
+            }
+        };
+
+    let probe = run_site_probe(reseed.as_ref(), user_info.as_ref()).await;
     let status = probe.status_str().to_string();
     let detail = probe.to_json();
     let message = match status.as_str() {

@@ -9,6 +9,8 @@ pt-reseeder-core = { path = "../core" }
 tauri = { version = "2", features = [] }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
+tracing-subscriber = { workspace = true }
+tracing-appender = { workspace = true }
 url = "2"
 
 [build-dependencies]

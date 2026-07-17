@@ -4657,6 +4657,8 @@ dependencies = [
  "tauri-build",
  "tokio",
  "tokio-util",
+ "tracing-appender",
+ "tracing-subscriber",
  "url",
 ]
 

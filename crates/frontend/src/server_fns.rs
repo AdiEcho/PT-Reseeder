@@ -11,6 +11,8 @@ pub struct ServerFnContext {
     pub session_ttl_hours: u64,
     pub cookie_secure: bool,
     pub data_dir: std::path::PathBuf,
+    /// Runtime log directory used by the process file appender.
+    pub log_dir: std::path::PathBuf,
     pub site_registry: std::sync::Arc<
         tokio::sync::RwLock<std::sync::Arc<pt_reseeder_core::site::registry::SiteRegistry>>,
     >,
@@ -1592,21 +1594,17 @@ pub struct LogPage {
     pub page_size: usize,
 }
 
+#[cfg(feature = "ssr")]
+fn resolve_log_dir(context: &ServerFnContext) -> std::path::PathBuf {
+    // Always read from the runtime directory used by the file appender.
+    // Settings `log_dir` does not reconfigure the appender after process start.
+    context.log_dir.clone()
+}
+
 #[server]
 pub async fn get_log_files() -> Result<Vec<LogFileInfo>, ServerFnError> {
     let context = server_context()?;
-    let log_dir = &context.data_dir;
-    // Use config log_dir from app_config table, fallback to "logs"
-    let log_dir_path = {
-        let repo = pt_reseeder_core::db::repo::Repository::new(context.pool.clone());
-        repo.get_config("log_dir")
-            .await
-            .ok()
-            .flatten()
-            .map(std::path::PathBuf::from)
-            .unwrap_or_else(|| std::path::PathBuf::from("logs"))
-    };
-    let _ = log_dir; // suppress unused
+    let log_dir_path = resolve_log_dir(&context);
 
     let mut files = Vec::new();
     if let Ok(entries) = std::fs::read_dir(&log_dir_path) {
@@ -1651,15 +1649,9 @@ pub async fn get_logs(
     task_id: Option<i64>,
 ) -> Result<LogPage, ServerFnError> {
     let context = server_context()?;
-    let log_dir_path = {
-        let repo = pt_reseeder_core::db::repo::Repository::new(context.pool.clone());
-        repo.get_config("log_dir")
-            .await
-            .ok()
-            .flatten()
-            .map(std::path::PathBuf::from)
-            .unwrap_or_else(|| std::path::PathBuf::from("logs"))
-    };
+    let log_dir_path = resolve_log_dir(&context);
+    let page = page.unwrap_or(1).max(1);
+    let page_size = page_size.unwrap_or(100).min(500);
 
     // Find the log file to read
     let file_path = if let Some(ref name) = filename {
@@ -1668,7 +1660,7 @@ pub async fn get_logs(
             .file_name()
             .and_then(|n| n.to_str())
             .ok_or_else(|| ServerFnError::new("无效的文件名"))?;
-        log_dir_path.join(sanitized)
+        Some(log_dir_path.join(sanitized))
     } else {
         // Find the most recent log file
         let mut latest: Option<std::path::PathBuf> = None;
@@ -1691,7 +1683,17 @@ pub async fn get_logs(
                 }
             }
         }
-        latest.ok_or_else(|| ServerFnError::new("没有找到日志文件"))?
+        latest
+    };
+
+    let Some(file_path) = file_path else {
+        // No historical file yet (fresh install / logging not writing files).
+        return Ok(LogPage {
+            entries: Vec::new(),
+            total_lines: 0,
+            page,
+            page_size,
+        });
     };
 
     let content = std::fs::read_to_string(&file_path)
@@ -1727,8 +1729,6 @@ pub async fn get_logs(
     }
 
     let total_lines = entries.len();
-    let page = page.unwrap_or(1).max(1);
-    let page_size = page_size.unwrap_or(100).min(500);
 
     // Reverse so newest entries come first, then paginate
     entries.reverse();

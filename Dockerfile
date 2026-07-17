@@ -44,6 +44,7 @@ ENV LEPTOS_SITE_ROOT=/opt/pt-reseeder/site \
     LEPTOS_SITE_ADDR=0.0.0.0:3000 \
     DATABASE_URL=sqlite:///data/pt-reseeder.db \
     DATA_DIR=/data \
+    LOG_DIR=/data/logs \
     CHROME_PATH=/usr/bin/chromium \
     HOME=/home/pt-reseeder \
     XDG_CACHE_HOME=/home/pt-reseeder/.cache \

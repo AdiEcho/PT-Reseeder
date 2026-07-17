@@ -18,6 +18,7 @@ services:
       - LEPTOS_SITE_ADDR=0.0.0.0:3000
       - DATABASE_URL=sqlite:///data/pt-reseeder.db
       - DATA_DIR=/data
+      - LOG_DIR=/data/logs
       - CHROME_PATH=/usr/bin/chromium
       - PT_RESEEDER_CHROME_NO_SANDBOX=false
       - RUST_LOG=info,pt_reseeder=debug

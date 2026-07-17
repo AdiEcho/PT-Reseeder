@@ -50,10 +50,51 @@ fn main() {
                             }
                         };
                         config.database_url = database_url;
-                        config.data_dir = data_dir;
+                        config.data_dir = data_dir.clone();
                         config.leptos_site_root = site_root;
+                        // Keep historical logs under the app data dir so the
+                        // logs page can read them regardless of process cwd.
+                        config.log_dir = data_dir.join("logs");
 
+                        if let Err(err) = std::fs::create_dir_all(&config.log_dir) {
+                            let _ = addr_tx.send(Err(format!(
+                                "failed to create log directory {}: {err}",
+                                config.log_dir.display()
+                            )));
+                            return;
+                        }
+
+                        let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
+                            .unwrap_or_else(|_| config.log_min_level.clone().into());
+                        let file_appender =
+                            tracing_appender::rolling::daily(&config.log_dir, "pt-reseeder");
+                        let (non_blocking, guard) =
+                            tracing_appender::non_blocking(file_appender);
                         let (log_tx, _) = tokio::sync::broadcast::channel::<String>(1024);
+                        let broadcast_layer =
+                            pt_reseeder_server::log::BroadcastLayer::new(log_tx.clone());
+
+                        use tracing_subscriber::layer::SubscriberExt;
+                        use tracing_subscriber::util::SubscriberInitExt;
+                        if let Err(err) = tracing_subscriber::registry()
+                            .with(env_filter)
+                            .with(tracing_subscriber::fmt::layer().with_writer(std::io::stdout))
+                            .with(
+                                tracing_subscriber::fmt::layer()
+                                    .with_writer(non_blocking)
+                                    .with_ansi(false),
+                            )
+                            .with(broadcast_layer)
+                            .try_init()
+                        {
+                            let _ = addr_tx.send(Err(format!(
+                                "failed to initialize desktop logging: {err}"
+                            )));
+                            return;
+                        }
+                        // Keep the non-blocking writer alive for the process lifetime.
+                        std::mem::forget(guard);
+
                         match pt_reseeder_server::run_server(config, server_cancel, log_tx).await {
                             Ok(bound) => {
                                 let _ = addr_tx.send(Ok(bound.0));

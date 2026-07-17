@@ -115,6 +115,7 @@ impl AppState {
             session_ttl_hours: self.inner.config.session_ttl_hours,
             cookie_secure: self.inner.config.cookie_secure,
             data_dir: self.inner.config.data_dir.clone(),
+            log_dir: self.inner.config.log_dir.clone(),
             site_registry: self.inner.site_registry.clone(),
             refresh_site_registry: std::sync::Arc::new(move || {
                 let state = refresh_state.clone();

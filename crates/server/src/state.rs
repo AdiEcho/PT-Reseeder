@@ -126,11 +126,20 @@ impl AppState {
                 })
             }),
             fetch_seeding_size: self.inner.fetch_seeding_size.clone(),
+            trigger_task_execution: std::sync::Arc::new({
+                let state = self.clone();
+                move |task_id| spawn_task_execution(state.clone(), task_id)
+            }),
             authenticated_user_id,
         }
     }
 
     pub async fn start_task_runtime(&self) -> Result<(), CoreError> {
+        let recovered = self.inner.repo.recover_interrupted_tasks().await?;
+        if recovered > 0 {
+            warn!(recovered, "marked interrupted running tasks as error");
+        }
+
         let cron_state = self.clone();
         let cron_scheduler = Arc::new(
             CronScheduler::new(Arc::new(move |task_id| {

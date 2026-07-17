@@ -103,7 +103,13 @@ impl TaskExecutor {
         let duration_ms = start.elapsed().as_millis() as i64;
         let now = Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
         let next_run_at = if task.trigger_type == "cron" {
-            next_run_at_for(task.cron_expression.as_deref())?
+            match next_run_at_for(task.cron_expression.as_deref()) {
+                Ok(next_run_at) => next_run_at,
+                Err(e) => {
+                    self.repo.update_task_status(task_id, "error").await?;
+                    return Err(e.into());
+                }
+            }
         } else {
             None
         };
@@ -111,20 +117,24 @@ impl TaskExecutor {
         match &result {
             Ok((matched, succeeded, failed)) => {
                 let status = if *failed > 0 { "partial" } else { "success" };
-                self.write_log(
-                    task_id,
-                    status,
-                    *matched,
-                    *succeeded,
-                    *failed,
-                    Some(duration_ms),
-                    None,
-                )
-                .await?;
                 self.repo.update_task_status(task_id, "idle").await?;
                 self.repo
                     .update_task_run_times(task_id, &now, next_run_at.as_deref())
                     .await?;
+                if let Err(e) = self
+                    .write_log(
+                        task_id,
+                        status,
+                        *matched,
+                        *succeeded,
+                        *failed,
+                        Some(duration_ms),
+                        None,
+                    )
+                    .await
+                {
+                    error!(task_id, %e, "failed to write task completion log");
+                }
                 info!(
                     task_id,
                     matched, succeeded, failed, duration_ms, "task completed"
@@ -132,20 +142,24 @@ impl TaskExecutor {
             }
             Err(e) => {
                 let log_text = format!("error: {}", e);
-                self.write_log(
-                    task_id,
-                    "failed",
-                    0,
-                    0,
-                    1,
-                    Some(duration_ms),
-                    Some(&log_text),
-                )
-                .await?;
                 self.repo.update_task_status(task_id, "error").await?;
                 self.repo
                     .update_task_run_times(task_id, &now, next_run_at.as_deref())
                     .await?;
+                if let Err(log_error) = self
+                    .write_log(
+                        task_id,
+                        "failed",
+                        0,
+                        0,
+                        1,
+                        Some(duration_ms),
+                        Some(&log_text),
+                    )
+                    .await
+                {
+                    error!(task_id, %log_error, "failed to write task failure log");
+                }
                 error!(task_id, %e, "task failed");
             }
         }
@@ -551,5 +565,43 @@ where
             )))
         }),
         None => Ok(T::default()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::init_db;
+    use crate::db::writer::spawn_writer;
+
+    #[tokio::test]
+    async fn sync_stats_task_finishes_and_leaves_running_state() {
+        let db_dir = tempfile::tempdir().unwrap();
+        let database_url = format!("sqlite://{}", db_dir.path().join("test.db").display());
+        let pool = init_db(&database_url).await.unwrap();
+        let repo = Repository::new(pool);
+        let writer = spawn_writer(&database_url, 10).unwrap();
+        let task_id = repo
+            .create_task("sync", "sync_stats", "manual", None, None, None)
+            .await
+            .unwrap();
+        let executor = TaskExecutor::new(
+            repo.clone(),
+            writer.clone(),
+            Arc::new(SiteRegistry::new()),
+            CancellationToken::new(),
+            None,
+        );
+
+        executor.execute(task_id).await.unwrap();
+        writer.flush().await.unwrap();
+
+        let task = repo.get_task(task_id).await.unwrap().unwrap();
+        assert_eq!(task.status, "idle");
+        assert_eq!(task.run_count, Some(1));
+        assert!(task.last_run_at.is_some());
+        let logs = repo.get_task_logs(task_id, 10).await.unwrap();
+        assert_eq!(logs.len(), 1);
+        assert_eq!(logs[0].status, "success");
     }
 }

@@ -6,6 +6,7 @@ use crate::server_fns::{
 };
 use leptos::ev;
 use leptos::prelude::*;
+use leptos_router::components::A;
 
 fn status_class(status: &str) -> &'static str {
     match status {
@@ -289,6 +290,8 @@ where
     G: Fn(i64, String) + Copy + 'static,
 {
     let task_id = task.id;
+    #[cfg(target_arch = "wasm32")]
+    let initial_run_count = task.run_count;
     let task_name = task.name.clone();
     let (expanded, set_expanded) = signal(false);
     let (acting, set_acting) = signal(false);
@@ -309,11 +312,40 @@ where
         set_acting.set(true);
         leptos::task::spawn_local(async move {
             match trigger_task(task_id).await {
-                Ok(_) => show_toast("任务已触发", ToastType::Success),
-                Err(e) => show_toast(format!("触发失败：{e}"), ToastType::Error),
+                Ok(_) => {
+                    show_toast("任务已触发", ToastType::Success);
+                    on_change();
+                    #[cfg(not(target_arch = "wasm32"))]
+                    set_acting.set(false);
+                    #[cfg(target_arch = "wasm32")]
+                    {
+                        let mut saw_running = false;
+                        for _ in 0..300 {
+                            gloo_timers::future::TimeoutFuture::new(1_000).await;
+                            let Some(task) = (match get_tasks().await {
+                                Ok(tasks) => tasks.into_iter().find(|task| task.id == task_id),
+                                Err(_) => continue,
+                            }) else {
+                                on_change();
+                                break;
+                            };
+                            if task.status == "running" && !saw_running {
+                                saw_running = true;
+                                on_change();
+                            }
+                            if task.status != "running" && task.run_count > initial_run_count {
+                                on_change();
+                                break;
+                            }
+                        }
+                        set_acting.set(false);
+                    }
+                }
+                Err(e) => {
+                    show_toast(format!("触发失败：{e}"), ToastType::Error);
+                    set_acting.set(false);
+                }
             }
-            set_acting.set(false);
-            on_change();
         });
     };
 
@@ -376,6 +408,13 @@ where
                     >
                         "立即运行"
                     </button>
+                    <A
+                        href=format!("/logs?task_id={task_id}")
+                        attr:class="btn btn--sm btn--outline"
+                        on:click=move |ev| ev.stop_propagation()
+                    >
+                        "日志"
+                    </A>
                     <button
                         class="btn btn--sm btn--danger"
                         disabled=move || acting.get()

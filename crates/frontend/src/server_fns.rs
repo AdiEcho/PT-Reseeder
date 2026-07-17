@@ -21,6 +21,7 @@ pub struct ServerFnContext {
             + Sync,
     >,
     pub fetch_seeding_size: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    pub trigger_task_execution: std::sync::Arc<dyn Fn(i64) + Send + Sync>,
     pub authenticated_user_id: Option<i64>,
 }
 
@@ -1404,12 +1405,9 @@ pub async fn delete_task(id: i64) -> Result<(), ServerFnError> {
 
 #[server]
 pub async fn trigger_task(id: i64) -> Result<(), ServerFnError> {
-    use pt_reseeder_core::db::repo::Repository;
-
-    Repository::new(server_pool()?)
-        .update_task_status(id, "running")
-        .await
-        .map_err(|e| ServerFnError::new(format!("{e}")))
+    let context = server_context()?;
+    (context.trigger_task_execution)(id);
+    Ok(())
 }
 
 #[server]
@@ -1631,6 +1629,18 @@ pub async fn get_log_files() -> Result<Vec<LogFileInfo>, ServerFnError> {
     Ok(files)
 }
 
+pub(crate) fn log_entry_matches_task_id(entry: &LogEntry, task_id: i64) -> bool {
+    entry.message.split_whitespace().any(|field| {
+        field
+            .strip_prefix("task_id=")
+            .map(|value| {
+                value.trim_matches(|c| matches!(c, '"' | ',' | ';' | ')' | ']' | '}'))
+            })
+            .and_then(|value| value.parse::<i64>().ok())
+            == Some(task_id)
+    })
+}
+
 #[server]
 pub async fn get_logs(
     filename: Option<String>,
@@ -1638,6 +1648,7 @@ pub async fn get_logs(
     page_size: Option<usize>,
     level: Option<String>,
     keyword: Option<String>,
+    task_id: Option<i64>,
 ) -> Result<LogPage, ServerFnError> {
     let context = server_context()?;
     let log_dir_path = {
@@ -1699,6 +1710,11 @@ pub async fn get_logs(
             continue;
         }
 
+        // Task filter
+        if task_id.is_some_and(|id| !log_entry_matches_task_id(&entry, id)) {
+            continue;
+        }
+
         // Keyword filter
         if !keyword_filter.is_empty()
             && !entry.message.contains(&keyword_filter)
@@ -1745,6 +1761,48 @@ fn parse_log_line(line: &str) -> LogEntry {
             target: String::new(),
             message: line.to_string(),
         }
+    }
+}
+
+#[cfg(all(test, feature = "ssr"))]
+mod log_tests {
+    use super::{log_entry_matches_task_id, parse_log_line, LogEntry};
+
+    fn entry(message: &str) -> LogEntry {
+        LogEntry {
+            timestamp: String::new(),
+            level: "INFO".into(),
+            target: "test".into(),
+            message: message.into(),
+        }
+    }
+
+    #[test]
+    fn task_log_filter_matches_exact_id() {
+        assert!(log_entry_matches_task_id(
+            &entry("task completed task_id=42 matched=1"),
+            42,
+        ));
+        assert!(!log_entry_matches_task_id(
+            &entry("task completed task_id=420 matched=1"),
+            42,
+        ));
+        assert!(!log_entry_matches_task_id(&entry("task completed"), 42));
+    }
+
+    #[test]
+    fn task_log_filter_handles_formatter_punctuation() {
+        assert!(log_entry_matches_task_id(&entry("task_id=42,"), 42));
+        assert!(log_entry_matches_task_id(&entry("task_id=42}"), 42));
+        assert!(!log_entry_matches_task_id(&entry("task_id=42x"), 42));
+    }
+
+    #[test]
+    fn parsed_log_entry_preserves_task_field() {
+        let entry = parse_log_line(
+            "2026-07-16T12:00:00.000Z INFO scheduler task completed task_id=42",
+        );
+        assert!(log_entry_matches_task_id(&entry, 42));
     }
 }
 

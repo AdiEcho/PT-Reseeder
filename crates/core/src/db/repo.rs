@@ -906,6 +906,16 @@ impl Repository {
         Ok(())
     }
 
+    pub async fn recover_interrupted_tasks(&self) -> Result<u64, CoreError> {
+        let result = sqlx::query(
+            "UPDATE tasks SET status = 'error', updated_at = datetime('now') WHERE status = 'running'",
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(DbError::Sqlx)?;
+        Ok(result.rows_affected())
+    }
+
     pub async fn try_mark_task_running(&self, id: i64) -> Result<bool, CoreError> {
         let result = sqlx::query(
             "UPDATE tasks SET status = 'running', updated_at = datetime('now') \
@@ -1450,6 +1460,24 @@ mod tests {
         assert_eq!(tasks.len(), 1);
         assert_eq!(tasks[0].name, "task1");
         assert_eq!(tasks[0].status, "idle");
+    }
+
+    #[tokio::test]
+    async fn recover_interrupted_tasks_marks_running_tasks_as_error() {
+        let repo = setup_repo().await;
+        let running_id = repo
+            .create_task("running", "sync_stats", "manual", None, None, None)
+            .await
+            .unwrap();
+        let idle_id = repo
+            .create_task("idle", "sync_stats", "manual", None, None, None)
+            .await
+            .unwrap();
+        repo.update_task_status(running_id, "running").await.unwrap();
+
+        assert_eq!(repo.recover_interrupted_tasks().await.unwrap(), 1);
+        assert_eq!(repo.get_task(running_id).await.unwrap().unwrap().status, "error");
+        assert_eq!(repo.get_task(idle_id).await.unwrap().unwrap().status, "idle");
     }
 
     #[tokio::test]

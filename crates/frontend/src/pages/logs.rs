@@ -1,10 +1,21 @@
 use crate::components::empty_state::EmptyState;
-use crate::server_fns::{get_log_files, get_logs, LogEntry, LogFileInfo};
+use crate::server_fns::{
+    get_log_files, get_logs, log_entry_matches_task_id, LogEntry, LogFileInfo,
+};
 use crate::ws::use_logs_ws;
 use leptos::prelude::*;
+use leptos_router::{components::A, hooks::use_query_map};
+
+fn parse_task_id(value: Option<String>) -> Option<i64> {
+    value
+        .and_then(|value| value.parse::<i64>().ok())
+        .filter(|task_id| *task_id > 0)
+}
 
 #[component]
 pub fn LogsPage() -> impl IntoView {
+    let query = use_query_map();
+    let task_id = Memo::new(move |_| parse_task_id(query.read().get("task_id")));
     let (version, set_version) = signal(0u32);
     let (selected_file, set_selected_file) = signal(None::<String>);
     let (level_filter, set_level_filter) = signal(String::new());
@@ -51,12 +62,13 @@ pub fn LogsPage() -> impl IntoView {
                 current_page.get(),
                 level_filter.get(),
                 keyword.get(),
+                task_id.get(),
             )
         },
-        move |(_, file, page, level, kw)| {
+        move |(_, file, page, level, kw, task_id)| {
             let level_opt = if level.is_empty() { None } else { Some(level) };
             let kw_opt = if kw.is_empty() { None } else { Some(kw) };
-            get_logs(file, Some(page), Some(100), level_opt, kw_opt)
+            get_logs(file, Some(page), Some(100), level_opt, kw_opt, task_id)
         },
     );
 
@@ -69,14 +81,17 @@ pub fn LogsPage() -> impl IntoView {
             if auto_scroll.get_untracked() {
                 let level_f = level_filter.get_untracked();
                 let kw_f = keyword.get_untracked();
+                let task_id_f = task_id.get_untracked();
 
-                let level_ok =
-                    level_f.is_empty() || entry.level.eq_ignore_ascii_case(&level_f);
+                let level_ok = level_f.is_empty() || entry.level.eq_ignore_ascii_case(&level_f);
+                let task_ok = task_id_f
+                    .map(|id| log_entry_matches_task_id(&entry, id))
+                    .unwrap_or(true);
                 let kw_ok = kw_f.is_empty()
                     || entry.message.contains(&kw_f)
                     || entry.target.contains(&kw_f);
 
-                if level_ok && kw_ok {
+                if level_ok && task_ok && kw_ok {
                     set_live_lines.update(|lines| {
                         lines.insert(0, entry);
                         if lines.len() > 500 {
@@ -90,7 +105,12 @@ pub fn LogsPage() -> impl IntoView {
 
     // Clear live lines when filters change or page navigated
     Effect::new(move |_| {
-        let _ = (level_filter.get(), keyword.get(), current_page.get());
+        let _ = (
+            level_filter.get(),
+            keyword.get(),
+            task_id.get(),
+            current_page.get(),
+        );
         set_live_lines.set(Vec::new());
     });
 
@@ -103,6 +123,18 @@ pub fn LogsPage() -> impl IntoView {
         <div class="dashboard">
             <div class="dashboard-header">
                 <h1>"日志"</h1>
+                {move || {
+                    task_id.get().map(|id| {
+                        view! {
+                            <div class="log-task-filter">
+                                <span>{format!("任务 #{id}")}</span>
+                                <A href="/logs" attr:class="btn btn--sm btn--outline">
+                                    "清除筛选"
+                                </A>
+                            </div>
+                        }
+                    })
+                }}
             </div>
 
             // Toolbar
@@ -376,6 +408,25 @@ pub fn LogsPage() -> impl IntoView {
                 }}
             </Suspense>
         </div>
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_task_id;
+
+    #[test]
+    fn parses_positive_task_id() {
+        assert_eq!(parse_task_id(Some("42".into())), Some(42));
+        assert_eq!(parse_task_id(Some("0042".into())), Some(42));
+    }
+
+    #[test]
+    fn rejects_invalid_task_id() {
+        assert_eq!(parse_task_id(None), None);
+        assert_eq!(parse_task_id(Some("0".into())), None);
+        assert_eq!(parse_task_id(Some("-1".into())), None);
+        assert_eq!(parse_task_id(Some("42x".into())), None);
     }
 }
 

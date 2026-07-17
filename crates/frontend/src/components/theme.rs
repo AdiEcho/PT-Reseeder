@@ -8,6 +8,7 @@ pub enum Theme {
 }
 
 impl Theme {
+    #[cfg(target_arch = "wasm32")]
     fn as_str(self) -> &'static str {
         match self {
             Theme::Dark => "dark",
@@ -38,10 +39,17 @@ impl Theme {
     }
 }
 
+#[cfg(target_arch = "wasm32")]
 const STORAGE_KEY: &str = "pt-reseeder-theme";
 
+/// Use a deterministic first render so SSR and hydration produce matching HTML.
+fn initial_theme() -> Theme {
+    Theme::Dark
+}
+
 /// Read the persisted theme from localStorage. Falls back to `Dark` when the
-/// value is missing or when localStorage is unavailable (SSR, sandboxed).
+/// value is missing or when localStorage is unavailable.
+#[cfg(target_arch = "wasm32")]
 fn read_stored_theme() -> Theme {
     let Some(window) = web_sys::window() else {
         return Theme::Dark;
@@ -56,6 +64,7 @@ fn read_stored_theme() -> Theme {
 }
 
 /// Persist the theme and apply it to `<html data-theme="...">`.
+#[cfg(target_arch = "wasm32")]
 fn apply_theme(theme: Theme) {
     let Some(window) = web_sys::window() else {
         return;
@@ -71,12 +80,28 @@ fn apply_theme(theme: Theme) {
     }
 }
 
+/// SSR cannot access the DOM or localStorage.
+#[cfg(not(target_arch = "wasm32"))]
+fn apply_theme(_theme: Theme) {}
+
+#[cfg(target_arch = "wasm32")]
+fn sync_stored_theme(theme: RwSignal<Theme>) {
+    Effect::new(move |_| {
+        let stored = read_stored_theme();
+        theme.set(stored);
+        apply_theme(stored);
+    });
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn sync_stored_theme(_theme: RwSignal<Theme>) {}
+
 /// A compact icon button that toggles between dark and light mode.
 #[component]
 pub fn ThemeToggle() -> impl IntoView {
-    let initial = read_stored_theme();
-    apply_theme(initial);
+    let initial = initial_theme();
     let theme = RwSignal::new(initial);
+    sync_stored_theme(theme);
 
     view! {
         <button
@@ -92,5 +117,16 @@ pub fn ThemeToggle() -> impl IntoView {
         >
             {move || theme.get().icon()}
         </button>
+    }
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ssr_uses_dark_theme_without_browser_api() {
+        assert_eq!(initial_theme(), Theme::Dark);
+        apply_theme(Theme::Light);
     }
 }

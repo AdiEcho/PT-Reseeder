@@ -17,6 +17,14 @@ fn status_class(status: &str) -> &'static str {
     }
 }
 
+fn truncate_utf8(value: &str, max_bytes: usize) -> &str {
+    let mut end = value.len().min(max_bytes);
+    while !value.is_char_boundary(end) {
+        end -= 1;
+    }
+    &value[..end]
+}
+
 #[component]
 pub fn TasksPage() -> impl IntoView {
     let (version, set_version) = signal(0u64);
@@ -280,11 +288,7 @@ pub fn TasksPage() -> impl IntoView {
 }
 
 #[component]
-fn TaskRow<F, G>(
-    task: TaskInfo,
-    on_change: F,
-    on_request_delete: G,
-) -> impl IntoView
+fn TaskRow<F, G>(task: TaskInfo, on_change: F, on_request_delete: G) -> impl IntoView
 where
     F: Fn() + Copy + Send + Sync + 'static,
     G: Fn(i64, String) + Copy + 'static,
@@ -364,13 +368,13 @@ where
     let last_run = task
         .last_run_at
         .as_deref()
-        .map(|s| if s.len() >= 16 { &s[..16] } else { s })
+        .map(|s| truncate_utf8(s, 16))
         .unwrap_or("-")
         .to_string();
     let next_run = task
         .next_run_at
         .as_deref()
-        .map(|s| if s.len() >= 16 { &s[..16] } else { s })
+        .map(|s| truncate_utf8(s, 16))
         .unwrap_or("-")
         .to_string();
     let cron_display = task.cron_expression.clone().unwrap_or_else(|| "-".into());
@@ -492,11 +496,7 @@ fn TaskLogTable(logs: Vec<TaskLogInfo>) -> impl IntoView {
                                 .duration_ms
                                 .map(|ms| format!("{:.1}秒", ms as f64 / 1000.0))
                                 .unwrap_or_else(|| "-".into());
-                            let ts = if log.created_at.len() >= 16 {
-                                log.created_at[..16].to_string()
-                            } else {
-                                log.created_at.clone()
-                            };
+                            let ts = truncate_utf8(&log.created_at, 16).to_string();
                             view! {
                                 <tr>
                                     <td class=lsc>{status_label}</td>
@@ -514,4 +514,17 @@ fn TaskLogTable(logs: Vec<TaskLogInfo>) -> impl IntoView {
         </div>
     }
     .into_any()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::truncate_utf8;
+
+    #[test]
+    fn truncate_utf8_respects_byte_limit_and_char_boundaries() {
+        assert_eq!(truncate_utf8("2026-07-16 12:34", 16), "2026-07-16 12:34");
+        assert_eq!(truncate_utf8("短文本", 16), "短文本");
+        assert_eq!(truncate_utf8("123456789012345中", 16), "123456789012345");
+        assert_eq!(truncate_utf8("中文文本", 4), "中");
+    }
 }

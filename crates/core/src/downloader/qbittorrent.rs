@@ -275,6 +275,40 @@ impl Downloader for QBittorrentClient {
         Ok(true)
     }
 
+    async fn export_torrent(&self, info_hash: &str) -> Result<Option<Vec<u8>>, CoreError> {
+        let url = format!(
+            "{}/api/v2/torrents/export?hash={}",
+            self.base_url(),
+            info_hash
+        );
+        let resp = self.client.get(&url).send().await.map_err(|e| {
+            CoreError::Downloader(DownloaderError::ConnectionFailed(e.to_string()))
+        })?;
+
+        let status = resp.status();
+        if status.as_u16() == 404 {
+            // Older qB builds may not expose export; fall back to torrent_dir scan.
+            debug!(info_hash = %info_hash, "qBittorrent export endpoint not available");
+            return Ok(None);
+        }
+        if !status.is_success() {
+            warn!(
+                info_hash = %info_hash,
+                status = %status,
+                "qBittorrent export failed"
+            );
+            return Ok(None);
+        }
+
+        let bytes = resp.bytes().await.map_err(|e| {
+            CoreError::Downloader(DownloaderError::ConnectionFailed(e.to_string()))
+        })?;
+        if bytes.is_empty() {
+            return Ok(None);
+        }
+        Ok(Some(bytes.to_vec()))
+    }
+
     async fn close(&mut self) -> Result<(), CoreError> {
         let url = format!("{}/api/v2/auth/logout", self.base_url());
         let _ = self.client.post(&url).send().await;

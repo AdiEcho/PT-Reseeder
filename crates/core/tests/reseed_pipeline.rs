@@ -156,6 +156,9 @@ impl Downloader for MockDownloader {
     async fn pause_torrent(&self, _info_hash: &str) -> Result<bool, CoreError> {
         Ok(true)
     }
+    async fn export_torrent(&self, _info_hash: &str) -> Result<Option<Vec<u8>>, CoreError> {
+        Ok(None)
+    }
     async fn close(&mut self) -> Result<(), CoreError> {
         Ok(())
     }
@@ -836,6 +839,7 @@ async fn test_full_pipeline_e2e() {
     // --- Run the full pipeline ---
     let config = ReseedConfig {
         scan_folders: vec![dir.path().to_path_buf()],
+        source_downloaders: vec![],
         target_site_ids: vec![site_id],
         default_save_path: "/downloads".to_string(),
         skip_hash_check: true,
@@ -943,6 +947,7 @@ async fn test_pipeline_no_matches_completes() {
 
     let config = ReseedConfig {
         scan_folders: vec![dir.path().to_path_buf()],
+        source_downloaders: vec![],
         target_site_ids: vec![site_id],
         default_save_path: "/downloads".to_string(),
         skip_hash_check: false,

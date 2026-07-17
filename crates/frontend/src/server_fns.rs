@@ -24,6 +24,18 @@ pub struct ServerFnContext {
     >,
     pub fetch_seeding_size: std::sync::Arc<std::sync::atomic::AtomicBool>,
     pub trigger_task_execution: std::sync::Arc<dyn Fn(i64) + Send + Sync>,
+    pub reconfigure_task_runtime: std::sync::Arc<
+        dyn Fn(i64) -> std::pin::Pin<
+                Box<dyn std::future::Future<Output = Result<(), String>> + Send + 'static>,
+            > + Send
+            + Sync,
+    >,
+    pub remove_task_runtime: std::sync::Arc<
+        dyn Fn(i64) -> std::pin::Pin<
+                Box<dyn std::future::Future<Output = Result<(), String>> + Send + 'static>,
+            > + Send
+            + Sync,
+    >,
     pub authenticated_user_id: Option<i64>,
 }
 
@@ -457,6 +469,10 @@ pub struct TaskInfo {
     pub last_run_at: Option<String>,
     pub next_run_at: Option<String>,
     pub run_count: i64,
+    pub site_ids: Vec<i64>,
+    pub folder_ids: Vec<i64>,
+    pub source_downloader_ids: Vec<i64>,
+    pub destination_downloader_id: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1347,13 +1363,27 @@ pub async fn delete_folder(id: i64) -> Result<(), ServerFnError> {
 pub async fn get_tasks() -> Result<Vec<TaskInfo>, ServerFnError> {
     use pt_reseeder_core::db::repo::Repository;
 
-    let rows = Repository::new(server_pool()?)
+    let repo = Repository::new(server_pool()?);
+    let rows = repo
         .list_tasks()
         .await
         .map_err(|e| ServerFnError::new(format!("{e}")))?;
-    Ok(rows
-        .into_iter()
-        .map(|t| TaskInfo {
+
+    let mut tasks = Vec::with_capacity(rows.len());
+    for t in rows {
+        let site_ids = repo
+            .get_task_sites(t.id)
+            .await
+            .map_err(|e| ServerFnError::new(format!("{e}")))?;
+        let folder_ids = repo
+            .get_task_folders(t.id)
+            .await
+            .map_err(|e| ServerFnError::new(format!("{e}")))?;
+        let source_downloader_ids = repo
+            .get_task_source_downloaders(t.id)
+            .await
+            .map_err(|e| ServerFnError::new(format!("{e}")))?;
+        tasks.push(TaskInfo {
             id: t.id,
             name: t.name,
             task_type: t.task_type,
@@ -1363,8 +1393,13 @@ pub async fn get_tasks() -> Result<Vec<TaskInfo>, ServerFnError> {
             last_run_at: t.last_run_at,
             next_run_at: t.next_run_at,
             run_count: t.run_count.unwrap_or_default(),
-        })
-        .collect())
+            site_ids,
+            folder_ids,
+            source_downloader_ids,
+            destination_downloader_id: t.destination_downloader_id,
+        });
+    }
+    Ok(tasks)
 }
 
 #[server]
@@ -1373,33 +1408,82 @@ pub async fn create_task(
     task_type: String,
     trigger_type: String,
     cron_expression: Option<String>,
+    site_ids: Vec<i64>,
+    folder_ids: Vec<i64>,
+    source_downloader_ids: Vec<i64>,
+    destination_downloader_id: Option<i64>,
 ) -> Result<TaskInfo, ServerFnError> {
-    use pt_reseeder_core::db::repo::Repository;
+    use pt_reseeder_core::error::{CoreError, SchedulerError};
+    use pt_reseeder_core::scheduler::task::{TaskCreateRequest, TaskManager};
 
-    let repo = Repository::new(server_pool()?);
-    let id = repo
-        .create_task(
-            &name,
-            &task_type,
-            &trigger_type,
-            cron_expression.as_deref(),
-            None,
-            None,
-        )
-        .await
-        .map_err(|e| ServerFnError::new(format!("{e}")))?;
-    get_tasks()
-        .await?
-        .into_iter()
-        .find(|t| t.id == id)
-        .ok_or_else(|| ServerFnError::new("task created but not found"))
+    let context = server_context()?;
+    let task_manager = TaskManager::new(pt_reseeder_core::db::repo::Repository::new(
+        context.pool.clone(),
+    ));
+
+    let req = TaskCreateRequest {
+        name,
+        task_type,
+        trigger_type,
+        cron_expression,
+        downloader_pair_id: None,
+        destination_downloader_id,
+        config_json: None,
+        folder_ids,
+        site_ids,
+        source_downloader_ids,
+    };
+
+    let id = task_manager.create_task(&req).await.map_err(|e| match e {
+        CoreError::Scheduler(SchedulerError::InvalidConfig(msg))
+        | CoreError::Scheduler(SchedulerError::InvalidCron(msg)) => ServerFnError::new(msg),
+        other => ServerFnError::new(format!("{other}")),
+    })?;
+
+    // Runtime configure is best-effort for manual tasks; failures should not leave
+    // the UI thinking create failed after the row is already persisted.
+    if let Err(error) = (context.reconfigure_task_runtime)(id).await {
+        eprintln!("task {id} created but runtime configure failed: {error}");
+    }
+
+    // Prefer full readback; if that fails, still return the created associations so
+    // the client can close the form and show the task.
+    match get_tasks().await {
+        Ok(tasks) => tasks
+            .into_iter()
+            .find(|t| t.id == id)
+            .ok_or_else(|| ServerFnError::new("task created but not found")),
+        Err(_) => Ok(TaskInfo {
+            id,
+            name: req.name,
+            task_type: req.task_type,
+            trigger_type: req.trigger_type,
+            cron_expression: req.cron_expression,
+            status: "idle".to_string(),
+            last_run_at: None,
+            next_run_at: None,
+            run_count: 0,
+            site_ids: req.site_ids,
+            folder_ids: req.folder_ids,
+            source_downloader_ids: req.source_downloader_ids,
+            destination_downloader_id: req.destination_downloader_id,
+        }),
+    }
 }
 
 #[server]
 pub async fn delete_task(id: i64) -> Result<(), ServerFnError> {
     use pt_reseeder_core::db::repo::Repository;
 
-    Repository::new(server_pool()?)
+    let context = server_context()?;
+    // Mirror REST: unschedule cron/file-watch before deleting the DB row.
+    if let Err(error) = (context.remove_task_runtime)(id).await {
+        return Err(ServerFnError::new(format!(
+            "failed to remove task runtime: {error}"
+        )));
+    }
+
+    Repository::new(context.pool.clone())
         .delete_task(id)
         .await
         .map_err(|e| ServerFnError::new(format!("{e}")))

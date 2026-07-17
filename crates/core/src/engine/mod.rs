@@ -7,5 +7,5 @@ pub mod pipeline;
 pub mod scanner;
 pub mod stats;
 
-pub use pipeline::{ReseedConfig, ReseedEngine, ReseedProgress};
+pub use pipeline::{DownloaderScanTarget, ReseedConfig, ReseedEngine, ReseedProgress};
 pub use stats::ReseedStats;

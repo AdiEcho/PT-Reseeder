@@ -2,7 +2,8 @@ use crate::components::confirm_modal::ConfirmModal;
 use crate::components::empty_state::EmptyState;
 use crate::components::toast::{show_toast, ToastType};
 use crate::server_fns::{
-    create_task, delete_task, get_task_logs, get_tasks, trigger_task, TaskInfo, TaskLogInfo,
+    create_task, delete_task, get_downloaders, get_folders, get_sites, get_task_logs, get_tasks,
+    trigger_task, DownloaderInfo, FolderInfo, SiteInfo, TaskInfo, TaskLogInfo,
 };
 use leptos::ev;
 use leptos::prelude::*;
@@ -25,12 +26,71 @@ fn truncate_utf8(value: &str, max_bytes: usize) -> &str {
     &value[..end]
 }
 
+fn toggle_id(list: &mut Vec<i64>, id: i64) {
+    if let Some(i) = list.iter().position(|x| *x == id) {
+        list.remove(i);
+    } else {
+        list.push(id);
+    }
+}
+
+fn association_summary(task: &TaskInfo) -> String {
+    let mut parts = Vec::new();
+    if !task.site_ids.is_empty() {
+        parts.push(format!("站点 {}", task.site_ids.len()));
+    }
+    if !task.source_downloader_ids.is_empty() {
+        parts.push(format!("源下载器 {}", task.source_downloader_ids.len()));
+    }
+    if !task.folder_ids.is_empty() {
+        parts.push(format!("文件夹 {}", task.folder_ids.len()));
+    }
+    if task.destination_downloader_id.is_some() {
+        parts.push("目标下载器".to_string());
+    }
+    if parts.is_empty() {
+        "未配置关联".to_string()
+    } else {
+        parts.join(" · ")
+    }
+}
+
 #[component]
 pub fn TasksPage() -> impl IntoView {
     let (version, set_version) = signal(0u64);
     let (show_form, set_show_form) = signal(false);
 
     let tasks = Resource::new(move || version.get(), |_| get_tasks());
+    let sites = Resource::new(
+        move || show_form.get(),
+        |open| async move {
+            if open {
+                get_sites().await.ok()
+            } else {
+                None
+            }
+        },
+    );
+    let downloaders = Resource::new(
+        move || show_form.get(),
+        |open| async move {
+            if open {
+                get_downloaders().await.ok()
+            } else {
+                None
+            }
+        },
+    );
+    let folders = Resource::new(
+        move || show_form.get(),
+        |open| async move {
+            if open {
+                get_folders().await.ok()
+            } else {
+                None
+            }
+        },
+    );
     let (confirm_delete, set_confirm_delete) = signal(None::<(i64, String)>);
 
     // --- Create-task form state ---
@@ -38,18 +98,46 @@ pub fn TasksPage() -> impl IntoView {
     let (task_type, set_task_type) = signal("reseed".to_string());
     let (trigger_type, set_trigger_type) = signal("manual".to_string());
     let (cron_expr, set_cron_expr) = signal(String::new());
+    let (site_ids, set_site_ids) = signal(Vec::<i64>::new());
+    let (folder_ids, set_folder_ids) = signal(Vec::<i64>::new());
+    let (source_downloader_ids, set_source_downloader_ids) = signal(Vec::<i64>::new());
+    let (destination_downloader_id, set_destination_downloader_id) = signal(None::<i64>);
     let (form_error, set_form_error) = signal(None::<String>);
     let (name_error, set_name_error) = signal(None::<String>);
     let (cron_error, set_cron_error) = signal(None::<String>);
+    let (reseed_error, set_reseed_error) = signal(None::<String>);
     let (submitting, set_submitting) = signal(false);
+
+    let reset_form = move || {
+        set_name.set(String::new());
+        set_task_type.set("reseed".to_string());
+        set_trigger_type.set("manual".to_string());
+        set_cron_expr.set(String::new());
+        set_site_ids.set(Vec::new());
+        set_folder_ids.set(Vec::new());
+        set_source_downloader_ids.set(Vec::new());
+        set_destination_downloader_id.set(None);
+        set_name_error.set(None);
+        set_cron_error.set(None);
+        set_reseed_error.set(None);
+        set_form_error.set(None);
+    };
 
     let on_create = move |ev: leptos::ev::SubmitEvent| {
         ev.prevent_default();
+        if submitting.get_untracked() {
+            return;
+        }
         let n = name.get_untracked();
         let tt = task_type.get_untracked();
         let tg = trigger_type.get_untracked();
+        let mut selected_sites = site_ids.get_untracked();
+        let mut selected_folders = folder_ids.get_untracked();
+        let mut selected_sources = source_downloader_ids.get_untracked();
+        let mut selected_destination = destination_downloader_id.get_untracked();
         set_name_error.set(None);
         set_cron_error.set(None);
+        set_reseed_error.set(None);
         set_form_error.set(None);
 
         if n.trim().is_empty() {
@@ -66,17 +154,53 @@ pub fn TasksPage() -> impl IntoView {
         } else {
             None
         };
+
+        if tt == "reseed" {
+            if selected_sites.is_empty() {
+                set_reseed_error.set(Some("请至少选择一个站点。".into()));
+                return;
+            }
+            if selected_sources.is_empty() && selected_folders.is_empty() {
+                set_reseed_error.set(Some(
+                    "请至少选择一种种子来源（下载器或文件夹，可同时选择）。".into(),
+                ));
+                return;
+            }
+            if selected_destination.is_none() {
+                set_reseed_error.set(Some("请选择目标下载器。".into()));
+                return;
+            }
+        } else {
+            selected_sites.clear();
+            selected_folders.clear();
+            selected_sources.clear();
+            selected_destination = None;
+        }
+
         set_submitting.set(true);
+        // Collapse immediately on submit start for responsive UX; reopen only on hard failure.
+        set_show_form.set(false);
         leptos::task::spawn_local(async move {
-            match create_task(n, tt, tg, cron).await {
+            match create_task(
+                n,
+                tt,
+                tg,
+                cron,
+                selected_sites,
+                selected_folders,
+                selected_sources,
+                selected_destination,
+            )
+            .await
+            {
                 Ok(_) => {
                     show_toast("任务创建成功", ToastType::Success);
-                    set_name.set(String::new());
-                    set_cron_expr.set(String::new());
-                    set_show_form.set(false);
+                    reset_form();
                     set_version.update(|v| *v += 1);
                 }
                 Err(e) => {
+                    // Reopen so the user can correct and resubmit.
+                    set_show_form.set(true);
                     show_toast(format!("创建失败：{e}"), ToastType::Error);
                     set_form_error.set(Some(format!("{e}")));
                 }
@@ -91,7 +215,14 @@ pub fn TasksPage() -> impl IntoView {
                 <h1>"任务管理"</h1>
                 <button
                     class="btn btn-primary"
-                    on:click=move |_| set_show_form.update(|v| *v = !*v)
+                    on:click=move |_| {
+                        set_show_form.update(|v| {
+                            *v = !*v;
+                            if !*v {
+                                reset_form();
+                            }
+                        });
+                    }
                 >
                     {move || if show_form.get() { "取消" } else { "创建任务" }}
                 </button>
@@ -119,25 +250,28 @@ pub fn TasksPage() -> impl IntoView {
                                 </label>
                                 <label>
                                     "类型"
-                                    <select on:change=move |ev| {
-                                        set_task_type.set(event_target_value(&ev));
-                                    }>
-                                        <option value="reseed" selected=true>
-                                            "辅种"
-                                        </option>
+                                    <select
+                                        prop:value=move || task_type.get()
+                                        on:change=move |ev| {
+                                            set_task_type.set(event_target_value(&ev));
+                                            set_reseed_error.set(None);
+                                        }
+                                    >
+                                        <option value="reseed">"辅种"</option>
                                         <option value="repost">"转种"</option>
                                         <option value="sync_stats">"数据同步"</option>
                                     </select>
                                 </label>
                                 <label>
                                     "触发方式"
-                                    <select on:change=move |ev| {
-                                        set_trigger_type.set(event_target_value(&ev));
-                                        set_cron_error.set(None);
-                                    }>
-                                        <option value="manual" selected=true>
-                                            "手动"
-                                        </option>
+                                    <select
+                                        prop:value=move || trigger_type.get()
+                                        on:change=move |ev| {
+                                            set_trigger_type.set(event_target_value(&ev));
+                                            set_cron_error.set(None);
+                                        }
+                                    >
+                                        <option value="manual">"手动"</option>
                                         <option value="cron">"定时"</option>
                                         <option value="file_watch">"文件监控"</option>
                                     </select>
@@ -162,6 +296,172 @@ pub fn TasksPage() -> impl IntoView {
                                                     </p>
                                                     {move || cron_error.get().map(|e| view! { <p class="field-error">{e}</p> })}
                                                 </label>
+                                            },
+                                        )
+                                    } else {
+                                        None
+                                    }
+                                }}
+                                {move || {
+                                    if task_type.get() == "reseed" {
+                                        Some(
+                                            view! {
+                                                // Use div.form-group (not nested <label>) so multi-select
+                                                // checkboxes for sites/downloaders/folders can be chosen together.
+                                                <div class="reseed-config form-grid">
+                                                    <div class="form-group reseed-field">
+                                                        <span class="field-label">
+                                                            "站点" <span class="required">"*"</span>
+                                                        </span>
+                                                        <Suspense fallback=move || view! { <p class="text-muted">"正在加载站点..."</p> }>
+                                                            {move || {
+                                                                sites.get().flatten().map(|list| {
+                                                                    let enabled: Vec<SiteInfo> = list.into_iter().filter(|s| s.enabled).collect();
+                                                                    if enabled.is_empty() {
+                                                                        return view! {
+                                                                            <p class="field-hint">"暂无启用站点，请先在站点管理中添加。"</p>
+                                                                        }.into_any();
+                                                                    }
+                                                                    view! {
+                                                                        <div class="checkbox-list" role="group" aria-label="辅种站点">
+                                                                            {enabled.into_iter().map(|site| {
+                                                                                let id = site.id;
+                                                                                let label = site.name.clone();
+                                                                                view! {
+                                                                                    <label class="checkbox-item">
+                                                                                        <input
+                                                                                            type="checkbox"
+                                                                                            prop:checked=move || site_ids.get().contains(&id)
+                                                                                            on:change=move |_| {
+                                                                                                set_site_ids.update(|list| toggle_id(list, id));
+                                                                                                set_reseed_error.set(None);
+                                                                                            }
+                                                                                        />
+                                                                                        <span>{label}</span>
+                                                                                    </label>
+                                                                                }
+                                                                            }).collect::<Vec<_>>()}
+                                                                        </div>
+                                                                    }.into_any()
+                                                                })
+                                                            }}
+                                                        </Suspense>
+                                                    </div>
+                                                    <div class="form-group reseed-field">
+                                                        <span class="field-label">"源下载器"</span>
+                                                        <Suspense fallback=move || view! { <p class="text-muted">"正在加载下载器..."</p> }>
+                                                            {move || {
+                                                                downloaders.get().flatten().map(|list| {
+                                                                    let enabled: Vec<DownloaderInfo> = list.into_iter().filter(|d| d.enabled).collect();
+                                                                    if enabled.is_empty() {
+                                                                        return view! {
+                                                                            <p class="field-hint">"暂无启用下载器。"</p>
+                                                                        }.into_any();
+                                                                    }
+                                                                    view! {
+                                                                        <div class="checkbox-list" role="group" aria-label="源下载器">
+                                                                            {enabled.into_iter().map(|dl| {
+                                                                                let id = dl.id;
+                                                                                let label = format!("{} (#{})", dl.name, dl.id);
+                                                                                view! {
+                                                                                    <label class="checkbox-item">
+                                                                                        <input
+                                                                                            type="checkbox"
+                                                                                            prop:checked=move || source_downloader_ids.get().contains(&id)
+                                                                                            on:change=move |_| {
+                                                                                                set_source_downloader_ids.update(|list| toggle_id(list, id));
+                                                                                                set_reseed_error.set(None);
+                                                                                            }
+                                                                                        />
+                                                                                        <span>{label}</span>
+                                                                                    </label>
+                                                                                }
+                                                                            }).collect::<Vec<_>>()}
+                                                                        </div>
+                                                                    }.into_any()
+                                                                })
+                                                            }}
+                                                        </Suspense>
+                                                    </div>
+                                                    <div class="form-group reseed-field">
+                                                        <span class="field-label">"扫描文件夹"</span>
+                                                        <Suspense fallback=move || view! { <p class="text-muted">"正在加载文件夹..."</p> }>
+                                                            {move || {
+                                                                folders.get().flatten().map(|list| {
+                                                                    let enabled: Vec<FolderInfo> = list
+                                                                        .into_iter()
+                                                                        .filter(|f| f.enabled && f.scan_mode == "local")
+                                                                        .collect();
+                                                                    if enabled.is_empty() {
+                                                                        return view! {
+                                                                            <p class="field-hint">"暂无启用的本机文件夹。"</p>
+                                                                        }.into_any();
+                                                                    }
+                                                                    view! {
+                                                                        <div class="checkbox-list" role="group" aria-label="扫描文件夹">
+                                                                            {enabled.into_iter().map(|folder| {
+                                                                                let id = folder.id;
+                                                                                let label = folder.path.clone();
+                                                                                view! {
+                                                                                    <label class="checkbox-item">
+                                                                                        <input
+                                                                                            type="checkbox"
+                                                                                            prop:checked=move || folder_ids.get().contains(&id)
+                                                                                            on:change=move |_| {
+                                                                                                set_folder_ids.update(|list| toggle_id(list, id));
+                                                                                                set_reseed_error.set(None);
+                                                                                            }
+                                                                                        />
+                                                                                        <span>{label}</span>
+                                                                                    </label>
+                                                                                }
+                                                                            }).collect::<Vec<_>>()}
+                                                                        </div>
+                                                                    }.into_any()
+                                                                })
+                                                            }}
+                                                        </Suspense>
+                                                        <p class="field-hint">"下载器与文件夹可同时选择，至少选一种来源"</p>
+                                                    </div>
+                                                    <div class="form-group reseed-field">
+                                                        <span class="field-label">
+                                                            "目标下载器" <span class="required">"*"</span>
+                                                        </span>
+                                                        <Suspense fallback=move || view! {
+                                                            <select class="input" disabled=true>
+                                                                <option>"加载下载器..."</option>
+                                                            </select>
+                                                        }>
+                                                            {move || {
+                                                                downloaders.get().flatten().map(|list| {
+                                                                    let enabled: Vec<DownloaderInfo> = list.into_iter().filter(|d| d.enabled).collect();
+                                                                    view! {
+                                                                        <select
+                                                                            class="input"
+                                                                            prop:value=move || destination_downloader_id.get().map(|id| id.to_string()).unwrap_or_default()
+                                                                            on:change=move |ev| {
+                                                                                let raw = event_target_value(&ev);
+                                                                                let parsed = raw.trim().parse::<i64>().ok();
+                                                                                set_destination_downloader_id.set(parsed);
+                                                                                set_reseed_error.set(None);
+                                                                            }
+                                                                        >
+                                                                            <option value="">"请选择目标下载器"</option>
+                                                                            {enabled.into_iter().map(|dl| {
+                                                                                let id = dl.id.to_string();
+                                                                                let label = format!("{} (#{})", dl.name, dl.id);
+                                                                                view! {
+                                                                                    <option value=id.clone()>{label}</option>
+                                                                                }
+                                                                            }).collect::<Vec<_>>()}
+                                                                        </select>
+                                                                    }.into_any()
+                                                                })
+                                                            }}
+                                                        </Suspense>
+                                                    </div>
+                                                    {move || reseed_error.get().map(|e| view! { <p class="field-error">{e}</p> })}
+                                                </div>
                                             },
                                         )
                                     } else {
@@ -297,6 +597,7 @@ where
     #[cfg(target_arch = "wasm32")]
     let initial_run_count = task.run_count;
     let task_name = task.name.clone();
+    let assoc_summary = association_summary(&task);
     let (expanded, set_expanded) = signal(false);
     let (acting, set_acting) = signal(false);
 
@@ -386,7 +687,10 @@ where
                 class="clickable-row"
                 on:click=move |_| set_expanded.update(|v| *v = !*v)
             >
-                <td>{task.name.clone()}</td>
+                <td>
+                    <div>{task.name.clone()}</div>
+                    <div class="text-muted table-subtext">{assoc_summary}</div>
+                </td>
                 <td>{match task.task_type.as_str() {
                     "reseed" => "辅种".to_string(),
                     "repost" => "转种".to_string(),

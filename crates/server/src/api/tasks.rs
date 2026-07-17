@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 
 use pt_reseeder_core::db::models::{TaskLog, TaskRow};
+use pt_reseeder_core::error::{CoreError, SchedulerError};
 use pt_reseeder_core::scheduler::task::{TaskCreateRequest, TaskManager};
 
 use crate::state::AppState;
@@ -23,11 +24,14 @@ pub struct CreateTaskRequest {
     pub trigger_type: String,
     pub cron_expression: Option<String>,
     pub downloader_pair_id: Option<i64>,
+    pub destination_downloader_id: Option<i64>,
     pub config_json: Option<String>,
     #[serde(default)]
     pub folder_ids: Vec<i64>,
     #[serde(default)]
     pub site_ids: Vec<i64>,
+    #[serde(default)]
+    pub source_downloader_ids: Vec<i64>,
 }
 
 #[derive(Deserialize)]
@@ -37,11 +41,14 @@ pub struct UpdateTaskRequest {
     pub trigger_type: String,
     pub cron_expression: Option<String>,
     pub downloader_pair_id: Option<i64>,
+    pub destination_downloader_id: Option<i64>,
     pub config_json: Option<String>,
     #[serde(default)]
     pub folder_ids: Vec<i64>,
     #[serde(default)]
     pub site_ids: Vec<i64>,
+    #[serde(default)]
+    pub source_downloader_ids: Vec<i64>,
 }
 
 #[derive(Deserialize)]
@@ -58,6 +65,7 @@ pub struct TaskResponse {
     pub cron_expression: Option<String>,
     pub status: String,
     pub downloader_pair_id: Option<i64>,
+    pub destination_downloader_id: Option<i64>,
     pub last_run_at: Option<String>,
     pub next_run_at: Option<String>,
     pub run_count: Option<i64>,
@@ -72,6 +80,7 @@ pub struct TaskDetailResponse {
     pub task: TaskResponse,
     pub folder_ids: Vec<i64>,
     pub site_ids: Vec<i64>,
+    pub source_downloader_ids: Vec<i64>,
 }
 
 #[derive(Serialize)]
@@ -93,6 +102,22 @@ fn api_err(status: StatusCode, msg: impl Into<String>) -> (StatusCode, Json<ApiE
     (status, Json(ApiError { error: msg.into() }))
 }
 
+fn map_task_manager_error(e: CoreError, action: &str) -> (StatusCode, Json<ApiError>) {
+    match e {
+        CoreError::Scheduler(SchedulerError::InvalidConfig(msg))
+        | CoreError::Scheduler(SchedulerError::InvalidCron(msg)) => {
+            api_err(StatusCode::BAD_REQUEST, msg)
+        }
+        CoreError::Scheduler(SchedulerError::TaskNotFound(id)) => {
+            api_err(StatusCode::NOT_FOUND, format!("task not found: {id}"))
+        }
+        other => api_err(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("failed to {action}: {other}"),
+        ),
+    }
+}
+
 fn task_to_response(row: &TaskRow) -> TaskResponse {
     TaskResponse {
         id: row.id,
@@ -102,6 +127,7 @@ fn task_to_response(row: &TaskRow) -> TaskResponse {
         cron_expression: row.cron_expression.clone(),
         status: row.status.clone(),
         downloader_pair_id: row.downloader_pair_id,
+        destination_downloader_id: row.destination_downloader_id,
         last_run_at: row.last_run_at.clone(),
         next_run_at: row.next_run_at.clone(),
         run_count: row.run_count,
@@ -109,6 +135,70 @@ fn task_to_response(row: &TaskRow) -> TaskResponse {
         created_at: row.created_at.clone(),
         updated_at: row.updated_at.clone(),
     }
+}
+
+async fn load_task_detail(
+    task_manager: &TaskManager,
+    task_id: i64,
+) -> Result<TaskDetailResponse, (StatusCode, Json<ApiError>)> {
+    let task = task_manager.get_task(task_id).await.map_err(|e| {
+        map_task_manager_error(e, "load task")
+    })?;
+
+    let folder_ids = task_manager.get_task_folders(task_id).await.map_err(|e| {
+        api_err(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("database error: {e}"),
+        )
+    })?;
+
+    let site_ids = task_manager.get_task_sites(task_id).await.map_err(|e| {
+        api_err(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("database error: {e}"),
+        )
+    })?;
+
+    let source_downloader_ids = task_manager
+        .get_task_source_downloaders(task_id)
+        .await
+        .map_err(|e| {
+            api_err(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("database error: {e}"),
+            )
+        })?;
+
+    Ok(TaskDetailResponse {
+        task: task_to_response(&task),
+        folder_ids,
+        site_ids,
+        source_downloader_ids,
+    })
+}
+
+fn validate_trigger_type(trigger_type: &str) -> Result<(), (StatusCode, Json<ApiError>)> {
+    if trigger_type != "manual" && trigger_type != "cron" && trigger_type != "file_watch" {
+        return Err(api_err(
+            StatusCode::BAD_REQUEST,
+            format!(
+                "invalid trigger_type: '{trigger_type}', must be 'manual', 'cron', or 'file_watch'"
+            ),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_task_type(task_type: &str) -> Result<(), (StatusCode, Json<ApiError>)> {
+    if task_type != "reseed" && task_type != "repost" && task_type != "sync_stats" {
+        return Err(api_err(
+            StatusCode::BAD_REQUEST,
+            format!(
+                "invalid task_type: '{task_type}', must be 'reseed', 'repost', or 'sync_stats'"
+            ),
+        ));
+    }
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -120,30 +210,8 @@ async fn create_task(
     State(state): State<AppState>,
     Json(req): Json<CreateTaskRequest>,
 ) -> Result<(StatusCode, Json<TaskDetailResponse>), (StatusCode, Json<ApiError>)> {
-    // Validate task_type
-    if req.task_type != "reseed" && req.task_type != "repost" {
-        return Err(api_err(
-            StatusCode::BAD_REQUEST,
-            format!(
-                "invalid task_type: '{}', must be 'reseed' or 'repost'",
-                req.task_type
-            ),
-        ));
-    }
-
-    // Validate trigger_type
-    if req.trigger_type != "manual"
-        && req.trigger_type != "cron"
-        && req.trigger_type != "file_watch"
-    {
-        return Err(api_err(
-            StatusCode::BAD_REQUEST,
-            format!(
-                "invalid trigger_type: '{}', must be 'manual', 'cron', or 'file_watch'",
-                req.trigger_type
-            ),
-        ));
-    }
+    validate_task_type(&req.task_type)?;
+    validate_trigger_type(&req.trigger_type)?;
 
     // If trigger_type is "cron", cron_expression must be provided
     if req.trigger_type == "cron" && req.cron_expression.as_ref().map_or(true, |s| s.is_empty()) {
@@ -160,55 +228,28 @@ async fn create_task(
         trigger_type: req.trigger_type,
         cron_expression: req.cron_expression,
         downloader_pair_id: req.downloader_pair_id,
+        destination_downloader_id: req.destination_downloader_id,
         config_json: req.config_json,
         folder_ids: req.folder_ids,
         site_ids: req.site_ids,
+        source_downloader_ids: req.source_downloader_ids,
     };
 
-    let task_id = task_manager.create_task(&create_req).await.map_err(|e| {
-        api_err(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("failed to create task: {}", e),
-        )
-    })?;
+    let task_id = task_manager
+        .create_task(&create_req)
+        .await
+        .map_err(|e| map_task_manager_error(e, "create task"))?;
 
     state.reconfigure_task_runtime(task_id).await.map_err(|e| {
         api_err(
             StatusCode::INTERNAL_SERVER_ERROR,
-            format!("failed to configure task runtime: {}", e),
+            format!("failed to configure task runtime: {e}"),
         )
     })?;
 
-    let task = task_manager.get_task(task_id).await.map_err(|e| {
-        api_err(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("task created but not found: {}", e),
-        )
-    })?;
-
-    let folder_ids = task_manager.get_task_folders(task_id).await.map_err(|e| {
-        api_err(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("database error: {}", e),
-        )
-    })?;
-
-    let site_ids = task_manager.get_task_sites(task_id).await.map_err(|e| {
-        api_err(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("database error: {}", e),
-        )
-    })?;
-
-    info!("created task '{}' (id={})", task.name, task.id);
-    Ok((
-        StatusCode::CREATED,
-        Json(TaskDetailResponse {
-            task: task_to_response(&task),
-            folder_ids,
-            site_ids,
-        }),
-    ))
+    let detail = load_task_detail(&task_manager, task_id).await?;
+    info!("created task '{}' (id={})", detail.task.name, detail.task.id);
+    Ok((StatusCode::CREATED, Json(detail)))
 }
 
 /// GET /tasks -- list all tasks
@@ -219,7 +260,7 @@ async fn list_tasks(
     let tasks = task_manager.list_tasks().await.map_err(|e| {
         api_err(
             StatusCode::INTERNAL_SERVER_ERROR,
-            format!("database error: {}", e),
+            format!("database error: {e}"),
         )
     })?;
 
@@ -227,37 +268,14 @@ async fn list_tasks(
     Ok(Json(responses))
 }
 
-/// GET /tasks/:id -- get task detail with folder_ids and site_ids
+/// GET /tasks/:id -- get task detail with associations
 async fn get_task(
     State(state): State<AppState>,
     Path(id): Path<i64>,
 ) -> Result<Json<TaskDetailResponse>, (StatusCode, Json<ApiError>)> {
     let task_manager = TaskManager::new(state.inner.repo.clone());
-
-    let task = task_manager
-        .get_task(id)
-        .await
-        .map_err(|e| api_err(StatusCode::NOT_FOUND, format!("task not found: {}", e)))?;
-
-    let folder_ids = task_manager.get_task_folders(id).await.map_err(|e| {
-        api_err(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("database error: {}", e),
-        )
-    })?;
-
-    let site_ids = task_manager.get_task_sites(id).await.map_err(|e| {
-        api_err(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("database error: {}", e),
-        )
-    })?;
-
-    Ok(Json(TaskDetailResponse {
-        task: task_to_response(&task),
-        folder_ids,
-        site_ids,
-    }))
+    let detail = load_task_detail(&task_manager, id).await?;
+    Ok(Json(detail))
 }
 
 /// PUT /tasks/:id -- update a task
@@ -266,30 +284,8 @@ async fn update_task(
     Path(id): Path<i64>,
     Json(req): Json<UpdateTaskRequest>,
 ) -> Result<Json<TaskDetailResponse>, (StatusCode, Json<ApiError>)> {
-    // Validate task_type
-    if req.task_type != "reseed" && req.task_type != "repost" {
-        return Err(api_err(
-            StatusCode::BAD_REQUEST,
-            format!(
-                "invalid task_type: '{}', must be 'reseed' or 'repost'",
-                req.task_type
-            ),
-        ));
-    }
-
-    // Validate trigger_type
-    if req.trigger_type != "manual"
-        && req.trigger_type != "cron"
-        && req.trigger_type != "file_watch"
-    {
-        return Err(api_err(
-            StatusCode::BAD_REQUEST,
-            format!(
-                "invalid trigger_type: '{}', must be 'manual', 'cron', or 'file_watch'",
-                req.trigger_type
-            ),
-        ));
-    }
+    validate_task_type(&req.task_type)?;
+    validate_trigger_type(&req.trigger_type)?;
 
     // If trigger_type is "cron", cron_expression must be provided
     if req.trigger_type == "cron" && req.cron_expression.as_ref().map_or(true, |s| s.is_empty()) {
@@ -306,55 +302,28 @@ async fn update_task(
         trigger_type: req.trigger_type,
         cron_expression: req.cron_expression,
         downloader_pair_id: req.downloader_pair_id,
+        destination_downloader_id: req.destination_downloader_id,
         config_json: req.config_json,
         folder_ids: req.folder_ids,
         site_ids: req.site_ids,
+        source_downloader_ids: req.source_downloader_ids,
     };
 
     task_manager
         .update_task(id, &update_req)
         .await
-        .map_err(|e| {
-            api_err(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("failed to update task: {}", e),
-            )
-        })?;
+        .map_err(|e| map_task_manager_error(e, "update task"))?;
 
     state.reconfigure_task_runtime(id).await.map_err(|e| {
         api_err(
             StatusCode::INTERNAL_SERVER_ERROR,
-            format!("failed to configure task runtime: {}", e),
+            format!("failed to configure task runtime: {e}"),
         )
     })?;
 
-    let task = task_manager.get_task(id).await.map_err(|e| {
-        api_err(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("task updated but not found: {}", e),
-        )
-    })?;
-
-    let folder_ids = task_manager.get_task_folders(task.id).await.map_err(|e| {
-        api_err(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("database error: {}", e),
-        )
-    })?;
-
-    let site_ids = task_manager.get_task_sites(task.id).await.map_err(|e| {
-        api_err(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("database error: {}", e),
-        )
-    })?;
-
-    info!("updated task '{}' (id={})", task.name, task.id);
-    Ok(Json(TaskDetailResponse {
-        task: task_to_response(&task),
-        folder_ids,
-        site_ids,
-    }))
+    let detail = load_task_detail(&task_manager, id).await?;
+    info!("updated task '{}' (id={})", detail.task.name, detail.task.id);
+    Ok(Json(detail))
 }
 
 /// DELETE /tasks/:id -- delete a task
@@ -367,16 +336,16 @@ async fn delete_task(
     state.remove_task_runtime(id).await.map_err(|e| {
         api_err(
             StatusCode::INTERNAL_SERVER_ERROR,
-            format!("failed to remove task runtime: {}", e),
+            format!("failed to remove task runtime: {e}"),
         )
     })?;
 
     task_manager
         .delete_task(id)
         .await
-        .map_err(|e| api_err(StatusCode::NOT_FOUND, format!("task not found: {}", e)))?;
+        .map_err(|e| map_task_manager_error(e, "delete task"))?;
 
-    info!("deleted task id={}", id);
+    info!("deleted task id={id}");
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -390,7 +359,7 @@ async fn run_task(
     let _task = task_manager
         .get_task(id)
         .await
-        .map_err(|e| api_err(StatusCode::NOT_FOUND, format!("task not found: {}", e)))?;
+        .map_err(|e| map_task_manager_error(e, "load task"))?;
 
     // Spawn execution asynchronously to avoid timeout
     let exec_state = state.clone();
@@ -401,7 +370,7 @@ async fn run_task(
         }
     });
 
-    info!("triggered task execution id={}", id);
+    info!("triggered task execution id={id}");
     Ok((
         StatusCode::ACCEPTED,
         Json(RunTaskResponse {
@@ -422,7 +391,7 @@ async fn get_task_logs(
     let _task = task_manager
         .get_task(id)
         .await
-        .map_err(|e| api_err(StatusCode::NOT_FOUND, format!("task not found: {}", e)))?;
+        .map_err(|e| map_task_manager_error(e, "load task"))?;
 
     let limit = query.limit.unwrap_or(50);
     let logs = state
@@ -433,7 +402,7 @@ async fn get_task_logs(
         .map_err(|e| {
             api_err(
                 StatusCode::INTERNAL_SERVER_ERROR,
-                format!("database error: {}", e),
+                format!("database error: {e}"),
             )
         })?;
 

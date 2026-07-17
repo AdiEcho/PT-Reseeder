@@ -44,8 +44,7 @@ pub async fn scan_folder(
     stats: &super::stats::ReseedStats,
     cancel: &CancellationToken,
 ) -> Result<ScanResult, CoreError> {
-    let mut torrents: HashMap<String, TorrentMeta> = HashMap::new();
-    let mut pieces_groups: HashMap<String, Vec<String>> = HashMap::new();
+    let mut result = empty_scan_result();
 
     // Collect all .torrent file paths off the async runtime.
     let dir = path.to_path_buf();
@@ -55,7 +54,7 @@ pub async fn scan_folder(
     tracing::info!(folder = %path.display(), count = entries.len(), "scanning torrent files");
 
     // Parse all files first so we can batch-check the cache.
-    let mut parsed: Vec<(PathBuf, TorrentMeta)> = Vec::with_capacity(entries.len());
+    let mut parsed: Vec<(Option<PathBuf>, TorrentMeta)> = Vec::with_capacity(entries.len());
     for entry_path in &entries {
         if cancel.is_cancelled() {
             return Err(EngineError::Cancelled.into());
@@ -64,7 +63,7 @@ pub async fn scan_folder(
         stats.scanned.fetch_add(1, Ordering::Relaxed);
 
         match parser::parse_file(entry_path) {
-            Ok(meta) => parsed.push((entry_path.clone(), meta)),
+            Ok(meta) => parsed.push((Some(entry_path.clone()), meta)),
             Err(e) => {
                 tracing::warn!(
                     path = %entry_path.display(),
@@ -75,6 +74,165 @@ pub async fn scan_folder(
         }
     }
 
+    ingest_parsed_metas(parsed, &mut result, repo, db_writer, stats, cancel).await?;
+
+    // Get all info_hashes from destination downloader for dedup
+    result.dest_hashes = dest_client.get_all_info_hashes().await?;
+
+    tracing::info!(
+        parsed = result.torrents.len(),
+        pieces_groups = result.pieces_groups.len(),
+        dest_torrents = result.dest_hashes.len(),
+        "scan complete"
+    );
+
+    Ok(result)
+}
+
+/// Scan from a downloader via torrent_dir and/or export API.
+pub async fn scan_downloader(
+    client: &dyn Downloader,
+    torrent_dir: Option<&Path>,
+    repo: &Repository,
+    db_writer: &DbWriterHandle,
+    dest_client: Option<&dyn Downloader>,
+    stats: &super::stats::ReseedStats,
+    cancel: &CancellationToken,
+) -> Result<ScanResult, CoreError> {
+    let mut result = empty_scan_result();
+    let mut parsed: Vec<(Option<PathBuf>, TorrentMeta)> = Vec::new();
+    let mut seen_info_hashes = HashSet::new();
+
+    if let Some(dir) = torrent_dir {
+        if dir.is_dir() {
+            let dir_buf = dir.to_path_buf();
+            let entries = tokio::task::spawn_blocking(move || collect_torrent_files(&dir_buf))
+                .await
+                .map_err(|e| {
+                    EngineError::ScanFailed(format!("directory walk task failed: {}", e))
+                })??;
+            tracing::info!(
+                folder = %dir.display(),
+                count = entries.len(),
+                "scanning downloader torrent_dir"
+            );
+
+            for entry_path in &entries {
+                if cancel.is_cancelled() {
+                    return Err(EngineError::Cancelled.into());
+                }
+                stats.scanned.fetch_add(1, Ordering::Relaxed);
+                match parser::parse_file(entry_path) {
+                    Ok(meta) => {
+                        if seen_info_hashes.insert(meta.info_hash.clone()) {
+                            parsed.push((Some(entry_path.clone()), meta));
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            path = %entry_path.display(),
+                            error = %e,
+                            "failed to parse torrent file, skipping"
+                        );
+                    }
+                }
+            }
+        } else {
+            tracing::warn!(
+                path = %dir.display(),
+                "configured torrent_dir is not a directory, skipping local scan"
+            );
+        }
+    }
+
+    let hashes = client.get_all_info_hashes().await?;
+    tracing::info!(count = hashes.len(), "exporting torrents from downloader");
+    let mut export_attempts = 0usize;
+    let mut export_hits = 0usize;
+    for hash in &hashes {
+        if cancel.is_cancelled() {
+            return Err(EngineError::Cancelled.into());
+        }
+        if seen_info_hashes.contains(hash) {
+            continue;
+        }
+
+        stats.scanned.fetch_add(1, Ordering::Relaxed);
+        export_attempts += 1;
+        match client.export_torrent(hash).await {
+            Ok(Some(bytes)) => match parser::parse_bytes(&bytes) {
+                Ok(meta) => {
+                    if seen_info_hashes.insert(meta.info_hash.clone()) {
+                        export_hits += 1;
+                        parsed.push((None, meta));
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        info_hash = %hash,
+                        error = %e,
+                        "failed to parse exported torrent, skipping"
+                    );
+                }
+            },
+            Ok(None) => {
+                tracing::debug!(info_hash = %hash, "export unavailable for torrent, skipping");
+            }
+            Err(e) => {
+                tracing::warn!(
+                    info_hash = %hash,
+                    error = %e,
+                    "export failed for torrent, skipping"
+                );
+            }
+        }
+    }
+
+    // If the client has torrents but we could not materialize any metadata (export
+    // unavailable and torrent_dir empty/unusable), fail hard instead of succeeding
+    // with zero matches.
+    if !hashes.is_empty() && parsed.is_empty() {
+        return Err(EngineError::ScanFailed(format!(
+            "downloader source has {} torrents but none were materializable via torrent_dir or export (export_attempts={}, export_hits={}); configure torrent_dir or use a client that supports export",
+            hashes.len(),
+            export_attempts,
+            export_hits
+        ))
+        .into());
+    }
+
+    ingest_parsed_metas(parsed, &mut result, repo, db_writer, stats, cancel).await?;
+
+    if let Some(dest) = dest_client {
+        result.dest_hashes = dest.get_all_info_hashes().await?;
+    }
+
+    tracing::info!(
+        parsed = result.torrents.len(),
+        pieces_groups = result.pieces_groups.len(),
+        dest_torrents = result.dest_hashes.len(),
+        "downloader scan complete"
+    );
+
+    Ok(result)
+}
+
+fn empty_scan_result() -> ScanResult {
+    ScanResult {
+        torrents: HashMap::new(),
+        pieces_groups: HashMap::new(),
+        dest_hashes: HashSet::new(),
+    }
+}
+
+async fn ingest_parsed_metas(
+    parsed: Vec<(Option<PathBuf>, TorrentMeta)>,
+    result: &mut ScanResult,
+    repo: &Repository,
+    db_writer: &DbWriterHandle,
+    stats: &super::stats::ReseedStats,
+    cancel: &CancellationToken,
+) -> Result<(), CoreError> {
     let info_hashes: Vec<String> = parsed
         .iter()
         .map(|(_, meta)| meta.info_hash.clone())
@@ -91,11 +249,12 @@ pub async fn scan_folder(
         // Incremental: skip DB write if info_hash already cached
         if existing_hashes.contains(&meta.info_hash) {
             stats.cached_skip.fetch_add(1, Ordering::Relaxed);
-            pieces_groups
+            result
+                .pieces_groups
                 .entry(meta.pieces_hash.clone())
                 .or_default()
                 .push(meta.info_hash.clone());
-            torrents.insert(meta.info_hash.clone(), meta);
+            result.torrents.insert(meta.info_hash.clone(), meta);
             continue;
         }
 
@@ -111,16 +270,17 @@ pub async fn scan_folder(
             pieces_hash: meta.pieces_hash.clone(),
             info_hash: meta.info_hash.clone(),
             torrent_name: Some(meta.name.clone()),
-            file_path: Some(entry_path.to_string_lossy().into_owned()),
+            file_path: entry_path.map(|p| p.to_string_lossy().into_owned()),
             total_size: Some(meta.total_size as i64),
             announce_url,
         });
 
-        pieces_groups
+        result
+            .pieces_groups
             .entry(meta.pieces_hash.clone())
             .or_default()
             .push(meta.info_hash.clone());
-        torrents.insert(meta.info_hash.clone(), meta);
+        result.torrents.insert(meta.info_hash.clone(), meta);
 
         // Flush cache in batches of 500
         if cache_batch.len() >= 500 {
@@ -138,43 +298,7 @@ pub async fn scan_folder(
             .await?;
     }
 
-    // Get all info_hashes from destination downloader for dedup
-    let dest_hashes = dest_client.get_all_info_hashes().await?;
-
-    tracing::info!(
-        parsed = torrents.len(),
-        pieces_groups = pieces_groups.len(),
-        dest_torrents = dest_hashes.len(),
-        "scan complete"
-    );
-
-    Ok(ScanResult {
-        torrents,
-        pieces_groups,
-        dest_hashes,
-    })
-}
-
-/// Scan from a downloader.
-///
-/// The current `Downloader` trait exposes torrent hashes and summary metadata,
-/// but not the original `.torrent` bytes or piece hashes required by the reseed
-/// matcher. Returning an explicit error prevents silently treating `torrent_dir`
-/// as a local folder and producing misleading scan results.
-pub async fn scan_downloader(
-    _client: &dyn Downloader,
-    _torrent_dir: &Path,
-    _repo: &Repository,
-    _db_writer: &DbWriterHandle,
-    _dest_client: &dyn Downloader,
-    _stats: &super::stats::ReseedStats,
-    _cancel: &CancellationToken,
-) -> Result<ScanResult, CoreError> {
-    Err(EngineError::ScanFailed(
-        "downloader scan mode is unsupported: downloader APIs do not expose .torrent data/pieces_hash yet"
-            .to_string(),
-    )
-    .into())
+    Ok(())
 }
 
 /// Collect all .torrent file paths recursively from a directory.
@@ -226,4 +350,140 @@ pub async fn get_cached_announce_urls(
         }
     }
     Ok(urls)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use async_trait::async_trait;
+    use crate::downloader::models::{AddTorrentOpts, TorrentInfo};
+    use crate::db::writer::spawn_writer;
+    use crate::engine::stats::ReseedStats;
+
+    struct MockDownloader {
+        hashes: HashSet<String>,
+        exports: HashMap<String, Vec<u8>>,
+    }
+
+    #[async_trait]
+    impl Downloader for MockDownloader {
+        async fn connect(&mut self) -> Result<(), CoreError> {
+            Ok(())
+        }
+        async fn test_connection(&self) -> Result<bool, CoreError> {
+            Ok(true)
+        }
+        async fn get_torrent_info(
+            &self,
+            _info_hash: &str,
+        ) -> Result<Option<TorrentInfo>, CoreError> {
+            Ok(None)
+        }
+        async fn get_all_info_hashes(&self) -> Result<HashSet<String>, CoreError> {
+            Ok(self.hashes.clone())
+        }
+        async fn add_torrent(&self, _opts: AddTorrentOpts) -> Result<bool, CoreError> {
+            Ok(true)
+        }
+        async fn resume_torrent(&self, _info_hash: &str) -> Result<bool, CoreError> {
+            Ok(true)
+        }
+        async fn pause_torrent(&self, _info_hash: &str) -> Result<bool, CoreError> {
+            Ok(true)
+        }
+        async fn export_torrent(&self, info_hash: &str) -> Result<Option<Vec<u8>>, CoreError> {
+            Ok(self.exports.get(info_hash).cloned())
+        }
+        async fn close(&mut self) -> Result<(), CoreError> {
+            Ok(())
+        }
+    }
+
+    fn sample_torrent_bytes(name: &str) -> Vec<u8> {
+        let pieces = [9u8; 20];
+        let mut data = Vec::new();
+        data.extend_from_slice(b"d4:infod6:lengthi10e4:name");
+        data.extend_from_slice(format!("{}:{}", name.len(), name).as_bytes());
+        data.extend_from_slice(b"12:piece lengthi10e6:pieces20:");
+        data.extend_from_slice(&pieces);
+        data.extend_from_slice(b"ee");
+        data
+    }
+
+    #[tokio::test]
+    async fn scan_downloader_parses_exported_torrent() {
+        let db_dir = tempfile::tempdir().unwrap();
+        let database_url = format!("sqlite://{}", db_dir.path().join("test.db").display());
+        let pool = crate::db::init_db(&database_url).await.unwrap();
+        let repo = Repository::new(pool);
+        let writer = spawn_writer(&database_url, 10).unwrap();
+        let bytes = sample_torrent_bytes("a");
+        let meta = parser::parse_bytes(&bytes).unwrap();
+        let client = MockDownloader {
+            hashes: HashSet::from([meta.info_hash.clone()]),
+            exports: HashMap::from([(meta.info_hash.clone(), bytes)]),
+        };
+        let dest = MockDownloader {
+            hashes: HashSet::new(),
+            exports: HashMap::new(),
+        };
+        let stats = ReseedStats::new();
+        let cancel = CancellationToken::new();
+
+        let result = scan_downloader(
+            &client,
+            None,
+            &repo,
+            &writer,
+            Some(&dest),
+            &stats,
+            &cancel,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(result.torrents.len(), 1);
+        assert!(result.torrents.contains_key(&meta.info_hash));
+        assert!(!result.pieces_groups.is_empty());
+    }
+
+    #[tokio::test]
+    async fn scan_downloader_uses_torrent_dir_fallback() {
+        let db_dir = tempfile::tempdir().unwrap();
+        let database_url = format!("sqlite://{}", db_dir.path().join("test.db").display());
+        let pool = crate::db::init_db(&database_url).await.unwrap();
+        let repo = Repository::new(pool);
+        let writer = spawn_writer(&database_url, 10).unwrap();
+
+        let torrent_dir = tempfile::tempdir().unwrap();
+        let bytes = sample_torrent_bytes("dir-torrent");
+        let meta = parser::parse_bytes(&bytes).unwrap();
+        std::fs::write(torrent_dir.path().join("x.torrent"), &bytes).unwrap();
+
+        let client = MockDownloader {
+            hashes: HashSet::new(),
+            exports: HashMap::new(),
+        };
+        let dest = MockDownloader {
+            hashes: HashSet::new(),
+            exports: HashMap::new(),
+        };
+        let stats = ReseedStats::new();
+        let cancel = CancellationToken::new();
+
+        let result = scan_downloader(
+            &client,
+            Some(torrent_dir.path()),
+            &repo,
+            &writer,
+            Some(&dest),
+            &stats,
+            &cancel,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(result.torrents.len(), 1);
+        assert!(result.torrents.contains_key(&meta.info_hash));
+    }
 }

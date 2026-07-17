@@ -109,6 +109,8 @@ impl AppState {
         authenticated_user_id: Option<i64>,
     ) -> pt_reseeder_frontend::server_fns::ServerFnContext {
         let refresh_state = self.clone();
+        let reconfigure_state = self.clone();
+        let remove_state = self.clone();
         pt_reseeder_frontend::server_fns::ServerFnContext {
             pool: self.inner.db_pool.clone(),
             vault: self.inner.vault.clone(),
@@ -130,6 +132,24 @@ impl AppState {
             trigger_task_execution: std::sync::Arc::new({
                 let state = self.clone();
                 move |task_id| spawn_task_execution(state.clone(), task_id)
+            }),
+            reconfigure_task_runtime: std::sync::Arc::new(move |task_id| {
+                let state = reconfigure_state.clone();
+                Box::pin(async move {
+                    state
+                        .reconfigure_task_runtime(task_id)
+                        .await
+                        .map_err(|error| error.to_string())
+                })
+            }),
+            remove_task_runtime: std::sync::Arc::new(move |task_id| {
+                let state = remove_state.clone();
+                Box::pin(async move {
+                    state
+                        .remove_task_runtime(task_id)
+                        .await
+                        .map_err(|error| error.to_string())
+                })
             }),
             authenticated_user_id,
         }

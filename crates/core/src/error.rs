@@ -120,6 +120,8 @@ pub enum SchedulerError {
     WatcherError(String),
     #[error("executor error: {0}")]
     ExecutorError(String),
+    #[error("invalid config: {0}")]
+    InvalidConfig(String),
     #[error("folder not found: {0}")]
     FolderNotFound(i64),
 }

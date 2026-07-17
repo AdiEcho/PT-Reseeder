@@ -12,5 +12,8 @@ pub trait Downloader: Send + Sync {
     async fn add_torrent(&self, opts: AddTorrentOpts) -> Result<bool, CoreError>;
     async fn resume_torrent(&self, info_hash: &str) -> Result<bool, CoreError>;
     async fn pause_torrent(&self, info_hash: &str) -> Result<bool, CoreError>;
+    /// Export raw `.torrent` bytes for the given info hash when supported.
+    /// Returns `Ok(None)` when the downloader cannot provide torrent data.
+    async fn export_torrent(&self, info_hash: &str) -> Result<Option<Vec<u8>>, CoreError>;
     async fn close(&mut self) -> Result<(), CoreError>;
 }

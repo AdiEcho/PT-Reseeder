@@ -14,9 +14,12 @@ pub struct TaskCreateRequest {
     pub trigger_type: String,
     pub cron_expression: Option<String>,
     pub downloader_pair_id: Option<i64>,
+    pub destination_downloader_id: Option<i64>,
     pub config_json: Option<String>,
     pub folder_ids: Vec<i64>,
     pub site_ids: Vec<i64>,
+    #[serde(default)]
+    pub source_downloader_ids: Vec<i64>,
 }
 
 /// Manages CRUD operations on tasks and their associations.
@@ -31,6 +34,13 @@ impl TaskManager {
 
     /// Create a new task with folder and site associations.
     pub async fn create_task(&self, req: &TaskCreateRequest) -> Result<i64, CoreError> {
+        validate_task_request(req)?;
+
+        let destination_downloader_id =
+            resolve_destination_downloader_id(req, &self.repo).await?;
+
+        // Create core row first, then associations. On any later failure, delete the
+        // orphan task so callers never observe a half-configured reseed task.
         let task_id = self
             .repo
             .create_task(
@@ -39,24 +49,45 @@ impl TaskManager {
                 &req.trigger_type,
                 req.cron_expression.as_deref(),
                 req.downloader_pair_id,
+                destination_downloader_id,
                 req.config_json.as_deref(),
             )
             .await?;
 
-        if !req.folder_ids.is_empty() {
-            self.repo.set_task_folders(task_id, &req.folder_ids).await?;
+        if let Err(error) = self
+            .persist_associations_and_schedule(task_id, req)
+            .await
+        {
+            if let Err(cleanup_error) = self.repo.delete_task(task_id).await {
+                tracing::error!(
+                    task_id,
+                    error = %cleanup_error,
+                    "failed to clean up orphan task after create association error"
+                );
+            }
+            return Err(error);
         }
-        if !req.site_ids.is_empty() {
-            self.repo.set_task_sites(task_id, &req.site_ids).await?;
-        }
+
+        Ok(task_id)
+    }
+
+    async fn persist_associations_and_schedule(
+        &self,
+        task_id: i64,
+        req: &TaskCreateRequest,
+    ) -> Result<(), CoreError> {
+        self.repo.set_task_folders(task_id, &req.folder_ids).await?;
+        self.repo.set_task_sites(task_id, &req.site_ids).await?;
+        self.repo
+            .set_task_source_downloaders(task_id, &req.source_downloader_ids)
+            .await?;
 
         if let Some(next_run_at) = next_run_at_for(req.cron_expression.as_deref())? {
             self.repo
                 .update_task_next_run_at(task_id, Some(&next_run_at))
                 .await?;
         }
-
-        Ok(task_id)
+        Ok(())
     }
 
     /// Get a task by ID.
@@ -74,8 +105,13 @@ impl TaskManager {
 
     /// Update a task's core fields and associations (preserves task ID).
     pub async fn update_task(&self, id: i64, req: &TaskCreateRequest) -> Result<(), CoreError> {
+        validate_task_request(req)?;
+
         // Verify the task exists
         let _ = self.get_task(id).await?;
+
+        let destination_downloader_id =
+            resolve_destination_downloader_id(req, &self.repo).await?;
 
         // Update core fields in-place
         self.repo
@@ -86,6 +122,7 @@ impl TaskManager {
                 &req.trigger_type,
                 req.cron_expression.as_deref(),
                 req.downloader_pair_id,
+                destination_downloader_id,
                 req.config_json.as_deref(),
             )
             .await?;
@@ -93,6 +130,9 @@ impl TaskManager {
         // Replace associations
         self.repo.set_task_folders(id, &req.folder_ids).await?;
         self.repo.set_task_sites(id, &req.site_ids).await?;
+        self.repo
+            .set_task_source_downloaders(id, &req.source_downloader_ids)
+            .await?;
 
         let next_run_at = next_run_at_for(req.cron_expression.as_deref())?;
         self.repo
@@ -123,6 +163,11 @@ impl TaskManager {
         self.repo.get_task_sites(task_id).await
     }
 
+    /// Get source downloader IDs associated with a task.
+    pub async fn get_task_source_downloaders(&self, task_id: i64) -> Result<Vec<i64>, CoreError> {
+        self.repo.get_task_source_downloaders(task_id).await
+    }
+
     /// Set folder associations for a task.
     pub async fn set_task_folders(
         &self,
@@ -136,6 +181,83 @@ impl TaskManager {
     pub async fn set_task_sites(&self, task_id: i64, site_ids: &[i64]) -> Result<(), CoreError> {
         self.repo.set_task_sites(task_id, site_ids).await
     }
+
+    /// Set source downloader associations for a task.
+    pub async fn set_task_source_downloaders(
+        &self,
+        task_id: i64,
+        downloader_ids: &[i64],
+    ) -> Result<(), CoreError> {
+        self.repo
+            .set_task_source_downloaders(task_id, downloader_ids)
+            .await
+    }
+}
+
+fn validate_task_request(req: &TaskCreateRequest) -> Result<(), CoreError> {
+    if req.trigger_type == "cron" {
+        // Ensure cron expression is parseable when provided for cron tasks.
+        let _ = next_run_at_for(req.cron_expression.as_deref())?;
+        if req
+            .cron_expression
+            .as_ref()
+            .map_or(true, |s| s.trim().is_empty())
+        {
+            return Err(CoreError::Scheduler(SchedulerError::InvalidConfig(
+                "cron_expression is required when trigger_type is 'cron'".to_string(),
+            )));
+        }
+    }
+
+    match req.task_type.as_str() {
+        "reseed" => {
+            if req.site_ids.is_empty() {
+                return Err(CoreError::Scheduler(SchedulerError::InvalidConfig(
+                    "reseed tasks require at least one site".to_string(),
+                )));
+            }
+            if req.source_downloader_ids.is_empty() && req.folder_ids.is_empty() {
+                return Err(CoreError::Scheduler(SchedulerError::InvalidConfig(
+                    "reseed tasks require at least one source (folder or source downloader)"
+                        .to_string(),
+                )));
+            }
+            if req.destination_downloader_id.is_none() && req.downloader_pair_id.is_none() {
+                return Err(CoreError::Scheduler(SchedulerError::InvalidConfig(
+                    "reseed tasks require destination_downloader_id".to_string(),
+                )));
+            }
+        }
+        "repost" | "sync_stats" => {}
+        other => {
+            return Err(CoreError::Scheduler(SchedulerError::InvalidConfig(
+                format!("unsupported task_type: {}", other),
+            )));
+        }
+    }
+
+    Ok(())
+}
+
+/// Prefer explicit destination; otherwise resolve from legacy pair if present.
+/// Missing/invalid pair is a hard configuration error (never store null destination for reseed).
+async fn resolve_destination_downloader_id(
+    req: &TaskCreateRequest,
+    repo: &Repository,
+) -> Result<Option<i64>, CoreError> {
+    if let Some(id) = req.destination_downloader_id {
+        return Ok(Some(id));
+    }
+    if let Some(pair_id) = req.downloader_pair_id {
+        let pair = repo.get_downloader_pair(pair_id).await?.ok_or_else(|| {
+            CoreError::Scheduler(SchedulerError::InvalidConfig(format!(
+                "downloader pair {} not found",
+                pair_id
+            )))
+        })?;
+        return Ok(Some(pair.destination_id));
+    }
+    Ok(None)
 }
 
 pub(crate) fn next_run_at_for(cron_expression: Option<&str>) -> Result<Option<String>, CoreError> {
@@ -157,6 +279,21 @@ pub(crate) fn next_run_at_for(cron_expression: Option<&str>) -> Result<Option<St
 mod tests {
     use super::*;
     use chrono::{DateTime, Duration, Utc};
+
+    fn base_request(task_type: &str) -> TaskCreateRequest {
+        TaskCreateRequest {
+            name: "test-task".to_string(),
+            task_type: task_type.to_string(),
+            trigger_type: "manual".to_string(),
+            cron_expression: None,
+            downloader_pair_id: None,
+            destination_downloader_id: None,
+            config_json: None,
+            folder_ids: vec![],
+            site_ids: vec![],
+            source_downloader_ids: vec![],
+        }
+    }
 
     #[test]
     fn next_run_at_for_none_returns_none() {
@@ -215,9 +352,11 @@ mod tests {
             trigger_type: "cron".to_string(),
             cron_expression: Some("0 0 * * *".to_string()),
             downloader_pair_id: Some(42),
+            destination_downloader_id: Some(7),
             config_json: Some(r#"{"key":"value"}"#.to_string()),
             folder_ids: vec![1, 2, 3],
             site_ids: vec![10, 20],
+            source_downloader_ids: vec![5, 6],
         };
 
         let json = serde_json::to_string(&request).expect("should serialize to JSON");
@@ -229,8 +368,65 @@ mod tests {
         assert_eq!(deserialized.trigger_type, request.trigger_type);
         assert_eq!(deserialized.cron_expression, request.cron_expression);
         assert_eq!(deserialized.downloader_pair_id, request.downloader_pair_id);
+        assert_eq!(
+            deserialized.destination_downloader_id,
+            request.destination_downloader_id
+        );
         assert_eq!(deserialized.config_json, request.config_json);
         assert_eq!(deserialized.folder_ids, request.folder_ids);
         assert_eq!(deserialized.site_ids, request.site_ids);
+        assert_eq!(
+            deserialized.source_downloader_ids,
+            request.source_downloader_ids
+        );
+    }
+
+    #[test]
+    fn validate_reseed_requires_sites_sources_destination() {
+        let mut req = base_request("reseed");
+        assert!(validate_task_request(&req).is_err());
+
+        req.site_ids = vec![1];
+        assert!(validate_task_request(&req).is_err());
+
+        req.folder_ids = vec![2];
+        assert!(validate_task_request(&req).is_err());
+
+        req.destination_downloader_id = Some(3);
+        assert!(validate_task_request(&req).is_ok());
+    }
+
+    #[test]
+    fn validate_reseed_accepts_folder_only_or_downloader_only() {
+        let mut folder_only = base_request("reseed");
+        folder_only.site_ids = vec![1];
+        folder_only.folder_ids = vec![2];
+        folder_only.destination_downloader_id = Some(3);
+        assert!(validate_task_request(&folder_only).is_ok());
+
+        let mut dl_only = base_request("reseed");
+        dl_only.site_ids = vec![1];
+        dl_only.source_downloader_ids = vec![9];
+        dl_only.destination_downloader_id = Some(3);
+        assert!(validate_task_request(&dl_only).is_ok());
+    }
+
+    #[test]
+    fn validate_non_reseed_skips_source_rules() {
+        let sync = base_request("sync_stats");
+        assert!(validate_task_request(&sync).is_ok());
+
+        let mut repost = base_request("repost");
+        repost.site_ids = vec![];
+        assert!(validate_task_request(&repost).is_ok());
+    }
+
+    #[test]
+    fn validate_reseed_accepts_legacy_pair_as_destination() {
+        let mut req = base_request("reseed");
+        req.site_ids = vec![1];
+        req.folder_ids = vec![2];
+        req.downloader_pair_id = Some(4);
+        assert!(validate_task_request(&req).is_ok());
     }
 }

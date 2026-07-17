@@ -143,6 +143,7 @@ pub struct TaskRow {
     pub cron_expression: Option<String>,
     pub status: String,
     pub downloader_pair_id: Option<i64>,
+    pub destination_downloader_id: Option<i64>,
     pub last_run_at: Option<String>,
     pub next_run_at: Option<String>,
     pub run_count: Option<i64>,

@@ -372,6 +372,12 @@ impl Downloader for TransmissionClient {
         Ok(true)
     }
 
+    async fn export_torrent(&self, _info_hash: &str) -> Result<Option<Vec<u8>>, CoreError> {
+        // Transmission RPC does not provide a reliable .torrent export path for all setups.
+        // Source scans should use torrent_dir when available.
+        Ok(None)
+    }
+
     async fn close(&mut self) -> Result<(), CoreError> {
         // Transmission doesn't have an explicit logout; just clear state.
         {

@@ -850,7 +850,11 @@ async fn test_full_pipeline_e2e() {
 
     let engine = ReseedEngine::new(Arc::new(registry), repo.clone(), db_writer.clone(), cancel);
 
-    let snapshot = engine.run_sync(config, dest_client.clone()).await.unwrap();
+    let (snapshot, preview) = engine
+        .run_sync(config, dest_client.clone(), false)
+        .await
+        .unwrap();
+    assert!(preview.is_none());
 
     // --- Verify results ---
     // 3 torrents scanned
@@ -866,6 +870,89 @@ async fn test_full_pipeline_e2e() {
     assert_eq!(dest_client.added_count(), 2);
     // With auto_start=true, both should be resumed
     assert_eq!(dest_client.resumed_count(), 2);
+}
+
+/// Dry-run runs scan+match but never adds to destination or writes reseed history.
+#[tokio::test]
+async fn test_pipeline_dry_run_skips_add_and_history() {
+    let (_db_dir, repo, db_writer) = setup_db().await;
+    let cancel = CancellationToken::new();
+
+    let (dir, metas) = write_torrent_fixtures(&[
+        ("movie1", "http://tracker.example.com/announce", 0x11),
+        ("movie2", "http://tracker.example.com/announce", 0x22),
+        ("movie3", "http://tracker.example.com/announce", 0x33),
+    ]);
+    let pieces_hash_1 = metas[0].1.clone();
+    let pieces_hash_2 = metas[1].1.clone();
+
+    let site_id = SiteId(1);
+    let site = Arc::new(MockReseedSite {
+        name: "TestSite".to_string(),
+        base_url: "https://example.test".to_string(),
+        known_matches: vec![(pieces_hash_1.clone(), 1001), (pieces_hash_2.clone(), 1002)],
+    });
+
+    let mut registry = SiteRegistry::new();
+    registry.register(
+        site_id,
+        AdapterHandle {
+            core: site.clone() as Arc<dyn SiteCore>,
+            reseed: Some(site as Arc<dyn ReseedCapable>),
+            repost: None,
+            user_info: None,
+            search: None,
+            rate_limiter: Arc::new(SiteRateLimiter::new(1, 100)),
+        },
+    );
+
+    let dest_client = Arc::new(MockDownloader::new());
+    let config = ReseedConfig {
+        scan_folders: vec![dir.path().to_path_buf()],
+        source_downloaders: vec![],
+        target_site_ids: vec![site_id],
+        default_save_path: "/downloads".to_string(),
+        skip_hash_check: true,
+        auto_start: true,
+        tag: Some("dry-run-test".to_string()),
+        jackett_config: None,
+    };
+
+    let engine = ReseedEngine::new(Arc::new(registry), repo.clone(), db_writer.clone(), cancel);
+    let (snapshot, preview) = engine
+        .run_sync(config, dest_client.clone(), true)
+        .await
+        .unwrap();
+
+    assert_eq!(snapshot.scanned, 3, "should still scan torrents");
+    assert_eq!(snapshot.matched, 2, "should still match torrents");
+    assert_eq!(snapshot.added, 0, "dry-run must not add");
+    assert_eq!(dest_client.added_count(), 0);
+    assert_eq!(dest_client.resumed_count(), 0);
+
+    let preview = preview.expect("dry-run should return preview");
+    assert_eq!(preview.would_add_count, 2);
+    assert_eq!(preview.items.len(), 2);
+    assert!(preview
+        .items
+        .iter()
+        .any(|item| item.pieces_hash == pieces_hash_1));
+    assert!(preview
+        .items
+        .iter()
+        .any(|item| item.pieces_hash == pieces_hash_2));
+
+    // No reseed history rows should be written under dry-run.
+    let h1 = repo
+        .find_reseed_history(&pieces_hash_1, site_id.0)
+        .await
+        .unwrap();
+    let h2 = repo
+        .find_reseed_history(&pieces_hash_2, site_id.0)
+        .await
+        .unwrap();
+    assert!(h1.is_empty(), "dry-run must not write reseed_history");
+    assert!(h2.is_empty(), "dry-run must not write reseed_history");
 }
 
 /// Same as MockReseedSite but uses local HTTP URLs for downloading.
@@ -958,7 +1045,11 @@ async fn test_pipeline_no_matches_completes() {
 
     let engine = ReseedEngine::new(Arc::new(registry), repo, db_writer, cancel);
 
-    let snapshot = engine.run_sync(config, dest_client.clone()).await.unwrap();
+    let (snapshot, preview) = engine
+        .run_sync(config, dest_client.clone(), false)
+        .await
+        .unwrap();
+    assert!(preview.is_none());
 
     assert_eq!(snapshot.scanned, 1);
     assert_eq!(snapshot.matched, 0);

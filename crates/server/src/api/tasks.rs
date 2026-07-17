@@ -54,6 +54,11 @@ pub struct TaskLogsQuery {
     pub limit: Option<i64>,
 }
 
+#[derive(Deserialize)]
+pub struct RunTaskQuery {
+    pub dry_run: Option<bool>,
+}
+
 #[derive(Serialize)]
 pub struct TaskResponse {
     pub id: i64,
@@ -344,31 +349,47 @@ async fn delete_task(
 }
 
 /// POST /tasks/:id/run -- manually trigger task execution
+///
+/// Optional query: `?dry_run=true` (reseed only) runs scan+match without add.
 async fn run_task(
     State(state): State<AppState>,
     Path(id): Path<i64>,
+    Query(query): Query<RunTaskQuery>,
 ) -> Result<(StatusCode, Json<RunTaskResponse>), (StatusCode, Json<ApiError>)> {
+    let dry_run = query.dry_run.unwrap_or(false);
+
     // Verify task exists
     let task_manager = TaskManager::new(state.inner.repo.clone());
-    let _task = task_manager
+    let task = task_manager
         .get_task(id)
         .await
         .map_err(|e| map_task_manager_error(e, "load task"))?;
+
+    if dry_run && task.task_type != "reseed" {
+        return Err(api_err(
+            StatusCode::BAD_REQUEST,
+            "dry-run is only supported for reseed tasks",
+        ));
+    }
 
     // Spawn execution asynchronously to avoid timeout
     let exec_state = state.clone();
     tokio::spawn(async move {
         let executor = exec_state.task_executor().await;
-        if let Err(e) = executor.execute(id).await {
-            warn!(task_id = id, "task execution failed: {}", e);
+        if let Err(e) = executor.execute(id, dry_run).await {
+            warn!(task_id = id, dry_run, "task execution failed: {}", e);
         }
     });
 
-    info!("triggered task execution id={id}");
+    info!(task_id = id, dry_run, "triggered task execution");
     Ok((
         StatusCode::ACCEPTED,
         Json(RunTaskResponse {
-            message: "task execution started".to_string(),
+            message: if dry_run {
+                "task dry-run started".to_string()
+            } else {
+                "task execution started".to_string()
+            },
             task_id: id,
         }),
     ))

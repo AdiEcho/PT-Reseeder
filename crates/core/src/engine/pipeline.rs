@@ -16,6 +16,7 @@ use crate::site::models::SiteId;
 use crate::site::registry::SiteRegistry;
 
 use super::adder;
+use super::dry_run::{build_preview, DryRunPreview};
 use super::filter;
 use super::matcher;
 use super::scanner;
@@ -96,14 +97,20 @@ impl ReseedEngine {
     ///
     /// Returns a watch receiver for real-time progress and the final stats
     /// after the pipeline completes.
+    ///
+    /// When `dry_run` is true, scan+match still run but phase 3 (add) is skipped
+    /// and a structured preview is returned inside the join handle result.
     pub async fn run(
         &self,
         config: ReseedConfig,
         dest_client: Arc<dyn Downloader>,
+        dry_run: bool,
     ) -> Result<
         (
             watch::Receiver<ReseedProgress>,
-            tokio::task::JoinHandle<Result<ReseedStatsSnapshot, CoreError>>,
+            tokio::task::JoinHandle<
+                Result<(ReseedStatsSnapshot, Option<DryRunPreview>), CoreError>,
+            >,
         ),
         CoreError,
     > {
@@ -135,6 +142,7 @@ impl ReseedEngine {
                 &cancel,
                 &progress_tx,
                 start,
+                dry_run,
             )
             .await;
 
@@ -147,18 +155,22 @@ impl ReseedEngine {
                 finished: true,
             });
 
-            result.map(|_| snapshot)
+            result.map(|preview| (snapshot, preview))
         });
 
         Ok((progress_rx, handle))
     }
 
     /// Run the pipeline synchronously (blocking until complete).
+    ///
+    /// When `dry_run` is true, returns a preview of would-add items and never
+    /// calls destination add / reseed history writes.
     pub async fn run_sync(
         &self,
         config: ReseedConfig,
         dest_client: Arc<dyn Downloader>,
-    ) -> Result<ReseedStatsSnapshot, CoreError> {
+        dry_run: bool,
+    ) -> Result<(ReseedStatsSnapshot, Option<DryRunPreview>), CoreError> {
         let stats = Arc::new(ReseedStats::new());
         let start = Instant::now();
         let (progress_tx, _) = watch::channel(ReseedProgress {
@@ -168,7 +180,7 @@ impl ReseedEngine {
             finished: false,
         });
 
-        run_pipeline(
+        let preview = run_pipeline(
             config,
             &self.registry,
             &self.repo,
@@ -178,14 +190,18 @@ impl ReseedEngine {
             &self.cancel,
             &progress_tx,
             start,
+            dry_run,
         )
         .await?;
 
-        Ok(stats.snapshot())
+        Ok((stats.snapshot(), preview))
     }
 }
 
 /// Internal: run the three-phase pipeline.
+///
+/// Returns `Some(preview)` when `dry_run` is true (including empty would-add list).
+/// Returns `None` for real runs.
 async fn run_pipeline(
     config: ReseedConfig,
     registry: &SiteRegistry,
@@ -196,7 +212,8 @@ async fn run_pipeline(
     cancel: &CancellationToken,
     progress_tx: &watch::Sender<ReseedProgress>,
     start: Instant,
-) -> Result<(), CoreError> {
+    dry_run: bool,
+) -> Result<Option<DryRunPreview>, CoreError> {
     // ── Phase 1: Scan ──────────────────────────────────────────────────
     update_progress(progress_tx, "scanning", stats, start);
     tracing::info!(
@@ -281,7 +298,10 @@ async fn run_pipeline(
 
     if merged_scan.pieces_groups.is_empty() {
         tracing::info!("no torrents to match, pipeline done");
-        return Ok(());
+        if dry_run {
+            return Ok(Some(build_preview(&[], &merged_scan, registry)));
+        }
+        return Ok(None);
     }
 
     // Shared HTTP client for pack detection and add phase.
@@ -384,7 +404,21 @@ async fn run_pipeline(
 
     if matched_torrents.is_empty() {
         tracing::info!("no matches found, pipeline done");
-        return Ok(());
+        if dry_run {
+            return Ok(Some(build_preview(&[], &merged_scan, registry)));
+        }
+        return Ok(None);
+    }
+
+    // Dry-run: stop after match; never enter adder / history writes.
+    if dry_run {
+        let preview = build_preview(&matched_torrents, &merged_scan, registry);
+        update_progress(progress_tx, "dry_run_preview", stats, start);
+        tracing::info!(
+            would_add = preview.would_add_count,
+            "dry-run complete; skipping add phase"
+        );
+        return Ok(Some(preview));
     }
 
     // ── Phase 3: Add ───────────────────────────────────────────────────
@@ -463,7 +497,7 @@ async fn run_pipeline(
         "pipeline complete"
     );
 
-    Ok(())
+    Ok(None)
 }
 
 fn site_id_for_jackett_tracker(

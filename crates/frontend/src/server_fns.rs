@@ -23,7 +23,7 @@ pub struct ServerFnContext {
             + Sync,
     >,
     pub fetch_seeding_size: std::sync::Arc<std::sync::atomic::AtomicBool>,
-    pub trigger_task_execution: std::sync::Arc<dyn Fn(i64) + Send + Sync>,
+    pub trigger_task_execution: std::sync::Arc<dyn Fn(i64, bool) + Send + Sync>,
     pub reconfigure_task_runtime: std::sync::Arc<
         dyn Fn(i64) -> std::pin::Pin<
                 Box<dyn std::future::Future<Output = Result<(), String>> + Send + 'static>,
@@ -468,12 +468,31 @@ pub struct TaskInfo {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TaskLogInfo {
+    pub id: i64,
     pub status: String,
     pub matched_count: i64,
     pub succeeded_count: i64,
     pub failed_count: i64,
     pub duration_ms: Option<i64>,
+    pub log_text: Option<String>,
     pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DryRunPreviewInfo {
+    pub version: u32,
+    pub would_add_count: usize,
+    pub items: Vec<DryRunPreviewItemInfo>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DryRunPreviewItemInfo {
+    pub site_id: i64,
+    pub site_name: String,
+    pub pieces_hash: String,
+    pub torrent_id: Option<i64>,
+    pub title: Option<String>,
+    pub save_path: String,
 }
 
 #[cfg(feature = "ssr")]
@@ -1417,9 +1436,22 @@ pub async fn delete_task(id: i64) -> Result<(), ServerFnError> {
 }
 
 #[server]
-pub async fn trigger_task(id: i64) -> Result<(), ServerFnError> {
+pub async fn trigger_task(id: i64, dry_run: bool) -> Result<(), ServerFnError> {
     let context = server_context()?;
-    (context.trigger_task_execution)(id);
+    if dry_run {
+        use pt_reseeder_core::db::repo::Repository;
+        let task = Repository::new(context.pool.clone())
+            .get_task(id)
+            .await
+            .map_err(|e| ServerFnError::new(format!("{e}")))?
+            .ok_or_else(|| ServerFnError::new(format!("task not found: {id}")))?;
+        if task.task_type != "reseed" {
+            return Err(ServerFnError::new(
+                "dry-run is only supported for reseed tasks",
+            ));
+        }
+    }
+    (context.trigger_task_execution)(id, dry_run);
     Ok(())
 }
 
@@ -1434,14 +1466,62 @@ pub async fn get_task_logs(id: i64) -> Result<Vec<TaskLogInfo>, ServerFnError> {
     Ok(rows
         .into_iter()
         .map(|l| TaskLogInfo {
+            id: l.id,
             status: l.status,
             matched_count: l.matched_count.unwrap_or_default(),
             succeeded_count: l.succeeded_count.unwrap_or_default(),
             failed_count: l.failed_count.unwrap_or_default(),
             duration_ms: l.duration_ms,
+            log_text: l.log_text,
             created_at: l.created_at,
         })
         .collect())
+}
+
+#[server]
+pub async fn get_latest_dry_run_preview(
+    task_id: i64,
+) -> Result<Option<DryRunPreviewInfo>, ServerFnError> {
+    use pt_reseeder_core::db::repo::Repository;
+    use pt_reseeder_core::engine::DryRunPreview;
+
+    let rows = Repository::new(server_pool()?)
+        .get_task_logs(task_id, 20)
+        .await
+        .map_err(|e| ServerFnError::new(format!("{e}")))?;
+
+    for log in rows {
+        if log.status != "dry_run" {
+            continue;
+        }
+        let Some(text) = log.log_text.as_deref() else {
+            return Ok(Some(DryRunPreviewInfo {
+                version: 1,
+                would_add_count: 0,
+                items: vec![],
+            }));
+        };
+        let preview: DryRunPreview = serde_json::from_str(text)
+            .map_err(|e| ServerFnError::new(format!("invalid dry-run preview: {e}")))?;
+        return Ok(Some(DryRunPreviewInfo {
+            version: preview.version,
+            would_add_count: preview.would_add_count,
+            items: preview
+                .items
+                .into_iter()
+                .map(|item| DryRunPreviewItemInfo {
+                    site_id: item.site_id,
+                    site_name: item.site_name,
+                    pieces_hash: item.pieces_hash,
+                    torrent_id: item.torrent_id,
+                    title: item.title,
+                    save_path: item.save_path,
+                })
+                .collect(),
+        }));
+    }
+
+    Ok(None)
 }
 
 #[server]

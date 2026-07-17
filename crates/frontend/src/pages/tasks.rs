@@ -2,8 +2,9 @@ use crate::components::confirm_modal::ConfirmModal;
 use crate::components::empty_state::EmptyState;
 use crate::components::toast::{show_toast, ToastType};
 use crate::server_fns::{
-    create_task, delete_task, get_downloaders, get_folders, get_sites, get_task_logs, get_tasks,
-    trigger_task, DownloaderInfo, FolderInfo, SiteInfo, TaskInfo, TaskLogInfo,
+    create_task, delete_task, get_downloaders, get_folders, get_latest_dry_run_preview, get_sites,
+    get_task_logs, get_tasks, trigger_task, DownloaderInfo, DryRunPreviewInfo, FolderInfo, SiteInfo,
+    TaskInfo, TaskLogInfo,
 };
 use leptos::ev;
 use leptos::prelude::*;
@@ -15,6 +16,30 @@ fn status_class(status: &str) -> &'static str {
         "paused" => "text-yellow",
         "error" => "text-red",
         _ => "text-muted", // idle
+    }
+}
+
+fn log_status_class(status: &str) -> &'static str {
+    match status {
+        "success" => "text-green",
+        "dry_run" => "text-blue",
+        "failed" | "error" => "text-red",
+        "running" => "text-blue",
+        "partial" => "text-yellow",
+        "skipped" => "text-muted",
+        _ => "text-muted",
+    }
+}
+
+fn log_status_label(status: &str) -> &'static str {
+    match status {
+        "success" => "成功",
+        "dry_run" => "试运行",
+        "failed" | "error" => "失败",
+        "running" => "运行中",
+        "partial" => "部分成功",
+        "skipped" => "已跳过",
+        _ => "未知",
     }
 }
 
@@ -92,6 +117,7 @@ pub fn TasksPage() -> impl IntoView {
         },
     );
     let (confirm_delete, set_confirm_delete) = signal(None::<(i64, String)>);
+    let (dry_run_preview, set_dry_run_preview) = signal(None::<DryRunPreviewInfo>);
 
     // --- Create-task form state ---
     let (name, set_name) = signal(String::new());
@@ -512,6 +538,18 @@ pub fn TasksPage() -> impl IntoView {
                 })
             }}
 
+            // Page-level dry-run preview so modal survives TaskRow remounts after list refresh.
+            {move || {
+                dry_run_preview.get().map(|p| {
+                    view! {
+                        <DryRunPreviewModal
+                            preview=p
+                            on_close=move || set_dry_run_preview.set(None)
+                        />
+                    }
+                })
+            }}
+
             // --- Tasks Table ---
             <div class="stats-table-section">
                 <h2>"任务列表"</h2>
@@ -568,6 +606,9 @@ pub fn TasksPage() -> impl IntoView {
                                                                         on_request_delete=move |id: i64, name: String| {
                                                                             set_confirm_delete.set(Some((id, name)));
                                                                         }
+                                                                        on_dry_run_preview=move |preview: DryRunPreviewInfo| {
+                                                                            set_dry_run_preview.set(Some(preview));
+                                                                        }
                                                                     />
                                                                 }
                                                             })
@@ -588,18 +629,24 @@ pub fn TasksPage() -> impl IntoView {
 }
 
 #[component]
-fn TaskRow<F, G>(task: TaskInfo, on_change: F, on_request_delete: G) -> impl IntoView
+fn TaskRow<F, G, H>(
+    task: TaskInfo,
+    on_change: F,
+    on_request_delete: G,
+    on_dry_run_preview: H,
+) -> impl IntoView
 where
     F: Fn() + Copy + Send + Sync + 'static,
     G: Fn(i64, String) + Copy + 'static,
+    H: Fn(DryRunPreviewInfo) + Copy + 'static,
 {
     let task_id = task.id;
-    #[cfg(target_arch = "wasm32")]
     let initial_run_count = task.run_count;
     let task_name = task.name.clone();
     let assoc_summary = association_summary(&task);
     let (expanded, set_expanded) = signal(false);
     let (acting, set_acting) = signal(false);
+    let is_reseed = task.task_type == "reseed";
 
     let logs = Resource::new(
         move || expanded.get(),
@@ -612,42 +659,91 @@ where
         },
     );
 
+    async fn wait_for_task_completion(task_id: i64, initial: i64) {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let _ = (task_id, initial);
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            let mut saw_running = false;
+            for _ in 0..300 {
+                gloo_timers::future::TimeoutFuture::new(1_000).await;
+                let Some(task) = (match get_tasks().await {
+                    Ok(tasks) => tasks.into_iter().find(|task| task.id == task_id),
+                    Err(_) => continue,
+                }) else {
+                    break;
+                };
+                if task.status == "running" && !saw_running {
+                    saw_running = true;
+                }
+                if task.status != "running" && task.run_count > initial {
+                    break;
+                }
+            }
+        }
+    }
+
     let on_trigger = move |ev: ev::MouseEvent| {
         ev.stop_propagation();
         set_acting.set(true);
         leptos::task::spawn_local(async move {
-            match trigger_task(task_id).await {
+            match trigger_task(task_id, false).await {
                 Ok(_) => {
                     show_toast("任务已触发", ToastType::Success);
+                    wait_for_task_completion(task_id, initial_run_count).await;
                     on_change();
-                    #[cfg(not(target_arch = "wasm32"))]
                     set_acting.set(false);
-                    #[cfg(target_arch = "wasm32")]
-                    {
-                        let mut saw_running = false;
-                        for _ in 0..300 {
-                            gloo_timers::future::TimeoutFuture::new(1_000).await;
-                            let Some(task) = (match get_tasks().await {
-                                Ok(tasks) => tasks.into_iter().find(|task| task.id == task_id),
-                                Err(_) => continue,
-                            }) else {
-                                on_change();
-                                break;
-                            };
-                            if task.status == "running" && !saw_running {
-                                saw_running = true;
-                                on_change();
-                            }
-                            if task.status != "running" && task.run_count > initial_run_count {
-                                on_change();
-                                break;
-                            }
-                        }
-                        set_acting.set(false);
-                    }
                 }
                 Err(e) => {
                     show_toast(format!("触发失败：{e}"), ToastType::Error);
+                    set_acting.set(false);
+                }
+            }
+        });
+    };
+
+    let on_dry_run = move |ev: ev::MouseEvent| {
+        ev.stop_propagation();
+        set_acting.set(true);
+        leptos::task::spawn_local(async move {
+            match trigger_task(task_id, true).await {
+                Ok(_) => {
+                    show_toast("试运行已触发", ToastType::Success);
+                    wait_for_task_completion(task_id, initial_run_count).await;
+                    // Retry briefly in case the log writer is still flushing.
+                    let mut preview = None;
+                    for _ in 0..5 {
+                        match get_latest_dry_run_preview(task_id).await {
+                            Ok(Some(p)) => {
+                                preview = Some(p);
+                                break;
+                            }
+                            Ok(None) => {
+                                #[cfg(target_arch = "wasm32")]
+                                gloo_timers::future::TimeoutFuture::new(200).await;
+                            }
+                            Err(e) => {
+                                show_toast(format!("读取预览失败：{e}"), ToastType::Error);
+                                set_acting.set(false);
+                                on_change();
+                                return;
+                            }
+                        }
+                    }
+                    match preview {
+                        Some(p) => on_dry_run_preview(p),
+                        None => show_toast(
+                            "试运行已结束，但未找到预览结果（可能失败或任务仍在运行）",
+                            ToastType::Error,
+                        ),
+                    }
+                    on_change();
+                    set_acting.set(false);
+                }
+                Err(e) => {
+                    show_toast(format!("试运行触发失败：{e}"), ToastType::Error);
                     set_acting.set(false);
                 }
             }
@@ -709,6 +805,19 @@ where
                 <td class="text-muted col-secondary">{next_run}</td>
                 <td>{task.run_count}</td>
                 <td class="action-cell">
+                    {if is_reseed {
+                        Some(view! {
+                            <button
+                                class="btn btn--sm btn--outline"
+                                disabled=move || acting.get()
+                                on:click=on_dry_run
+                            >
+                                "试运行"
+                            </button>
+                        })
+                    } else {
+                        None
+                    }}
                     <button
                         class="btn btn--sm btn--primary"
                         disabled=move || acting.get()
@@ -762,6 +871,83 @@ where
 }
 
 #[component]
+fn DryRunPreviewModal<F>(preview: DryRunPreviewInfo, on_close: F) -> impl IntoView
+where
+    F: Fn() + Clone + 'static,
+{
+    let count = preview.would_add_count;
+    let items = preview.items;
+    let on_close_overlay = on_close.clone();
+    let on_close_btn = on_close.clone();
+    view! {
+        <div class="confirm-overlay" on:click=move |_| on_close_overlay.clone()()>
+            <div
+                class="confirm-dialog"
+                role="dialog"
+                aria-modal="true"
+                style="max-width: 960px; width: min(960px, 92vw);"
+                on:click=move |ev| ev.stop_propagation()
+            >
+                <div class="form-actions" style="justify-content: space-between; align-items: center;">
+                    <h3 style="margin: 0;">"试运行预览"</h3>
+                    <button class="btn btn--sm btn--outline" on:click=move |_| on_close_btn.clone()()>
+                        "关闭"
+                    </button>
+                </div>
+                <p class="text-muted">
+                    {format!("将要加种 {count} 条（仅预览，未实际写入下载器）")}
+                </p>
+                {if items.is_empty() {
+                    view! { <p class="text-muted">"没有将要加种的条目。"</p> }.into_any()
+                } else {
+                    view! {
+                        <div class="table-wrap">
+                            <table class="stats-table">
+                                <thead>
+                                    <tr>
+                                        <th>"站点"</th>
+                                        <th>"标题"</th>
+                                        <th>"Pieces Hash"</th>
+                                        <th>"Torrent ID"</th>
+                                        <th>"保存路径"</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {items
+                                        .into_iter()
+                                        .map(|item| {
+                                            let title = item
+                                                .title
+                                                .clone()
+                                                .unwrap_or_else(|| "-".into());
+                                            let hash = truncate_utf8(&item.pieces_hash, 12).to_string();
+                                            let tid = item
+                                                .torrent_id
+                                                .map(|v| v.to_string())
+                                                .unwrap_or_else(|| "-".into());
+                                            view! {
+                                                <tr>
+                                                    <td>{item.site_name}</td>
+                                                    <td title=item.title.clone().unwrap_or_default()>{title}</td>
+                                                    <td class="text-muted" title=item.pieces_hash.clone()>{hash}</td>
+                                                    <td class="text-muted">{tid}</td>
+                                                    <td class="text-muted">{item.save_path}</td>
+                                                </tr>
+                                            }
+                                        })
+                                        .collect::<Vec<_>>()}
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                    .into_any()
+                }}
+            </div>
+        </div>
+    }
+}
+
+#[component]
 fn TaskLogTable(logs: Vec<TaskLogInfo>) -> impl IntoView {
     if logs.is_empty() {
         return view! { <p class="text-muted">"该任务暂无日志。"</p> }.into_any();
@@ -784,18 +970,8 @@ fn TaskLogTable(logs: Vec<TaskLogInfo>) -> impl IntoView {
                     {logs
                         .into_iter()
                         .map(|log| {
-                            let lsc = match log.status.as_str() {
-                                "success" => "text-green",
-                                "failed" | "error" => "text-red",
-                                "running" => "text-blue",
-                                _ => "text-muted",
-                            };
-                            let status_label = match log.status.as_str() {
-                                "success" => "成功",
-                                "failed" | "error" => "失败",
-                                "running" => "运行中",
-                                _ => "未知",
-                            };
+                            let lsc = log_status_class(&log.status);
+                            let status_label = log_status_label(&log.status);
                             let duration = log
                                 .duration_ms
                                 .map(|ms| format!("{:.1}秒", ms as f64 / 1000.0))

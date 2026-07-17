@@ -131,7 +131,7 @@ impl AppState {
             fetch_seeding_size: self.inner.fetch_seeding_size.clone(),
             trigger_task_execution: std::sync::Arc::new({
                 let state = self.clone();
-                move |task_id| spawn_task_execution(state.clone(), task_id)
+                move |task_id, dry_run| spawn_task_execution(state.clone(), task_id, dry_run)
             }),
             reconfigure_task_runtime: std::sync::Arc::new(move |task_id| {
                 let state = reconfigure_state.clone();
@@ -164,7 +164,8 @@ impl AppState {
         let cron_state = self.clone();
         let cron_scheduler = Arc::new(
             CronScheduler::new(Arc::new(move |task_id| {
-                spawn_task_execution(cron_state.clone(), task_id);
+                // Scheduled runs are always real execution — never dry-run.
+                spawn_task_execution(cron_state.clone(), task_id, false);
             }))
             .await?,
         );
@@ -172,7 +173,8 @@ impl AppState {
 
         let watcher_state = self.clone();
         let file_watcher = Arc::new(FileWatcher::new(Arc::new(move |task_id, _path| {
-            spawn_task_execution(watcher_state.clone(), task_id);
+            // File-watch triggers are always real execution — never dry-run.
+            spawn_task_execution(watcher_state.clone(), task_id, false);
         }))?);
         file_watcher.start().await?;
 
@@ -346,11 +348,11 @@ impl AppState {
     }
 }
 
-fn spawn_task_execution(state: AppState, task_id: i64) {
+fn spawn_task_execution(state: AppState, task_id: i64, dry_run: bool) {
     tokio::spawn(async move {
         let executor = state.task_executor().await;
-        if let Err(e) = executor.execute(task_id).await {
-            error!(task_id, %e, "scheduled task execution failed");
+        if let Err(e) = executor.execute(task_id, dry_run).await {
+            error!(task_id, dry_run, %e, "task execution failed");
         }
     });
 }

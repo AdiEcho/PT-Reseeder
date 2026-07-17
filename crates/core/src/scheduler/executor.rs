@@ -61,12 +61,21 @@ impl TaskExecutor {
     }
 
     /// Execute a task by ID. Concurrent triggers are skipped and logged.
-    pub async fn execute(&self, task_id: i64) -> Result<(), CoreError> {
+    ///
+    /// When `dry_run` is true, only reseed tasks are supported: scan+match run,
+    /// add/history are skipped, and a structured preview is stored in task log.
+    pub async fn execute(&self, task_id: i64, dry_run: bool) -> Result<(), CoreError> {
         let task = self
             .repo
             .get_task(task_id)
             .await?
             .ok_or(CoreError::Scheduler(SchedulerError::TaskNotFound(task_id)))?;
+
+        if dry_run && task.task_type != "reseed" {
+            return Err(CoreError::Scheduler(SchedulerError::ExecutorError(
+                "dry-run is only supported for reseed tasks".to_string(),
+            )));
+        }
 
         if !self.repo.try_mark_task_running(task_id).await? {
             warn!(task_id, "task already running, skipping trigger");
@@ -91,9 +100,15 @@ impl TaskExecutor {
 
         let start = Instant::now();
         let result = match task.task_type.as_str() {
-            "reseed" => self.execute_reseed(&task).await,
-            "repost" => self.execute_repost(&task).await,
-            "sync_stats" => self.execute_sync_stats(&task).await,
+            "reseed" => self.execute_reseed(&task, dry_run).await,
+            "repost" => self
+                .execute_repost(&task)
+                .await
+                .map(|(m, s, f)| (m, s, f, None)),
+            "sync_stats" => self
+                .execute_sync_stats(&task)
+                .await
+                .map(|(m, s, f)| (m, s, f, None)),
             other => {
                 let msg = format!("unknown task type: {}", other);
                 Err(CoreError::Scheduler(SchedulerError::ExecutorError(msg)))
@@ -115,37 +130,50 @@ impl TaskExecutor {
         };
 
         match &result {
-            Ok((matched, succeeded, failed)) => {
-                let status = if *failed > 0 { "partial" } else { "success" };
-                self.repo.update_task_status(task_id, "idle").await?;
-                self.repo
-                    .update_task_run_times(task_id, &now, next_run_at.as_deref())
-                    .await?;
+            Ok((matched, succeeded, failed, preview)) => {
+                let (status, log_text, succeeded_count) = if dry_run {
+                    let text = preview
+                        .as_ref()
+                        .and_then(|p| serde_json::to_string(p).ok());
+                    ("dry_run", text, 0i64)
+                } else {
+                    let status = if *failed > 0 { "partial" } else { "success" };
+                    (status, None, *succeeded)
+                };
+                // Persist the completion log before flipping task status/run_count so
+                // dry-run clients polling for idle can already read the preview payload.
                 if let Err(e) = self
                     .write_log(
                         task_id,
                         status,
                         *matched,
-                        *succeeded,
+                        succeeded_count,
                         *failed,
                         Some(duration_ms),
-                        None,
+                        log_text.as_deref(),
                     )
                     .await
                 {
                     error!(task_id, %e, "failed to write task completion log");
+                } else if let Err(e) = self.db_writer.flush().await {
+                    error!(task_id, %e, "failed to flush task completion log");
                 }
+                self.repo.update_task_status(task_id, "idle").await?;
+                self.repo
+                    .update_task_run_times(task_id, &now, next_run_at.as_deref())
+                    .await?;
                 info!(
                     task_id,
-                    matched, succeeded, failed, duration_ms, "task completed"
+                    dry_run,
+                    matched,
+                    succeeded = succeeded_count,
+                    failed,
+                    duration_ms,
+                    "task completed"
                 );
             }
             Err(e) => {
                 let log_text = format!("error: {}", e);
-                self.repo.update_task_status(task_id, "error").await?;
-                self.repo
-                    .update_task_run_times(task_id, &now, next_run_at.as_deref())
-                    .await?;
                 if let Err(log_error) = self
                     .write_log(
                         task_id,
@@ -159,7 +187,13 @@ impl TaskExecutor {
                     .await
                 {
                     error!(task_id, %log_error, "failed to write task failure log");
+                } else if let Err(log_error) = self.db_writer.flush().await {
+                    error!(task_id, %log_error, "failed to flush task failure log");
                 }
+                self.repo.update_task_status(task_id, "error").await?;
+                self.repo
+                    .update_task_run_times(task_id, &now, next_run_at.as_deref())
+                    .await?;
                 error!(task_id, %e, "task failed");
             }
         }
@@ -168,8 +202,12 @@ impl TaskExecutor {
     }
 
     /// Execute a reseed-type task.
-    /// Returns (matched_count, succeeded_count, failed_count).
-    async fn execute_reseed(&self, task: &TaskRow) -> Result<(i64, i64, i64), CoreError> {
+    /// Returns (matched_count, succeeded_count, failed_count, optional dry-run preview).
+    async fn execute_reseed(
+        &self,
+        task: &TaskRow,
+        dry_run: bool,
+    ) -> Result<(i64, i64, i64, Option<crate::engine::DryRunPreview>), CoreError> {
         let folder_ids = self.repo.get_task_folders(task.id).await?;
         let site_ids = self.repo.get_task_sites(task.id).await?;
         let mut source_downloader_ids = self.repo.get_task_source_downloaders(task.id).await?;
@@ -278,12 +316,15 @@ impl TaskExecutor {
             self.db_writer.clone(),
             self.cancel_token.clone(),
         );
-        let stats = engine.run_sync(config, dest_downloader).await?;
+        let (stats, preview) = engine
+            .run_sync(config, dest_downloader, dry_run)
+            .await?;
 
         Ok((
             stats.matched as i64,
-            stats.added as i64,
+            if dry_run { 0 } else { stats.added as i64 },
             stats.failed as i64,
+            preview,
         ))
     }
 
@@ -617,7 +658,7 @@ mod tests {
             None,
         );
 
-        executor.execute(task_id).await.unwrap();
+        executor.execute(task_id, false).await.unwrap();
         writer.flush().await.unwrap();
 
         let task = repo.get_task(task_id).await.unwrap().unwrap();
@@ -627,6 +668,36 @@ mod tests {
         let logs = repo.get_task_logs(task_id, 10).await.unwrap();
         assert_eq!(logs.len(), 1);
         assert_eq!(logs[0].status, "success");
+    }
+
+    #[tokio::test]
+    async fn dry_run_rejects_non_reseed_tasks() {
+        let db_dir = tempfile::tempdir().unwrap();
+        let database_url = format!("sqlite://{}", db_dir.path().join("test.db").display());
+        let pool = init_db(&database_url).await.unwrap();
+        let repo = Repository::new(pool);
+        let writer = spawn_writer(&database_url, 10).unwrap();
+        let task_id = repo
+            .create_task("sync", "sync_stats", "manual", None, None, None)
+            .await
+            .unwrap();
+        let executor = TaskExecutor::new(
+            repo.clone(),
+            writer,
+            Arc::new(SiteRegistry::new()),
+            CancellationToken::new(),
+            None,
+        );
+
+        let err = executor.execute(task_id, true).await.unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("dry-run is only supported for reseed tasks"),
+            "unexpected error: {msg}"
+        );
+        let task = repo.get_task(task_id).await.unwrap().unwrap();
+        assert_eq!(task.status, "idle");
+        assert_eq!(task.run_count.unwrap_or(0), 0);
     }
 
     #[tokio::test]

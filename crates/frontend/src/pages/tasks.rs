@@ -3,8 +3,8 @@ use crate::components::empty_state::EmptyState;
 use crate::components::toast::{show_toast, ToastType};
 use crate::server_fns::{
     create_task, delete_task, get_downloaders, get_folders, get_latest_dry_run_preview, get_sites,
-    get_task_logs, get_tasks, trigger_task, DownloaderInfo, DryRunPreviewInfo, FolderInfo, SiteInfo,
-    TaskInfo, TaskLogInfo,
+    get_task_logs, get_tasks, trigger_task, CreateTaskInput, DownloaderInfo, DryRunPreviewInfo,
+    FolderInfo, SiteInfo, TaskInfo, TaskLogInfo,
 };
 use leptos::ev;
 use leptos::prelude::*;
@@ -207,16 +207,16 @@ pub fn TasksPage() -> impl IntoView {
         // Collapse immediately on submit start for responsive UX; reopen only on hard failure.
         set_show_form.set(false);
         leptos::task::spawn_local(async move {
-            match create_task(
-                n,
-                tt,
-                tg,
-                cron,
-                selected_sites,
-                selected_folders,
-                selected_sources,
-                selected_destination,
-            )
+            match create_task(CreateTaskInput {
+                name: n,
+                task_type: tt,
+                trigger_type: tg,
+                cron_expression: cron,
+                site_ids: selected_sites,
+                folder_ids: selected_folders,
+                source_downloader_ids: selected_sources,
+                destination_downloader_id: selected_destination,
+            })
             .await
             {
                 Ok(_) => {

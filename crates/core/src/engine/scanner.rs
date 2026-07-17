@@ -32,6 +32,9 @@ pub struct ScanResult {
     pub pieces_groups: HashMap<String, Vec<String>>,
     /// info_hashes already present in the destination downloader.
     pub dest_hashes: HashSet<String>,
+    /// Source torrent save paths keyed by info_hash (from downloader list API).
+    /// Used so reseed add keeps the original download directory.
+    pub save_paths: HashMap<String, String>,
 }
 
 /// Scan .torrent files from a folder, parse them, deduplicate against the cache,
@@ -145,7 +148,21 @@ pub async fn scan_downloader(
         }
     }
 
-    let hashes = client.get_all_info_hashes().await?;
+    // Prefer list_torrents so we can capture each torrent's save_path.
+    // Fall back to get_all_info_hashes when the client cannot list metadata.
+    let listed = client.list_torrents().await.unwrap_or_default();
+    let mut save_paths = HashMap::new();
+    let hashes: HashSet<String> = if listed.is_empty() {
+        client.get_all_info_hashes().await?
+    } else {
+        for t in &listed {
+            if !t.save_path.is_empty() {
+                save_paths.insert(t.info_hash.clone(), t.save_path.clone());
+            }
+        }
+        listed.into_iter().map(|t| t.info_hash).collect()
+    };
+
     tracing::info!(count = hashes.len(), "exporting torrents from downloader");
     let mut export_attempts = 0usize;
     let mut export_hits = 0usize;
@@ -202,6 +219,7 @@ pub async fn scan_downloader(
     }
 
     ingest_parsed_metas(parsed, &mut result, repo, db_writer, stats, cancel).await?;
+    result.save_paths = save_paths;
 
     if let Some(dest) = dest_client {
         result.dest_hashes = dest.get_all_info_hashes().await?;
@@ -211,6 +229,7 @@ pub async fn scan_downloader(
         parsed = result.torrents.len(),
         pieces_groups = result.pieces_groups.len(),
         dest_torrents = result.dest_hashes.len(),
+        save_paths = result.save_paths.len(),
         "downloader scan complete"
     );
 
@@ -222,6 +241,7 @@ fn empty_scan_result() -> ScanResult {
         torrents: HashMap::new(),
         pieces_groups: HashMap::new(),
         dest_hashes: HashSet::new(),
+        save_paths: HashMap::new(),
     }
 }
 

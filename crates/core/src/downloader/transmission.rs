@@ -288,18 +288,21 @@ impl Downloader for TransmissionClient {
     }
 
     async fn get_all_info_hashes(&self) -> Result<HashSet<String>, CoreError> {
+        Ok(self
+            .list_torrents()
+            .await?
+            .into_iter()
+            .map(|t| t.info_hash)
+            .collect())
+    }
+
+    async fn list_torrents(&self) -> Result<Vec<TorrentInfo>, CoreError> {
         let args = serde_json::json!({
-            "fields": ["hashString"]
+            "fields": ["hashString", "name", "status", "totalSize", "percentDone", "downloadDir"]
         });
         let result = self.rpc_call("torrent-get", args).await?;
 
-        #[derive(Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        struct HashOnly {
-            hash_string: String,
-        }
-
-        let torrents: Vec<HashOnly> = serde_json::from_value(
+        let torrents: Vec<TrTorrentInfo> = serde_json::from_value(
             result
                 .get("torrents")
                 .cloned()
@@ -307,7 +310,7 @@ impl Downloader for TransmissionClient {
         )
         .map_err(|e| CoreError::Downloader(DownloaderError::ConnectionFailed(e.to_string())))?;
 
-        Ok(torrents.into_iter().map(|t| t.hash_string).collect())
+        Ok(torrents.into_iter().map(TorrentInfo::from).collect())
     }
 
     async fn add_torrent(&self, opts: AddTorrentOpts) -> Result<bool, CoreError> {

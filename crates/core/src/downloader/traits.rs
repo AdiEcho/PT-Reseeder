@@ -9,6 +9,11 @@ pub trait Downloader: Send + Sync {
     async fn test_connection(&self) -> Result<bool, CoreError>;
     async fn get_torrent_info(&self, info_hash: &str) -> Result<Option<TorrentInfo>, CoreError>;
     async fn get_all_info_hashes(&self) -> Result<HashSet<String>, CoreError>;
+    /// List torrents with metadata (including per-torrent save_path) when available.
+    /// Default: empty list (callers fall back to default save path).
+    async fn list_torrents(&self) -> Result<Vec<TorrentInfo>, CoreError> {
+        Ok(Vec::new())
+    }
     async fn add_torrent(&self, opts: AddTorrentOpts) -> Result<bool, CoreError>;
     async fn resume_torrent(&self, info_hash: &str) -> Result<bool, CoreError>;
     async fn pause_torrent(&self, info_hash: &str) -> Result<bool, CoreError>;

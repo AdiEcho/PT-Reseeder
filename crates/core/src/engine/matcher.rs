@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
@@ -65,6 +65,18 @@ pub async fn match_all_sites(
         return Ok(Vec::new());
     }
 
+    // pieces_hash -> preferred save_path from any source info_hash that has one.
+    let save_path_by_pieces: HashMap<String, String> = scan
+        .pieces_groups
+        .iter()
+        .filter_map(|(pieces_hash, info_hashes)| {
+            info_hashes
+                .iter()
+                .find_map(|ih| scan.save_paths.get(ih).cloned())
+                .map(|path| (pieces_hash.clone(), path))
+        })
+        .collect();
+
     let all_pieces_hashes: Arc<[String]> = scan.pieces_groups.keys().cloned().collect();
     let present_info_hashes: Arc<HashSet<String>> = Arc::new(
         scan.dest_hashes
@@ -120,6 +132,7 @@ pub async fn match_all_sites(
         let repo = repo.clone();
         let cancel = cancel.clone();
         let default_save_path = default_save_path.to_string();
+        let save_path_by_pieces = save_path_by_pieces.clone();
         let tag = tag.map(String::from);
 
         // Filter-1: tracker pre-filter using preloaded announce URLs
@@ -177,6 +190,7 @@ pub async fn match_all_sites(
                 query_hashes,
                 initial_batch_size,
                 &default_save_path,
+                &save_path_by_pieces,
                 skip_hash_check,
                 tag.as_deref(),
                 &cancel_inner,
@@ -223,6 +237,7 @@ async fn match_single_site(
     hashes: Vec<String>,
     initial_batch_size: usize,
     default_save_path: &str,
+    save_path_by_pieces: &HashMap<String, String>,
     skip_hash_check: bool,
     tag: Option<&str>,
     cancel: &CancellationToken,
@@ -258,12 +273,16 @@ async fn match_single_site(
 
                 for (pieces_hash, torrent_id) in matches {
                     let download_url = reseed.build_download_url(torrent_id);
+                    let save_path = save_path_by_pieces
+                        .get(&pieces_hash)
+                        .cloned()
+                        .unwrap_or_else(|| default_save_path.to_string());
                     all_matches.push(MatchedTorrent {
                         pieces_hash,
                         site_id,
                         torrent_id: Some(torrent_id),
                         download_url,
-                        save_path: default_save_path.to_string(),
+                        save_path,
                         skip_hash_check,
                         tag: tag.map(String::from),
                     });

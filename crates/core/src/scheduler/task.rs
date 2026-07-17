@@ -15,7 +15,10 @@ pub struct TaskCreateRequest {
     pub cron_expression: Option<String>,
     pub destination_downloader_id: Option<i64>,
     pub config_json: Option<String>,
+    /// Optional for backward-compatible clients that omit empty associations.
+    #[serde(default)]
     pub folder_ids: Vec<i64>,
+    #[serde(default)]
     pub site_ids: Vec<i64>,
     #[serde(default)]
     pub source_downloader_ids: Vec<i64>,
@@ -305,6 +308,23 @@ mod tests {
             parsed <= upper_bound,
             "next run time ({parsed}) should be within 2 minutes of now ({upper_bound})"
         );
+    }
+
+    #[test]
+    fn task_create_request_accepts_omitted_association_fields() {
+        let json = r#"{
+            "name": "legacy-task",
+            "task_type": "reseed",
+            "trigger_type": "manual",
+            "cron_expression": null,
+            "destination_downloader_id": 1,
+            "config_json": null
+        }"#;
+        let req: TaskCreateRequest =
+            serde_json::from_str(json).expect("omitted associations should default");
+        assert!(req.folder_ids.is_empty());
+        assert!(req.site_ids.is_empty());
+        assert!(req.source_downloader_ids.is_empty());
     }
 
     #[test]

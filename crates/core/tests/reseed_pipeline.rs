@@ -442,6 +442,7 @@ async fn test_matcher_queries_site() {
         torrents,
         pieces_groups,
         dest_hashes: HashSet::new(),
+        save_paths: std::collections::HashMap::new(),
     };
 
     let matched = match_all_sites(
@@ -508,6 +509,7 @@ async fn test_matcher_no_matches() {
         torrents,
         pieces_groups,
         dest_hashes: HashSet::new(),
+        save_paths: std::collections::HashMap::new(),
     };
 
     let matched = match_all_sites(
@@ -542,6 +544,7 @@ async fn test_matcher_empty_scan() {
         torrents: std::collections::HashMap::new(),
         pieces_groups: std::collections::HashMap::new(),
         dest_hashes: HashSet::new(),
+        save_paths: std::collections::HashMap::new(),
     };
 
     let matched = match_all_sites(

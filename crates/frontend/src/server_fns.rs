@@ -1349,17 +1349,23 @@ pub async fn get_tasks() -> Result<Vec<TaskInfo>, ServerFnError> {
     Ok(tasks)
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateTaskInput {
+    pub name: String,
+    pub task_type: String,
+    pub trigger_type: String,
+    pub cron_expression: Option<String>,
+    #[serde(default)]
+    pub site_ids: Vec<i64>,
+    #[serde(default)]
+    pub folder_ids: Vec<i64>,
+    #[serde(default)]
+    pub source_downloader_ids: Vec<i64>,
+    pub destination_downloader_id: Option<i64>,
+}
+
 #[server]
-pub async fn create_task(
-    name: String,
-    task_type: String,
-    trigger_type: String,
-    cron_expression: Option<String>,
-    site_ids: Vec<i64>,
-    folder_ids: Vec<i64>,
-    source_downloader_ids: Vec<i64>,
-    destination_downloader_id: Option<i64>,
-) -> Result<TaskInfo, ServerFnError> {
+pub async fn create_task(input: CreateTaskInput) -> Result<TaskInfo, ServerFnError> {
     use pt_reseeder_core::error::{CoreError, SchedulerError};
     use pt_reseeder_core::scheduler::task::{TaskCreateRequest, TaskManager};
 
@@ -1369,15 +1375,15 @@ pub async fn create_task(
     ));
 
     let req = TaskCreateRequest {
-        name,
-        task_type,
-        trigger_type,
-        cron_expression,
-        destination_downloader_id,
+        name: input.name,
+        task_type: input.task_type,
+        trigger_type: input.trigger_type,
+        cron_expression: input.cron_expression,
+        destination_downloader_id: input.destination_downloader_id,
         config_json: None,
-        folder_ids,
-        site_ids,
-        source_downloader_ids,
+        folder_ids: input.folder_ids,
+        site_ids: input.site_ids,
+        source_downloader_ids: input.source_downloader_ids,
     };
 
     let id = task_manager.create_task(&req).await.map_err(|e| match e {

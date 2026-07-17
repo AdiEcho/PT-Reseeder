@@ -178,6 +178,15 @@ impl Downloader for QBittorrentClient {
     }
 
     async fn get_all_info_hashes(&self) -> Result<HashSet<String>, CoreError> {
+        Ok(self
+            .list_torrents()
+            .await?
+            .into_iter()
+            .map(|t| t.info_hash)
+            .collect())
+    }
+
+    async fn list_torrents(&self) -> Result<Vec<TorrentInfo>, CoreError> {
         let url = format!("{}/api/v2/torrents/info", self.base_url());
         let resp =
             self.client.get(&url).send().await.map_err(|e| {
@@ -188,7 +197,7 @@ impl Downloader for QBittorrentClient {
             .await
             .map_err(|e| CoreError::Downloader(DownloaderError::ConnectionFailed(e.to_string())))?;
 
-        Ok(torrents.into_iter().map(|t| t.hash).collect())
+        Ok(torrents.into_iter().map(TorrentInfo::from).collect())
     }
 
     async fn add_torrent(&self, opts: AddTorrentOpts) -> Result<bool, CoreError> {

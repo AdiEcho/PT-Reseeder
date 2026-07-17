@@ -234,6 +234,7 @@ async fn run_pipeline(
         torrents: std::collections::HashMap::new(),
         pieces_groups: std::collections::HashMap::new(),
         dest_hashes: std::collections::HashSet::new(),
+        save_paths: std::collections::HashMap::new(),
     };
 
     // Fetch destination hashes once and inject into all scans.
@@ -252,6 +253,7 @@ async fn run_pipeline(
 
         // Merge
         merged_scan.torrents.extend(scan.torrents);
+        merged_scan.save_paths.extend(scan.save_paths);
         for (ph, hashes) in scan.pieces_groups {
             merged_scan
                 .pieces_groups
@@ -279,6 +281,7 @@ async fn run_pipeline(
         scan.dest_hashes.clear();
 
         merged_scan.torrents.extend(scan.torrents);
+        merged_scan.save_paths.extend(scan.save_paths);
         for (ph, hashes) in scan.pieces_groups {
             merged_scan
                 .pieces_groups

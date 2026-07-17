@@ -105,6 +105,7 @@ mod tests {
             torrents: HashMap::new(),
             pieces_groups: HashMap::new(),
             dest_hashes: HashSet::new(),
+            save_paths: HashMap::new(),
         };
         let preview = build_preview(&[], &scan, &SiteRegistry::new());
         assert_eq!(preview.version, DRY_RUN_PREVIEW_VERSION);
@@ -128,6 +129,7 @@ mod tests {
             torrents,
             pieces_groups,
             dest_hashes: HashSet::new(),
+            save_paths: HashMap::new(),
         };
 
         let matched = vec![MatchedTorrent {

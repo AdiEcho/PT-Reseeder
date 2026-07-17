@@ -426,57 +426,6 @@ impl Repository {
         Ok(())
     }
 
-    // --- Downloader Pairs ---
-
-    pub async fn create_downloader_pair(
-        &self,
-        name: &str,
-        source_id: i64,
-        destination_id: i64,
-    ) -> Result<i64, CoreError> {
-        let result = sqlx::query(
-            "INSERT INTO downloader_pairs (name, source_id, destination_id) VALUES (?, ?, ?)",
-        )
-        .bind(name)
-        .bind(source_id)
-        .bind(destination_id)
-        .execute(&self.pool)
-        .await
-        .map_err(DbError::Sqlx)?;
-        Ok(result.last_insert_rowid())
-    }
-
-    pub async fn list_downloader_pairs(&self) -> Result<Vec<DownloaderPairRow>, CoreError> {
-        let rows =
-            sqlx::query_as::<_, DownloaderPairRow>("SELECT * FROM downloader_pairs ORDER BY id")
-                .fetch_all(&self.pool)
-                .await
-                .map_err(DbError::Sqlx)?;
-        Ok(rows)
-    }
-
-    pub async fn get_downloader_pair(
-        &self,
-        id: i64,
-    ) -> Result<Option<DownloaderPairRow>, CoreError> {
-        let row =
-            sqlx::query_as::<_, DownloaderPairRow>("SELECT * FROM downloader_pairs WHERE id = ?")
-                .bind(id)
-                .fetch_optional(&self.pool)
-                .await
-                .map_err(DbError::Sqlx)?;
-        Ok(row)
-    }
-
-    pub async fn delete_downloader_pair(&self, id: i64) -> Result<(), CoreError> {
-        sqlx::query("DELETE FROM downloader_pairs WHERE id = ?")
-            .bind(id)
-            .execute(&self.pool)
-            .await
-            .map_err(DbError::Sqlx)?;
-        Ok(())
-    }
-
     // --- Pieces Cache ---
 
     pub async fn upsert_pieces_cache(&self, entry: &PiecesCacheEntry) -> Result<(), CoreError> {
@@ -902,21 +851,19 @@ impl Repository {
         task_type: &str,
         trigger_type: &str,
         cron_expression: Option<&str>,
-        downloader_pair_id: Option<i64>,
         destination_downloader_id: Option<i64>,
         config_json: Option<&str>,
     ) -> Result<i64, CoreError> {
         let result = sqlx::query(
             "INSERT INTO tasks \
-             (name, task_type, trigger_type, cron_expression, downloader_pair_id, \
+             (name, task_type, trigger_type, cron_expression, \
               destination_downloader_id, config_json) \
-             VALUES (?, ?, ?, ?, ?, ?, ?)",
+             VALUES (?, ?, ?, ?, ?, ?)",
         )
         .bind(name)
         .bind(task_type)
         .bind(trigger_type)
         .bind(cron_expression)
-        .bind(downloader_pair_id)
         .bind(destination_downloader_id)
         .bind(config_json)
         .execute(&self.pool)
@@ -1016,23 +963,21 @@ impl Repository {
         task_type: &str,
         trigger_type: &str,
         cron_expression: Option<&str>,
-        downloader_pair_id: Option<i64>,
         destination_downloader_id: Option<i64>,
         config_json: Option<&str>,
     ) -> Result<(), CoreError> {
         sqlx::query(
             r#"UPDATE tasks
                SET name = ?1, task_type = ?2, trigger_type = ?3,
-                   cron_expression = ?4, downloader_pair_id = ?5,
-                   destination_downloader_id = ?6, config_json = ?7,
+                   cron_expression = ?4,
+                   destination_downloader_id = ?5, config_json = ?6,
                    updated_at = datetime('now')
-               WHERE id = ?8"#,
+               WHERE id = ?7"#,
         )
         .bind(name)
         .bind(task_type)
         .bind(trigger_type)
         .bind(cron_expression)
-        .bind(downloader_pair_id)
         .bind(destination_downloader_id)
         .bind(config_json)
         .bind(id)
@@ -1502,7 +1447,7 @@ mod tests {
     #[tokio::test]
     async fn create_and_list_tasks() {
         let repo = setup_repo().await;
-        repo.create_task("task1", "reseed", "cron", Some("0 * * * *"), None, None, None)
+        repo.create_task("task1", "reseed", "cron", Some("0 * * * *"), None, None)
             .await
             .unwrap();
         let tasks = repo.list_tasks().await.unwrap();
@@ -1515,11 +1460,11 @@ mod tests {
     async fn recover_interrupted_tasks_marks_running_tasks_as_error() {
         let repo = setup_repo().await;
         let running_id = repo
-            .create_task("running", "sync_stats", "manual", None, None, None, None)
+            .create_task("running", "sync_stats", "manual", None, None, None)
             .await
             .unwrap();
         let idle_id = repo
-            .create_task("idle", "sync_stats", "manual", None, None, None, None)
+            .create_task("idle", "sync_stats", "manual", None, None, None)
             .await
             .unwrap();
         repo.update_task_status(running_id, "running").await.unwrap();
@@ -1533,7 +1478,7 @@ mod tests {
     async fn try_mark_task_running_succeeds_when_idle() {
         let repo = setup_repo().await;
         let id = repo
-            .create_task("t", "reseed", "manual", None, None, None, None)
+            .create_task("t", "reseed", "manual", None, None, None)
             .await
             .unwrap();
         let marked = repo.try_mark_task_running(id).await.unwrap();
@@ -1548,7 +1493,7 @@ mod tests {
     async fn delete_task_removes_row() {
         let repo = setup_repo().await;
         let id = repo
-            .create_task("del", "reseed", "manual", None, None, None, None)
+            .create_task("del", "reseed", "manual", None, None, None)
             .await
             .unwrap();
         repo.delete_task(id).await.unwrap();
@@ -1560,7 +1505,7 @@ mod tests {
     async fn insert_and_get_task_logs() {
         let repo = setup_repo().await;
         let task_id = repo
-            .create_task("logged", "reseed", "manual", None, None, None, None)
+            .create_task("logged", "reseed", "manual", None, None, None)
             .await
             .unwrap();
         repo.insert_task_log(task_id, "success", 10, 8, 2, Some(500), Some("log text"))
@@ -1602,7 +1547,7 @@ mod tests {
     async fn set_and_get_task_folders() {
         let repo = setup_repo().await;
         let tid = repo
-            .create_task("tf", "reseed", "manual", None, None, None, None)
+            .create_task("tf", "reseed", "manual", None, None, None)
             .await
             .unwrap();
         let f1 = repo.create_folder("/a", "local", None).await.unwrap();
@@ -1618,7 +1563,7 @@ mod tests {
     async fn set_and_get_task_sites() {
         let repo = setup_repo().await;
         let tid = repo
-            .create_task("ts", "reseed", "manual", None, None, None, None)
+            .create_task("ts", "reseed", "manual", None, None, None)
             .await
             .unwrap();
         let s1 = repo
@@ -1636,48 +1581,12 @@ mod tests {
         assert_eq!(sites, vec![s1, s2]);
     }
 
-    #[tokio::test]
-    async fn create_downloader_pair_and_list() {
-        let repo = setup_repo().await;
-        let make_dl = |name: &str| DownloaderRow {
-            id: 0,
-            name: name.to_string(),
-            dl_type: "qbittorrent".to_string(),
-            host: "h".to_string(),
-            port: 1,
-            encrypted_username: None,
-            username_nonce: None,
-            encrypted_password: None,
-            password_nonce: None,
-            role: "both".to_string(),
-            torrent_dir: None,
-            default_save_path: None,
-            skip_hash_check: None,
-            auto_start: None,
-            tag: None,
-            enabled: true,
-            created_at: String::new(),
-        };
-        let src = repo.create_downloader(&make_dl("src")).await.unwrap();
-        let dst = repo.create_downloader(&make_dl("dst")).await.unwrap();
-        let pair_id = repo
-            .create_downloader_pair("pair1", src, dst)
-            .await
-            .unwrap();
-        assert!(pair_id > 0);
-
-        let pairs = repo.list_downloader_pairs().await.unwrap();
-        assert_eq!(pairs.len(), 1);
-        assert_eq!(pairs[0].source_id, src);
-        assert_eq!(pairs[0].destination_id, dst);
-    }
-
 
     #[tokio::test]
     async fn set_and_get_task_source_downloaders() {
         let repo = setup_repo().await;
         let tid = repo
-            .create_task("tsd", "reseed", "manual", None, None, None, None)
+            .create_task("tsd", "reseed", "manual", None, None, None)
             .await
             .unwrap();
         let d1 = repo
@@ -1760,7 +1669,7 @@ mod tests {
             .await
             .unwrap();
         let tid = repo
-            .create_task("dest-task", "reseed", "manual", None, None, Some(dest_id), None)
+            .create_task("dest-task", "reseed", "manual", None, Some(dest_id), None)
             .await
             .unwrap();
         let task = repo.get_task(tid).await.unwrap().unwrap();

@@ -1,7 +1,7 @@
 use axum::{
     extract::{Path, State},
     http::StatusCode,
-    routing::{delete, get, post},
+    routing::{get, post},
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
@@ -9,7 +9,7 @@ use tracing::{debug, error};
 
 use crate::state::AppState;
 use pt_reseeder_core::crypto::Vault;
-use pt_reseeder_core::db::models::{DownloaderPairRow, DownloaderRow};
+use pt_reseeder_core::db::models::DownloaderRow;
 use pt_reseeder_core::downloader::qbittorrent::QBittorrentClient;
 use pt_reseeder_core::downloader::traits::Downloader;
 use pt_reseeder_core::downloader::transmission::TransmissionClient;
@@ -75,21 +75,6 @@ pub struct TestConnectionResponse {
     pub torrent_count: Option<u64>,
 }
 
-#[derive(Deserialize)]
-pub struct CreatePairRequest {
-    pub name: String,
-    pub source_id: i64,
-    pub destination_id: i64,
-}
-
-#[derive(Serialize)]
-pub struct DownloaderPairResponse {
-    pub id: i64,
-    pub name: String,
-    pub source_id: i64,
-    pub destination_id: i64,
-    pub created_at: String,
-}
 
 #[derive(Serialize)]
 pub struct ApiError {
@@ -117,15 +102,6 @@ fn row_to_response(row: &DownloaderRow) -> DownloaderResponse {
     }
 }
 
-fn pair_row_to_response(row: &DownloaderPairRow) -> DownloaderPairResponse {
-    DownloaderPairResponse {
-        id: row.id,
-        name: row.name.clone(),
-        source_id: row.source_id,
-        destination_id: row.destination_id,
-        created_at: row.created_at.clone(),
-    }
-}
 
 /// Decrypt credentials from a DownloaderRow and build a boxed Downloader client.
 async fn build_downloader(
@@ -696,128 +672,6 @@ async fn list_torrents(
     Ok(Json(hashes.into_iter().collect()))
 }
 
-/// POST /downloader-pairs
-async fn create_pair(
-    State(state): State<AppState>,
-    Json(req): Json<CreatePairRequest>,
-) -> Result<(StatusCode, Json<DownloaderPairResponse>), (StatusCode, Json<ApiError>)> {
-    // Validate that both downloaders exist
-    state
-        .inner
-        .repo
-        .get_downloader(req.source_id)
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ApiError {
-                    error: format!("database error: {}", e),
-                }),
-            )
-        })?
-        .ok_or_else(|| {
-            (
-                StatusCode::BAD_REQUEST,
-                Json(ApiError {
-                    error: format!("source downloader {} not found", req.source_id),
-                }),
-            )
-        })?;
-
-    state
-        .inner
-        .repo
-        .get_downloader(req.destination_id)
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ApiError {
-                    error: format!("database error: {}", e),
-                }),
-            )
-        })?
-        .ok_or_else(|| {
-            (
-                StatusCode::BAD_REQUEST,
-                Json(ApiError {
-                    error: format!("destination downloader {} not found", req.destination_id),
-                }),
-            )
-        })?;
-
-    let id = state
-        .inner
-        .repo
-        .create_downloader_pair(&req.name, req.source_id, req.destination_id)
-        .await
-        .map_err(|e| {
-            error!("failed to create downloader pair: {}", e);
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ApiError {
-                    error: format!("database error: {}", e),
-                }),
-            )
-        })?;
-
-    debug!(id = id, name = %req.name, "downloader pair created");
-    Ok((
-        StatusCode::CREATED,
-        Json(DownloaderPairResponse {
-            id,
-            name: req.name,
-            source_id: req.source_id,
-            destination_id: req.destination_id,
-            created_at: chrono::Utc::now().to_rfc3339(),
-        }),
-    ))
-}
-
-/// GET /downloader-pairs
-async fn list_pairs(
-    State(state): State<AppState>,
-) -> Result<Json<Vec<DownloaderPairResponse>>, (StatusCode, Json<ApiError>)> {
-    let rows = state
-        .inner
-        .repo
-        .list_downloader_pairs()
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ApiError {
-                    error: format!("database error: {}", e),
-                }),
-            )
-        })?;
-
-    Ok(Json(rows.iter().map(pair_row_to_response).collect()))
-}
-
-/// DELETE /downloader-pairs/:id
-async fn delete_pair(
-    State(state): State<AppState>,
-    Path(id): Path<i64>,
-) -> Result<StatusCode, (StatusCode, Json<ApiError>)> {
-    state
-        .inner
-        .repo
-        .delete_downloader_pair(id)
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ApiError {
-                    error: format!("database error: {}", e),
-                }),
-            )
-        })?;
-
-    debug!(id = id, "downloader pair deleted");
-    Ok(StatusCode::NO_CONTENT)
-}
-
 pub fn router() -> Router<AppState> {
     Router::new()
         .route(
@@ -832,6 +686,4 @@ pub fn router() -> Router<AppState> {
         )
         .route("/downloaders/{id}/test", post(test_connection))
         .route("/downloaders/{id}/torrents", get(list_torrents))
-        .route("/downloader-pairs", post(create_pair).get(list_pairs))
-        .route("/downloader-pairs/{id}", delete(delete_pair))
 }

@@ -13,7 +13,6 @@ pub struct TaskCreateRequest {
     pub task_type: String,
     pub trigger_type: String,
     pub cron_expression: Option<String>,
-    pub downloader_pair_id: Option<i64>,
     pub destination_downloader_id: Option<i64>,
     pub config_json: Option<String>,
     pub folder_ids: Vec<i64>,
@@ -36,9 +35,6 @@ impl TaskManager {
     pub async fn create_task(&self, req: &TaskCreateRequest) -> Result<i64, CoreError> {
         validate_task_request(req)?;
 
-        let destination_downloader_id =
-            resolve_destination_downloader_id(req, &self.repo).await?;
-
         // Create core row first, then associations. On any later failure, delete the
         // orphan task so callers never observe a half-configured reseed task.
         let task_id = self
@@ -48,8 +44,7 @@ impl TaskManager {
                 &req.task_type,
                 &req.trigger_type,
                 req.cron_expression.as_deref(),
-                req.downloader_pair_id,
-                destination_downloader_id,
+                req.destination_downloader_id,
                 req.config_json.as_deref(),
             )
             .await?;
@@ -110,9 +105,6 @@ impl TaskManager {
         // Verify the task exists
         let _ = self.get_task(id).await?;
 
-        let destination_downloader_id =
-            resolve_destination_downloader_id(req, &self.repo).await?;
-
         // Update core fields in-place
         self.repo
             .update_task(
@@ -121,8 +113,7 @@ impl TaskManager {
                 &req.task_type,
                 &req.trigger_type,
                 req.cron_expression.as_deref(),
-                req.downloader_pair_id,
-                destination_downloader_id,
+                req.destination_downloader_id,
                 req.config_json.as_deref(),
             )
             .await?;
@@ -222,7 +213,7 @@ fn validate_task_request(req: &TaskCreateRequest) -> Result<(), CoreError> {
                         .to_string(),
                 )));
             }
-            if req.destination_downloader_id.is_none() && req.downloader_pair_id.is_none() {
+            if req.destination_downloader_id.is_none() {
                 return Err(CoreError::Scheduler(SchedulerError::InvalidConfig(
                     "reseed tasks require destination_downloader_id".to_string(),
                 )));
@@ -237,27 +228,6 @@ fn validate_task_request(req: &TaskCreateRequest) -> Result<(), CoreError> {
     }
 
     Ok(())
-}
-
-/// Prefer explicit destination; otherwise resolve from legacy pair if present.
-/// Missing/invalid pair is a hard configuration error (never store null destination for reseed).
-async fn resolve_destination_downloader_id(
-    req: &TaskCreateRequest,
-    repo: &Repository,
-) -> Result<Option<i64>, CoreError> {
-    if let Some(id) = req.destination_downloader_id {
-        return Ok(Some(id));
-    }
-    if let Some(pair_id) = req.downloader_pair_id {
-        let pair = repo.get_downloader_pair(pair_id).await?.ok_or_else(|| {
-            CoreError::Scheduler(SchedulerError::InvalidConfig(format!(
-                "downloader pair {} not found",
-                pair_id
-            )))
-        })?;
-        return Ok(Some(pair.destination_id));
-    }
-    Ok(None)
 }
 
 pub(crate) fn next_run_at_for(cron_expression: Option<&str>) -> Result<Option<String>, CoreError> {
@@ -286,7 +256,6 @@ mod tests {
             task_type: task_type.to_string(),
             trigger_type: "manual".to_string(),
             cron_expression: None,
-            downloader_pair_id: None,
             destination_downloader_id: None,
             config_json: None,
             folder_ids: vec![],
@@ -351,7 +320,6 @@ mod tests {
             task_type: "reseed".to_string(),
             trigger_type: "cron".to_string(),
             cron_expression: Some("0 0 * * *".to_string()),
-            downloader_pair_id: Some(42),
             destination_downloader_id: Some(7),
             config_json: Some(r#"{"key":"value"}"#.to_string()),
             folder_ids: vec![1, 2, 3],
@@ -367,7 +335,6 @@ mod tests {
         assert_eq!(deserialized.task_type, request.task_type);
         assert_eq!(deserialized.trigger_type, request.trigger_type);
         assert_eq!(deserialized.cron_expression, request.cron_expression);
-        assert_eq!(deserialized.downloader_pair_id, request.downloader_pair_id);
         assert_eq!(
             deserialized.destination_downloader_id,
             request.destination_downloader_id
@@ -421,12 +388,4 @@ mod tests {
         assert!(validate_task_request(&repost).is_ok());
     }
 
-    #[test]
-    fn validate_reseed_accepts_legacy_pair_as_destination() {
-        let mut req = base_request("reseed");
-        req.site_ids = vec![1];
-        req.folder_ids = vec![2];
-        req.downloader_pair_id = Some(4);
-        assert!(validate_task_request(&req).is_ok());
-    }
 }

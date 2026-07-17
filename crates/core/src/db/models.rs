@@ -91,15 +91,6 @@ pub struct DownloaderRow {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
-pub struct DownloaderPairRow {
-    pub id: i64,
-    pub name: String,
-    pub source_id: i64,
-    pub destination_id: i64,
-    pub created_at: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct PiecesCacheEntry {
     pub id: i64,
     pub pieces_hash: String,
@@ -142,7 +133,6 @@ pub struct TaskRow {
     pub trigger_type: String,
     pub cron_expression: Option<String>,
     pub status: String,
-    pub downloader_pair_id: Option<i64>,
     pub destination_downloader_id: Option<i64>,
     pub last_run_at: Option<String>,
     pub next_run_at: Option<String>,

@@ -437,7 +437,7 @@ impl TaskExecutor {
         &self,
         task: &TaskRow,
     ) -> Result<(Arc<dyn Downloader>, bool), CoreError> {
-        let destination_id = resolve_destination_downloader_id(task, &self.repo).await?;
+        let destination_id = resolve_destination_downloader_id(task)?;
         let row = self
             .repo
             .get_downloader(destination_id)
@@ -582,28 +582,14 @@ where
     }
 }
 
-/// Resolve destination downloader id:
-/// 1) task.destination_downloader_id
-/// 2) legacy pair.destination_id
-pub(crate) async fn resolve_destination_downloader_id(
-    task: &TaskRow,
-    repo: &Repository,
-) -> Result<i64, CoreError> {
-    if let Some(id) = task.destination_downloader_id {
-        return Ok(id);
+/// Resolve destination downloader id from task.destination_downloader_id only.
+pub(crate) fn resolve_destination_downloader_id(task: &TaskRow) -> Result<i64, CoreError> {
+    match task.destination_downloader_id {
+        Some(id) => Ok(id),
+        None => Err(CoreError::Scheduler(SchedulerError::ExecutorError(
+            "destination_downloader_id is required for reseed tasks".to_string(),
+        ))),
     }
-    if let Some(pair_id) = task.downloader_pair_id {
-        let pair = repo.get_downloader_pair(pair_id).await?.ok_or_else(|| {
-            CoreError::Scheduler(SchedulerError::ExecutorError(format!(
-                "downloader pair {} not found",
-                pair_id
-            )))
-        })?;
-        return Ok(pair.destination_id);
-    }
-    Err(CoreError::Scheduler(SchedulerError::ExecutorError(
-        "destination_downloader_id is required for reseed tasks".to_string(),
-    )))
 }
 
 #[cfg(test)]
@@ -620,7 +606,7 @@ mod tests {
         let repo = Repository::new(pool);
         let writer = spawn_writer(&database_url, 10).unwrap();
         let task_id = repo
-            .create_task("sync", "sync_stats", "manual", None, None, None, None)
+            .create_task("sync", "sync_stats", "manual", None, None, None)
             .await
             .unwrap();
         let executor = TaskExecutor::new(
@@ -644,7 +630,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn resolve_destination_prefers_destination_downloader_id() {
+    async fn resolve_destination_returns_destination_downloader_id() {
         let db_dir = tempfile::tempdir().unwrap();
         let database_url = format!("sqlite://{}", db_dir.path().join("test.db").display());
         let pool = init_db(&database_url).await.unwrap();
@@ -668,76 +654,33 @@ mod tests {
             enabled: true,
             created_at: String::new(),
         };
-        let src = repo.create_downloader(&make_dl("src")).await.unwrap();
         let dst = repo.create_downloader(&make_dl("dst")).await.unwrap();
-        let pair = repo
-            .create_downloader_pair("pair", src, dst)
-            .await
-            .unwrap();
         let task_id = repo
-            .create_task(
-                "t",
-                "reseed",
-                "manual",
-                None,
-                Some(pair),
-                Some(dst),
-                None,
-            )
+            .create_task("t", "reseed", "manual", None, Some(dst), None)
             .await
             .unwrap();
         let task = repo.get_task(task_id).await.unwrap().unwrap();
-        let resolved = resolve_destination_downloader_id(&task, &repo)
-            .await
-            .unwrap();
+        let resolved = resolve_destination_downloader_id(&task).unwrap();
         assert_eq!(resolved, dst);
     }
 
     #[tokio::test]
-    async fn resolve_destination_falls_back_to_pair() {
+    async fn resolve_destination_errors_without_destination_downloader_id() {
         let db_dir = tempfile::tempdir().unwrap();
         let database_url = format!("sqlite://{}", db_dir.path().join("test.db").display());
         let pool = init_db(&database_url).await.unwrap();
         let repo = Repository::new(pool.clone());
-        let make_dl = |name: &str| DownloaderRow {
-            id: 0,
-            name: name.to_string(),
-            dl_type: "qbittorrent".to_string(),
-            host: "127.0.0.1".to_string(),
-            port: 8080,
-            encrypted_username: None,
-            username_nonce: None,
-            encrypted_password: None,
-            password_nonce: None,
-            role: "both".to_string(),
-            torrent_dir: None,
-            default_save_path: None,
-            skip_hash_check: None,
-            auto_start: None,
-            tag: None,
-            enabled: true,
-            created_at: String::new(),
-        };
-        let src = repo.create_downloader(&make_dl("src")).await.unwrap();
-        let dst = repo.create_downloader(&make_dl("dst")).await.unwrap();
-        let pair = repo
-            .create_downloader_pair("pair", src, dst)
-            .await
-            .unwrap();
         let task_id = repo
-            .create_task("t", "reseed", "manual", None, Some(pair), None, None)
-            .await
-            .unwrap();
-        // Force destination null to exercise legacy path even if migration backfilled.
-        sqlx::query("UPDATE tasks SET destination_downloader_id = NULL WHERE id = ?")
-            .bind(task_id)
-            .execute(&pool)
+            .create_task("t", "reseed", "manual", None, None, None)
             .await
             .unwrap();
         let task = repo.get_task(task_id).await.unwrap().unwrap();
-        let resolved = resolve_destination_downloader_id(&task, &repo)
-            .await
-            .unwrap();
-        assert_eq!(resolved, dst);
+        let err = resolve_destination_downloader_id(&task).unwrap_err();
+        match err {
+            CoreError::Scheduler(SchedulerError::ExecutorError(msg)) => {
+                assert!(msg.contains("destination_downloader_id is required"));
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
     }
 }

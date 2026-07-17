@@ -2,9 +2,8 @@ use crate::components::confirm_modal::ConfirmModal;
 use crate::components::empty_state::EmptyState;
 use crate::components::toast::{show_toast, ToastType};
 use crate::server_fns::{
-    create_downloader, create_downloader_pair, delete_downloader, delete_downloader_pair,
-    get_downloader_pairs, get_downloaders, test_downloader, test_downloader_connection,
-    DownloaderInfo, DownloaderPairInfo,
+    create_downloader, delete_downloader, get_downloaders, test_downloader, test_downloader_connection,
+    DownloaderInfo,
 };
 use leptos::prelude::*;
 
@@ -12,7 +11,6 @@ use leptos::prelude::*;
 pub fn DownloadersPage() -> impl IntoView {
     // --- Resources ---
     let downloaders = Resource::new(|| (), |_| get_downloaders());
-    let pairs = Resource::new(|| (), |_| get_downloader_pairs());
 
     // --- Mutation actions ---
     let create_dl_action = Action::new(
@@ -32,19 +30,8 @@ pub fn DownloadersPage() -> impl IntoView {
         test_downloader(id)
     });
 
-    let create_pair_action = Action::new(move |args: &(String, i64, i64)| {
-        let (name, source_id, destination_id) = args.clone();
-        create_downloader_pair(name, source_id, destination_id)
-    });
-
-    let delete_pair_action = Action::new(move |id: &i64| {
-        let id = *id;
-        delete_downloader_pair(id)
-    });
-
-    // Page-level delete confirmation targets so modals mount outside <tbody>.
+    // Page-level delete confirmation target so modal mounts outside <tbody>.
     let (confirm_delete_dl, set_confirm_delete_dl) = signal(None::<(i64, String)>);
-    let (confirm_delete_pair, set_confirm_delete_pair) = signal(None::<(i64, String)>);
 
     // --- Refetch after mutations ---
     Effect::new(move |_| {
@@ -65,32 +52,8 @@ pub fn DownloadersPage() -> impl IntoView {
                     show_toast("下载器已删除", ToastType::Success);
                     set_confirm_delete_dl.set(None);
                     downloaders.refetch();
-                    pairs.refetch();
                 }
                 Err(e) => show_toast(format!("删除下载器失败：{e}"), ToastType::Error),
-            }
-        }
-    });
-    Effect::new(move |_| {
-        if let Some(result) = create_pair_action.value().get() {
-            match result {
-                Ok(_) => {
-                    show_toast("迁移方向创建成功", ToastType::Success);
-                    pairs.refetch();
-                }
-                Err(e) => show_toast(format!("创建迁移方向失败：{e}"), ToastType::Error),
-            }
-        }
-    });
-    Effect::new(move |_| {
-        if let Some(result) = delete_pair_action.value().get() {
-            match result {
-                Ok(_) => {
-                    show_toast("迁移方向已删除", ToastType::Success);
-                    set_confirm_delete_pair.set(None);
-                    pairs.refetch();
-                }
-                Err(e) => show_toast(format!("删除迁移方向失败：{e}"), ToastType::Error),
             }
         }
     });
@@ -109,14 +72,6 @@ pub fn DownloadersPage() -> impl IntoView {
                 on_request_delete=move |id: i64, name: String| set_confirm_delete_dl.set(Some((id, name)))
             />
 
-            // Section 2: Source-Destination Pairs
-            <PairsSection
-                pairs=pairs
-                downloaders=downloaders
-                create_pair_action=create_pair_action
-                on_request_delete=move |id: i64, name: String| set_confirm_delete_pair.set(Some((id, name)))
-            />
-
             {move || {
                 confirm_delete_dl.get().map(|(id, name)| {
                     view! {
@@ -127,22 +82,6 @@ pub fn DownloadersPage() -> impl IntoView {
                                 delete_dl_action.dispatch(id);
                             }
                             on_cancel=move || set_confirm_delete_dl.set(None)
-                            confirm_label="确认删除"
-                            danger=true
-                        />
-                    }
-                })
-            }}
-            {move || {
-                confirm_delete_pair.get().map(|(id, name)| {
-                    view! {
-                        <ConfirmModal
-                            title="确认删除"
-                            message=format!("确定要删除迁移方向「{name}」吗？此操作不可撤销。")
-                            on_confirm=move || {
-                                delete_pair_action.dispatch(id);
-                            }
-                            on_cancel=move || set_confirm_delete_pair.set(None)
                             confirm_label="确认删除"
                             danger=true
                         />
@@ -580,253 +519,6 @@ where
                 <button
                     class="btn btn--sm btn--danger"
                     on:click=move |_| on_request_delete(dl_id, dl_name.clone())
-                >
-                    "删除"
-                </button>
-            </td>
-        </tr>
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Section 2: Source-Destination Pairs
-// ---------------------------------------------------------------------------
-
-#[component]
-fn PairsSection<F>(
-    pairs: Resource<Result<Vec<DownloaderPairInfo>, ServerFnError>>,
-    downloaders: Resource<Result<Vec<DownloaderInfo>, ServerFnError>>,
-    create_pair_action: Action<(String, i64, i64), Result<DownloaderPairInfo, ServerFnError>>,
-    on_request_delete: F,
-) -> impl IntoView
-where
-    F: Fn(i64, String) + Copy + Send + Sync + 'static,
-{
-    let (show_form, set_show_form) = signal(false);
-
-    // Form fields
-    let (pair_name, set_pair_name) = signal(String::new());
-    let (source_id, set_source_id) = signal(String::new());
-    let (dest_id, set_dest_id) = signal(String::new());
-
-    let (name_error, set_name_error) = signal(None::<String>);
-    let (source_error, set_source_error) = signal(None::<String>);
-    let (dest_error, set_dest_error) = signal(None::<String>);
-
-    // Close/reset form only after successful create.
-    Effect::new(move |_| {
-        if let Some(Ok(_)) = create_pair_action.value().get() {
-            set_pair_name.set(String::new());
-            set_source_id.set(String::new());
-            set_dest_id.set(String::new());
-            set_name_error.set(None);
-            set_source_error.set(None);
-            set_dest_error.set(None);
-            set_show_form.set(false);
-        }
-    });
-
-    let on_submit = move |_| {
-        let name_val = pair_name.get();
-        let mut ok = true;
-        if name_val.trim().is_empty() {
-            set_name_error.set(Some("迁移方向名称不能为空".into()));
-            ok = false;
-        } else {
-            set_name_error.set(None);
-        }
-        let src: i64 = source_id.get().parse().unwrap_or(0);
-        let dst: i64 = dest_id.get().parse().unwrap_or(0);
-        if src == 0 {
-            set_source_error.set(Some("请选择拉取端下载器".into()));
-            ok = false;
-        } else {
-            set_source_error.set(None);
-        }
-        if dst == 0 {
-            set_dest_error.set(Some("请选择推送端下载器".into()));
-            ok = false;
-        } else if src != 0 && src == dst {
-            set_dest_error.set(Some("拉取端和推送端不能相同".into()));
-            ok = false;
-        } else {
-            set_dest_error.set(None);
-        }
-        if !ok {
-            return;
-        }
-        create_pair_action.dispatch((name_val, src, dst));
-    };
-
-    view! {
-        <div class="stats-table-section">
-            <div class="section-header">
-                <h2>"迁移方向"</h2>
-                <button
-                    class="btn btn--primary"
-                    on:click=move |_| set_show_form.update(|v| *v = !*v)
-                >
-                    {move || if show_form.get() { "取消" } else { "添加迁移方向" }}
-                </button>
-            </div>
-            <p class="section-desc">"定义种子迁移的方向：从哪个下载器拉取、推送到哪个下载器。创建辅种任务时可选择一个迁移方向。"</p>
-
-            // Add pair form
-            {move || {
-                if show_form.get() {
-                    let dl_list = downloaders
-                        .get()
-                        .and_then(|r| r.ok())
-                        .unwrap_or_default();
-                    let dl_list2 = dl_list.clone();
-
-                    Some(view! {
-                        <div class="add-form">
-                            <div class="form-row">
-                                <label>"名称" <span class="required">"*"</span></label>
-                                <input
-                                    type="text"
-                                    placeholder="本机 → 盒子"
-                                    prop:value=move || pair_name.get()
-                                    on:input=move |ev| {
-                                        set_pair_name.set(event_target_value(&ev));
-                                        set_name_error.set(None);
-                                    }
-                                />
-                                {move || name_error.get().map(|e| view! { <p class="field-error">{e}</p> })}
-                            </div>
-                            <div class="form-row">
-                                <label>"从哪拉取" <span class="required">"*"</span></label>
-                                <select
-                                    prop:value=move || source_id.get()
-                                    on:change=move |ev| {
-                                        set_source_id.set(event_target_value(&ev));
-                                        set_source_error.set(None);
-                                    }
-                                >
-                                    <option value="">"-- 选择拉取端 --"</option>
-                                    {dl_list
-                                        .into_iter()
-                                        .map(|dl| {
-                                            let val = dl.id.to_string();
-                                            view! {
-                                                <option value=val>{dl.name}</option>
-                                            }
-                                        })
-                                        .collect::<Vec<_>>()}
-                                </select>
-                                {move || source_error.get().map(|e| view! { <p class="field-error">{e}</p> })}
-                            </div>
-                            <div class="form-row">
-                                <label>"推送到哪" <span class="required">"*"</span></label>
-                                <select
-                                    prop:value=move || dest_id.get()
-                                    on:change=move |ev| {
-                                        set_dest_id.set(event_target_value(&ev));
-                                        set_dest_error.set(None);
-                                    }
-                                >
-                                    <option value="">"-- 选择推送端 --"</option>
-                                    {dl_list2
-                                        .into_iter()
-                                        .map(|dl| {
-                                            let val = dl.id.to_string();
-                                            view! {
-                                                <option value=val>{dl.name}</option>
-                                            }
-                                        })
-                                        .collect::<Vec<_>>()}
-                                </select>
-                                {move || dest_error.get().map(|e| view! { <p class="field-error">{e}</p> })}
-                            </div>
-                            <div class="form-actions">
-                                <button
-                                    class="btn btn--primary"
-                                    disabled=move || create_pair_action.pending().get()
-                                    on:click=on_submit
-                                >
-                                    {move || if create_pair_action.pending().get() { "创建中..." } else { "创建" }}
-                                </button>
-                            </div>
-                        </div>
-                    })
-                } else {
-                    None
-                }
-            }}
-
-            // Pairs table
-            <Suspense fallback=move || view! { <p>"正在加载迁移方向..."</p> }>
-                {move || {
-                    pairs.get().map(|result| match result {
-                        Err(e) => view! {
-                            <div class="load-error">
-                                <span>{format!("迁移方向加载失败：{e}")}</span>
-                                <button
-                                    class="btn btn--sm btn--outline"
-                                    on:click=move |_| pairs.refetch()
-                                >
-                                    "重试"
-                                </button>
-                            </div>
-                        }.into_any(),
-                        Ok(list) if list.is_empty() => view! {
-                            <EmptyState icon="↻" message="尚未配置任何迁移方向。" />
-                        }.into_any(),
-                        Ok(list) => view! {
-                            <div class="table-wrap">
-                                <table class="stats-table">
-                                    <thead>
-                                        <tr>
-                                            <th>"名称"</th>
-                                            <th>"拉取端"</th>
-                                            <th>"推送端"</th>
-                                            <th>"操作"</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {list
-                                            .into_iter()
-                                            .map(|pair| {
-                                                view! {
-                                                    <PairRow
-                                                        pair=pair
-                                                        on_request_delete=on_request_delete
-                                                    />
-                                                }
-                                            })
-                                            .collect::<Vec<_>>()}
-                                    </tbody>
-                                </table>
-                            </div>
-                        }.into_any(),
-                    })
-                }}
-            </Suspense>
-        </div>
-    }
-}
-
-#[component]
-fn PairRow<F>(
-    pair: DownloaderPairInfo,
-    on_request_delete: F,
-) -> impl IntoView
-where
-    F: Fn(i64, String) + Copy + 'static,
-{
-    let pair_id = pair.id;
-    let pair_name = pair.name.clone();
-
-    view! {
-        <tr>
-            <td>{pair.name.clone()}</td>
-            <td>{pair.source_name}</td>
-            <td>{pair.destination_name}</td>
-            <td class="actions-cell">
-                <button
-                    class="btn btn--sm btn--danger"
-                    on:click=move |_| on_request_delete(pair_id, pair_name.clone())
                 >
                     "删除"
                 </button>

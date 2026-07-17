@@ -438,15 +438,6 @@ pub struct DownloaderInfo {
     pub enabled: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DownloaderPairInfo {
-    pub id: i64,
-    pub name: String,
-    pub source_id: i64,
-    pub destination_id: i64,
-    pub source_name: String,
-    pub destination_name: String,
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FolderInfo {
@@ -1246,69 +1237,6 @@ pub async fn test_downloader(id: i64) -> Result<String, ServerFnError> {
 }
 
 #[server]
-pub async fn get_downloader_pairs() -> Result<Vec<DownloaderPairInfo>, ServerFnError> {
-    use pt_reseeder_core::db::repo::Repository;
-    use std::collections::HashMap;
-
-    let repo = Repository::new(server_pool()?);
-    let downloaders = repo
-        .list_downloaders()
-        .await
-        .map_err(|e| ServerFnError::new(format!("{e}")))?;
-    let names: HashMap<i64, String> = downloaders.into_iter().map(|d| (d.id, d.name)).collect();
-    let pairs = repo
-        .list_downloader_pairs()
-        .await
-        .map_err(|e| ServerFnError::new(format!("{e}")))?;
-    Ok(pairs
-        .into_iter()
-        .map(|p| DownloaderPairInfo {
-            id: p.id,
-            name: p.name,
-            source_id: p.source_id,
-            destination_id: p.destination_id,
-            source_name: names
-                .get(&p.source_id)
-                .cloned()
-                .unwrap_or_else(|| p.source_id.to_string()),
-            destination_name: names
-                .get(&p.destination_id)
-                .cloned()
-                .unwrap_or_else(|| p.destination_id.to_string()),
-        })
-        .collect())
-}
-
-#[server]
-pub async fn create_downloader_pair(
-    name: String,
-    source_id: i64,
-    destination_id: i64,
-) -> Result<DownloaderPairInfo, ServerFnError> {
-    use pt_reseeder_core::db::repo::Repository;
-
-    let id = Repository::new(server_pool()?)
-        .create_downloader_pair(&name, source_id, destination_id)
-        .await
-        .map_err(|e| ServerFnError::new(format!("{e}")))?;
-    get_downloader_pairs()
-        .await?
-        .into_iter()
-        .find(|p| p.id == id)
-        .ok_or_else(|| ServerFnError::new("downloader pair created but not found"))
-}
-
-#[server]
-pub async fn delete_downloader_pair(id: i64) -> Result<(), ServerFnError> {
-    use pt_reseeder_core::db::repo::Repository;
-
-    Repository::new(server_pool()?)
-        .delete_downloader_pair(id)
-        .await
-        .map_err(|e| ServerFnError::new(format!("{e}")))
-}
-
-#[server]
 pub async fn get_folders() -> Result<Vec<FolderInfo>, ServerFnError> {
     use pt_reseeder_core::db::repo::Repository;
 
@@ -1426,7 +1354,6 @@ pub async fn create_task(
         task_type,
         trigger_type,
         cron_expression,
-        downloader_pair_id: None,
         destination_downloader_id,
         config_json: None,
         folder_ids,

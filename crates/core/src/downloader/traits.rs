@@ -20,5 +20,12 @@ pub trait Downloader: Send + Sync {
     /// Export raw `.torrent` bytes for the given info hash when supported.
     /// Returns `Ok(None)` when the downloader cannot provide torrent data.
     async fn export_torrent(&self, info_hash: &str) -> Result<Option<Vec<u8>>, CoreError>;
+    /// Compute `pieces_hash = SHA1(info.pieces)` without exporting the full
+    /// `.torrent` file. Used as a fallback when `export_torrent` is unavailable
+    /// (e.g. older qBittorrent builds, or when BT_backup is not mounted).
+    /// Default: unsupported.
+    async fn get_pieces_hash(&self, _info_hash: &str) -> Result<Option<String>, CoreError> {
+        Ok(None)
+    }
     async fn close(&mut self) -> Result<(), CoreError>;
 }

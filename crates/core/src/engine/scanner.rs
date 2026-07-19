@@ -9,7 +9,7 @@ use crate::db::repo::Repository;
 use crate::db::writer::{BulkPiecesCacheItem, DbWriterHandle, WriteOp};
 use crate::downloader::traits::Downloader;
 use crate::error::{CoreError, EngineError};
-use crate::torrent::models::TorrentMeta;
+use crate::torrent::models::{TorrentFile, TorrentMeta};
 use crate::torrent::parser;
 
 /// Scan source: either a local folder of .torrent files or a downloader's torrent list.
@@ -148,10 +148,14 @@ pub async fn scan_downloader(
         }
     }
 
-    // Prefer list_torrents so we can capture each torrent's save_path.
+    // Prefer list_torrents so we can capture each torrent's save_path/name/size
+    // and optional local torrent_file path (Transmission torrentFile).
     // Fall back to get_all_info_hashes when the client cannot list metadata.
     let listed = client.list_torrents().await.unwrap_or_default();
     let mut save_paths = HashMap::new();
+    let mut listed_names = HashMap::new();
+    let mut listed_sizes = HashMap::new();
+    let mut listed_torrent_files = HashMap::new();
     let hashes: HashSet<String> = if listed.is_empty() {
         client.get_all_info_hashes().await?
     } else {
@@ -159,13 +163,41 @@ pub async fn scan_downloader(
             if !t.save_path.is_empty() {
                 save_paths.insert(t.info_hash.clone(), t.save_path.clone());
             }
+            if !t.name.is_empty() {
+                listed_names.insert(t.info_hash.clone(), t.name.clone());
+            }
+            if t.total_size > 0 {
+                listed_sizes.insert(t.info_hash.clone(), t.total_size);
+            }
+            if let Some(path) = t
+                .torrent_file
+                .as_ref()
+                .map(|p| p.trim())
+                .filter(|p| !p.is_empty())
+            {
+                listed_torrent_files.insert(t.info_hash.clone(), path.to_string());
+            }
         }
         listed.into_iter().map(|t| t.info_hash).collect()
     };
 
-    tracing::info!(count = hashes.len(), "exporting torrents from downloader");
+    tracing::info!(
+        count = hashes.len(),
+        torrent_files = listed_torrent_files.len(),
+        "materializing torrents from downloader"
+    );
     let mut export_attempts = 0usize;
     let mut export_hits = 0usize;
+    let mut local_file_hits = 0usize;
+    let mut pieces_hash_hits = 0usize;
+    let mut consecutive_misses = 0usize;
+    // Once export is known-unavailable for this client, skip further export calls
+    // and go straight to get_pieces_hash.
+    let mut export_available = true;
+    // Once local torrent_file paths are known-unreadable (e.g. remote host path),
+    // stop trying to open them for the rest of the scan.
+    let mut local_file_available = !listed_torrent_files.is_empty();
+
     for hash in &hashes {
         if cancel.is_cancelled() {
             return Err(EngineError::Cancelled.into());
@@ -175,45 +207,188 @@ pub async fn scan_downloader(
         }
 
         stats.scanned.fetch_add(1, Ordering::Relaxed);
-        export_attempts += 1;
-        match client.export_torrent(hash).await {
-            Ok(Some(bytes)) => match parser::parse_bytes(&bytes) {
-                Ok(meta) => {
-                    if seen_info_hashes.insert(meta.info_hash.clone()) {
-                        export_hits += 1;
-                        parsed.push((None, meta));
+
+        let mut materialized = false;
+
+        // 1) Prefer reading a known local .torrent path from list metadata
+        // (Transmission torrentFile). This avoids an extra RPC per hash.
+        if local_file_available {
+            if let Some(path) = listed_torrent_files.get(hash) {
+                match std::fs::read(path) {
+                    Ok(bytes) if !bytes.is_empty() => match parser::parse_bytes(&bytes) {
+                        Ok(meta) => {
+                            if seen_info_hashes.insert(meta.info_hash.clone()) {
+                                local_file_hits += 1;
+                                parsed.push((Some(PathBuf::from(path)), meta));
+                                materialized = true;
+                            }
+                        }
+                        Err(e) => {
+                            tracing::warn!(
+                                info_hash = %hash,
+                                path = %path,
+                                error = %e,
+                                "failed to parse local torrentFile, skipping"
+                            );
+                        }
+                    },
+                    Ok(_) => {
+                        tracing::debug!(
+                            info_hash = %hash,
+                            path = %path,
+                            "local torrentFile is empty"
+                        );
                     }
+                    Err(e) => {
+                        if local_file_hits == 0 {
+                            local_file_available = false;
+                            // Transmission export_torrent is the same local-path read;
+                            // don't re-hit RPC for every hash after the path is known unreadable.
+                            if export_hits == 0 {
+                                export_available = false;
+                            }
+                            tracing::info!(
+                                path = %path,
+                                error = %e,
+                                "local torrentFile unreadable; skipping remaining local/export path attempts"
+                            );
+                        } else {
+                            tracing::debug!(
+                                info_hash = %hash,
+                                path = %path,
+                                error = %e,
+                                "cannot read local torrentFile"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2) Client export API (qB /torrents/export, or Transmission re-query + read).
+        if !materialized && export_available {
+            export_attempts += 1;
+            match client.export_torrent(hash).await {
+                Ok(Some(bytes)) => match parser::parse_bytes(&bytes) {
+                    Ok(meta) => {
+                        if seen_info_hashes.insert(meta.info_hash.clone()) {
+                            export_hits += 1;
+                            parsed.push((None, meta));
+                            materialized = true;
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            info_hash = %hash,
+                            error = %e,
+                            "failed to parse exported torrent, skipping"
+                        );
+                    }
+                },
+                Ok(None) => {
+                    tracing::debug!(
+                        info_hash = %hash,
+                        "export unavailable for torrent, trying pieces_hash"
+                    );
                 }
                 Err(e) => {
                     tracing::warn!(
                         info_hash = %hash,
                         error = %e,
-                        "failed to parse exported torrent, skipping"
+                        "export failed for torrent, trying pieces_hash"
                     );
                 }
-            },
-            Ok(None) => {
-                tracing::debug!(info_hash = %hash, "export unavailable for torrent, skipping");
             }
-            Err(e) => {
-                tracing::warn!(
-                    info_hash = %hash,
-                    error = %e,
-                    "export failed for torrent, skipping"
-                );
+        }
+
+        // 3) pieces_hash-only materialization (qB pieceHashes).
+        if !materialized {
+            match client.get_pieces_hash(hash).await {
+                Ok(Some(pieces_hash)) => {
+                    if seen_info_hashes.insert(hash.clone()) {
+                        pieces_hash_hits += 1;
+                        // If neither local torrentFile nor export has succeeded but pieces_hash
+                        // works, prefer the cheaper pieces_hash path for the rest of the
+                        // scan (typical for older qB builds without /torrents/export).
+                        if export_available && export_hits == 0 && local_file_hits == 0 {
+                            export_available = false;
+                            tracing::info!(
+                                "export produced no hits while pieces_hash works; using pieces_hash for remaining torrents"
+                            );
+                        }
+                        let name = listed_names
+                            .get(hash)
+                            .cloned()
+                            .unwrap_or_else(|| hash.clone());
+                        let total_size = listed_sizes.get(hash).copied().unwrap_or(0);
+                        parsed.push((
+                            None,
+                            TorrentMeta {
+                                info_hash: hash.clone(),
+                                pieces_hash,
+                                name: name.clone(),
+                                total_size,
+                                files: vec![TorrentFile {
+                                    path: vec![name],
+                                    length: total_size,
+                                }],
+                                announce: None,
+                                announce_list: vec![],
+                                piece_length: 0,
+                                pieces_count: 0,
+                            },
+                        ));
+                        materialized = true;
+                    }
+                }
+                Ok(None) => {
+                    tracing::debug!(
+                        info_hash = %hash,
+                        "pieces_hash unavailable for torrent, skipping"
+                    );
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        info_hash = %hash,
+                        error = %e,
+                        "pieces_hash lookup failed for torrent, skipping"
+                    );
+                }
             }
+        }
+
+        if materialized {
+            consecutive_misses = 0;
+        } else {
+            consecutive_misses += 1;
+        }
+
+        // Early abort after a few consecutive total misses when nothing has ever
+        // materialized. Avoids walking tens of thousands of dead hashes.
+        if consecutive_misses >= 3
+            && export_hits == 0
+            && pieces_hash_hits == 0
+            && local_file_hits == 0
+        {
+            tracing::warn!(
+                consecutive_misses,
+                export_attempts,
+                "neither local torrentFile, export, nor pieces_hash produced any metadata; stopping materialization attempts"
+            );
+            break;
         }
     }
 
-    // If the client has torrents but we could not materialize any metadata (export
-    // unavailable and torrent_dir empty/unusable), fail hard instead of succeeding
-    // with zero matches.
+    // If the client has torrents but we could not materialize any metadata, fail
+    // hard instead of succeeding with zero matches.
     if !hashes.is_empty() && parsed.is_empty() {
         return Err(EngineError::ScanFailed(format!(
-            "downloader source has {} torrents but none were materializable via torrent_dir or export (export_attempts={}, export_hits={}); configure torrent_dir or use a client that supports export",
+            "downloader source has {} torrents but none were materializable via torrent_dir, torrentFile, export, or pieces_hash (export_attempts={}, export_hits={}, local_file_hits={}, pieces_hash_hits={}); configure torrent_dir / share Transmission torrents dir, or use a client that supports export/pieceHashes",
             hashes.len(),
             export_attempts,
-            export_hits
+            export_hits,
+            local_file_hits,
+            pieces_hash_hits
         ))
         .into());
     }
@@ -383,6 +558,8 @@ mod tests {
     struct MockDownloader {
         hashes: HashSet<String>,
         exports: HashMap<String, Vec<u8>>,
+        pieces_hashes: HashMap<String, String>,
+        listed: Vec<TorrentInfo>,
     }
 
     #[async_trait]
@@ -402,6 +579,9 @@ mod tests {
         async fn get_all_info_hashes(&self) -> Result<HashSet<String>, CoreError> {
             Ok(self.hashes.clone())
         }
+        async fn list_torrents(&self) -> Result<Vec<TorrentInfo>, CoreError> {
+            Ok(self.listed.clone())
+        }
         async fn add_torrent(&self, _opts: AddTorrentOpts) -> Result<bool, CoreError> {
             Ok(true)
         }
@@ -413,6 +593,9 @@ mod tests {
         }
         async fn export_torrent(&self, info_hash: &str) -> Result<Option<Vec<u8>>, CoreError> {
             Ok(self.exports.get(info_hash).cloned())
+        }
+        async fn get_pieces_hash(&self, info_hash: &str) -> Result<Option<String>, CoreError> {
+            Ok(self.pieces_hashes.get(info_hash).cloned())
         }
         async fn close(&mut self) -> Result<(), CoreError> {
             Ok(())
@@ -442,10 +625,14 @@ mod tests {
         let client = MockDownloader {
             hashes: HashSet::from([meta.info_hash.clone()]),
             exports: HashMap::from([(meta.info_hash.clone(), bytes)]),
+            pieces_hashes: HashMap::new(),
+            listed: Vec::new(),
         };
         let dest = MockDownloader {
             hashes: HashSet::new(),
             exports: HashMap::new(),
+            pieces_hashes: HashMap::new(),
+            listed: Vec::new(),
         };
         let stats = ReseedStats::new();
         let cancel = CancellationToken::new();
@@ -483,10 +670,14 @@ mod tests {
         let client = MockDownloader {
             hashes: HashSet::new(),
             exports: HashMap::new(),
+            pieces_hashes: HashMap::new(),
+            listed: Vec::new(),
         };
         let dest = MockDownloader {
             hashes: HashSet::new(),
             exports: HashMap::new(),
+            pieces_hashes: HashMap::new(),
+            listed: Vec::new(),
         };
         let stats = ReseedStats::new();
         let cancel = CancellationToken::new();
@@ -505,5 +696,167 @@ mod tests {
 
         assert_eq!(result.torrents.len(), 1);
         assert!(result.torrents.contains_key(&meta.info_hash));
+    }
+
+    #[tokio::test]
+    async fn scan_downloader_uses_pieces_hash_when_export_unavailable() {
+        let db_dir = tempfile::tempdir().unwrap();
+        let database_url = format!("sqlite://{}", db_dir.path().join("test.db").display());
+        let pool = crate::db::init_db(&database_url).await.unwrap();
+        let repo = Repository::new(pool);
+        let writer = spawn_writer(&database_url, 10).unwrap();
+
+        let info_hash = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string();
+        let pieces_hash = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_string();
+        let client = MockDownloader {
+            hashes: HashSet::from([info_hash.clone()]),
+            exports: HashMap::new(),
+            pieces_hashes: HashMap::from([(info_hash.clone(), pieces_hash.clone())]),
+            listed: vec![TorrentInfo {
+                info_hash: info_hash.clone(),
+                name: "movie.mkv".to_string(),
+                save_path: "/downloads/movie".to_string(),
+                progress: 1.0,
+                state: "uploading".to_string(),
+                total_size: 12345,
+                added_on: None,
+                torrent_file: None,
+            }],
+        };
+        let dest = MockDownloader {
+            hashes: HashSet::new(),
+            exports: HashMap::new(),
+            pieces_hashes: HashMap::new(),
+            listed: Vec::new(),
+        };
+        let stats = ReseedStats::new();
+        let cancel = CancellationToken::new();
+
+        let result = scan_downloader(
+            &client,
+            None,
+            &repo,
+            &writer,
+            Some(&dest),
+            &stats,
+            &cancel,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(result.torrents.len(), 1);
+        let meta = result.torrents.get(&info_hash).unwrap();
+        assert_eq!(meta.pieces_hash, pieces_hash);
+        assert_eq!(meta.name, "movie.mkv");
+        assert_eq!(meta.total_size, 12345);
+        assert_eq!(
+            result.save_paths.get(&info_hash).map(String::as_str),
+            Some("/downloads/movie")
+        );
+        assert!(result.pieces_groups.contains_key(&pieces_hash));
+    }
+
+    #[tokio::test]
+    async fn scan_downloader_reads_local_torrent_file_path() {
+        let db_dir = tempfile::tempdir().unwrap();
+        let database_url = format!("sqlite://{}", db_dir.path().join("test.db").display());
+        let pool = crate::db::init_db(&database_url).await.unwrap();
+        let repo = Repository::new(pool);
+        let writer = spawn_writer(&database_url, 10).unwrap();
+
+        let torrent_dir = tempfile::tempdir().unwrap();
+        let bytes = sample_torrent_bytes("from-torrent-file");
+        let meta = parser::parse_bytes(&bytes).unwrap();
+        let torrent_path = torrent_dir.path().join("from-torrent-file.torrent");
+        std::fs::write(&torrent_path, &bytes).unwrap();
+
+        let client = MockDownloader {
+            hashes: HashSet::from([meta.info_hash.clone()]),
+            exports: HashMap::new(),
+            pieces_hashes: HashMap::new(),
+            listed: vec![TorrentInfo {
+                info_hash: meta.info_hash.clone(),
+                name: "from-torrent-file".to_string(),
+                save_path: "/downloads/from-torrent-file".to_string(),
+                progress: 1.0,
+                state: "seeding".to_string(),
+                total_size: 10,
+                added_on: None,
+                torrent_file: Some(torrent_path.to_string_lossy().into_owned()),
+            }],
+        };
+        let dest = MockDownloader {
+            hashes: HashSet::new(),
+            exports: HashMap::new(),
+            pieces_hashes: HashMap::new(),
+            listed: Vec::new(),
+        };
+        let stats = ReseedStats::new();
+        let cancel = CancellationToken::new();
+
+        let result = scan_downloader(
+            &client,
+            None,
+            &repo,
+            &writer,
+            Some(&dest),
+            &stats,
+            &cancel,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(result.torrents.len(), 1);
+        assert!(result.torrents.contains_key(&meta.info_hash));
+        assert_eq!(
+            result
+                .save_paths
+                .get(&meta.info_hash)
+                .map(String::as_str),
+            Some("/downloads/from-torrent-file")
+        );
+    }
+
+    #[tokio::test]
+    async fn scan_downloader_fails_when_no_materialization_path() {
+        let db_dir = tempfile::tempdir().unwrap();
+        let database_url = format!("sqlite://{}", db_dir.path().join("test.db").display());
+        let pool = crate::db::init_db(&database_url).await.unwrap();
+        let repo = Repository::new(pool);
+        let writer = spawn_writer(&database_url, 10).unwrap();
+
+        let info_hash = "cccccccccccccccccccccccccccccccccccccccc".to_string();
+        let client = MockDownloader {
+            hashes: HashSet::from([info_hash]),
+            exports: HashMap::new(),
+            pieces_hashes: HashMap::new(),
+            listed: Vec::new(),
+        };
+        let dest = MockDownloader {
+            hashes: HashSet::new(),
+            exports: HashMap::new(),
+            pieces_hashes: HashMap::new(),
+            listed: Vec::new(),
+        };
+        let stats = ReseedStats::new();
+        let cancel = CancellationToken::new();
+
+        let err = scan_downloader(
+            &client,
+            None,
+            &repo,
+            &writer,
+            Some(&dest),
+            &stats,
+            &cancel,
+        )
+        .await
+        .unwrap_err();
+
+        let msg = err.to_string();
+        assert!(
+            msg.contains("none were materializable"),
+            "unexpected error: {msg}"
+        );
     }
 }

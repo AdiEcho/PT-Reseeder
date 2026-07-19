@@ -33,6 +33,7 @@ impl From<QBTorrentInfo> for TorrentInfo {
             state: qb.state,
             total_size: qb.total_size.max(0) as u64,
             added_on: qb.added_on,
+            torrent_file: None,
         }
     }
 }
@@ -318,12 +319,91 @@ impl Downloader for QBittorrentClient {
         Ok(Some(bytes.to_vec()))
     }
 
+    async fn get_pieces_hash(&self, info_hash: &str) -> Result<Option<String>, CoreError> {
+        use sha1::{Digest as _, Sha1};
+
+        // qBittorrent WebAPI: GET /api/v2/torrents/pieceHashes?hash=<hash>
+        // Returns a JSON array of 40-char hex piece hashes. pieces_hash is
+        // SHA1 of the raw concatenated 20-byte piece digests (same as info.pieces).
+        let url = format!(
+            "{}/api/v2/torrents/pieceHashes?hash={}",
+            self.base_url(),
+            info_hash
+        );
+        let resp = self.client.get(&url).send().await.map_err(|e| {
+            CoreError::Downloader(DownloaderError::ConnectionFailed(e.to_string()))
+        })?;
+
+        let status = resp.status();
+        if status.as_u16() == 404 || status.as_u16() == 400 {
+            debug!(
+                info_hash = %info_hash,
+                status = %status,
+                "qBittorrent pieceHashes unavailable"
+            );
+            return Ok(None);
+        }
+        if !status.is_success() {
+            warn!(
+                info_hash = %info_hash,
+                status = %status,
+                "qBittorrent pieceHashes failed"
+            );
+            return Ok(None);
+        }
+
+        let piece_hexes: Vec<String> = resp.json().await.map_err(|e| {
+            CoreError::Downloader(DownloaderError::ConnectionFailed(e.to_string()))
+        })?;
+        if piece_hexes.is_empty() {
+            return Ok(None);
+        }
+
+        let mut pieces_bytes = Vec::with_capacity(piece_hexes.len() * 20);
+        for hex in &piece_hexes {
+            let decoded = decode_hex20(hex).ok_or_else(|| {
+                CoreError::Downloader(DownloaderError::ConnectionFailed(format!(
+                    "invalid piece hash hex from qBittorrent: {}",
+                    hex
+                )))
+            })?;
+            pieces_bytes.extend_from_slice(&decoded);
+        }
+
+        let digest = Sha1::digest(&pieces_bytes);
+        let pieces_hash = digest.iter().map(|b| format!("{:02x}", b)).collect();
+        Ok(Some(pieces_hash))
+    }
+
     async fn close(&mut self) -> Result<(), CoreError> {
         let url = format!("{}/api/v2/auth/logout", self.base_url());
         let _ = self.client.post(&url).send().await;
         self.connected = false;
         debug!(host = %self.host, port = %self.port, "disconnected from qBittorrent");
         Ok(())
+    }
+}
+
+/// Decode a 40-char hex string into exactly 20 bytes.
+fn decode_hex20(hex: &str) -> Option<[u8; 20]> {
+    if hex.len() != 40 {
+        return None;
+    }
+    let mut out = [0u8; 20];
+    for (i, chunk) in hex.as_bytes().chunks(2).enumerate() {
+        let hi = hex_nibble(chunk[0])?;
+        let lo = hex_nibble(chunk[1])?;
+        out[i] = (hi << 4) | lo;
+    }
+    Some(out)
+}
+
+fn hex_nibble(c: u8) -> Option<u8> {
+    match c {
+        b'0'..=b'9' => Some(c - b'0'),
+        b'a'..=b'f' => Some(c - b'a' + 10),
+        b'A'..=b'F' => Some(c - b'A' + 10),
+        _ => None,
     }
 }
 
@@ -387,5 +467,21 @@ mod tests {
         };
         let info: TorrentInfo = qb.into();
         assert_eq!(info.total_size, 0);
+    }
+
+    #[test]
+    fn decode_hex20_accepts_lowercase_and_uppercase() {
+        let lower = decode_hex20("0123456789abcdef0123456789abcdef01234567").unwrap();
+        let upper = decode_hex20("0123456789ABCDEF0123456789ABCDEF01234567").unwrap();
+        assert_eq!(lower, upper);
+        assert_eq!(lower[0], 0x01);
+        assert_eq!(lower[1], 0x23);
+        assert_eq!(lower[19], 0x67);
+    }
+
+    #[test]
+    fn decode_hex20_rejects_bad_input() {
+        assert!(decode_hex20("abc").is_none());
+        assert!(decode_hex20("zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz").is_none());
     }
 }

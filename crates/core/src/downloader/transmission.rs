@@ -65,6 +65,9 @@ struct TrTorrentInfo {
     percent_done: f64,
     #[serde(default)]
     download_dir: String,
+    /// Absolute path to the `.torrent` file on the Transmission host.
+    #[serde(default)]
+    torrent_file: Option<String>,
 }
 
 impl TrTorrentInfo {
@@ -85,6 +88,9 @@ impl TrTorrentInfo {
 impl From<TrTorrentInfo> for TorrentInfo {
     fn from(tr: TrTorrentInfo) -> Self {
         let state = tr.status_string().to_string();
+        let torrent_file = tr
+            .torrent_file
+            .filter(|p| !p.trim().is_empty());
         TorrentInfo {
             info_hash: tr.hash_string,
             name: tr.name,
@@ -93,6 +99,7 @@ impl From<TrTorrentInfo> for TorrentInfo {
             state,
             total_size: tr.total_size.max(0) as u64,
             added_on: None,
+            torrent_file,
         }
     }
 }
@@ -272,7 +279,7 @@ impl Downloader for TransmissionClient {
     async fn get_torrent_info(&self, info_hash: &str) -> Result<Option<TorrentInfo>, CoreError> {
         let args = serde_json::json!({
             "ids": [info_hash],
-            "fields": ["hashString", "name", "status", "totalSize", "percentDone", "downloadDir"]
+            "fields": ["hashString", "name", "status", "totalSize", "percentDone", "downloadDir", "torrentFile"]
         });
         let result = self.rpc_call("torrent-get", args).await?;
 
@@ -298,7 +305,7 @@ impl Downloader for TransmissionClient {
 
     async fn list_torrents(&self) -> Result<Vec<TorrentInfo>, CoreError> {
         let args = serde_json::json!({
-            "fields": ["hashString", "name", "status", "totalSize", "percentDone", "downloadDir"]
+            "fields": ["hashString", "name", "status", "totalSize", "percentDone", "downloadDir", "torrentFile"]
         });
         let result = self.rpc_call("torrent-get", args).await?;
 
@@ -375,10 +382,38 @@ impl Downloader for TransmissionClient {
         Ok(true)
     }
 
-    async fn export_torrent(&self, _info_hash: &str) -> Result<Option<Vec<u8>>, CoreError> {
-        // Transmission RPC does not provide a reliable .torrent export path for all setups.
-        // Source scans should use torrent_dir when available.
-        Ok(None)
+    async fn export_torrent(&self, info_hash: &str) -> Result<Option<Vec<u8>>, CoreError> {
+        // Transmission has no binary export RPC. When PT-Reseeder shares a filesystem
+        // with the client (same host / bind-mount), read the path from `torrentFile`.
+        let info = self.get_torrent_info(info_hash).await?;
+        let Some(path) = info.and_then(|t| t.torrent_file) else {
+            debug!(
+                info_hash = %info_hash,
+                "Transmission torrentFile unavailable; configure torrent_dir or share the torrents directory"
+            );
+            return Ok(None);
+        };
+
+        match std::fs::read(&path) {
+            Ok(bytes) if !bytes.is_empty() => {
+                debug!(info_hash = %info_hash, path = %path, "read Transmission torrentFile");
+                Ok(Some(bytes))
+            }
+            Ok(_) => {
+                warn!(info_hash = %info_hash, path = %path, "Transmission torrentFile is empty");
+                Ok(None)
+            }
+            Err(e) => {
+                // Path may be absolute on another host; treat as unavailable rather than hard-fail.
+                debug!(
+                    info_hash = %info_hash,
+                    path = %path,
+                    error = %e,
+                    "cannot read Transmission torrentFile"
+                );
+                Ok(None)
+            }
+        }
     }
 
     async fn close(&mut self) -> Result<(), CoreError> {
@@ -456,6 +491,7 @@ mod tests {
                 total_size: 0,
                 percent_done: 0.0,
                 download_dir: String::new(),
+                torrent_file: None,
             };
             assert_eq!(
                 info.status_string(),
@@ -476,6 +512,7 @@ mod tests {
             total_size: 2048,
             percent_done: 1.0,
             download_dir: "/downloads".to_string(),
+            torrent_file: Some("/var/lib/transmission/torrents/abc.torrent".to_string()),
         };
         let info: TorrentInfo = tr.into();
         assert_eq!(info.info_hash, "abc123");
@@ -485,6 +522,10 @@ mod tests {
         assert_eq!(info.progress, 1.0);
         assert_eq!(info.save_path, "/downloads");
         assert!(info.added_on.is_none()); // Transmission doesn't provide this
+        assert_eq!(
+            info.torrent_file.as_deref(),
+            Some("/var/lib/transmission/torrents/abc.torrent")
+        );
     }
 
     #[test]
@@ -496,9 +537,11 @@ mod tests {
             total_size: -500,
             percent_done: 0.0,
             download_dir: "/d".to_string(),
+            torrent_file: Some("".to_string()),
         };
         let info: TorrentInfo = tr.into();
         assert_eq!(info.total_size, 0);
+        assert!(info.torrent_file.is_none());
     }
 
     #[test]

@@ -54,6 +54,11 @@ pub struct TorrentInfo {
     pub state: String,
     pub total_size: u64,
     pub added_on: Option<i64>,
+    /// Absolute path to the `.torrent` file on the downloader host, when known
+    /// (e.g. Transmission `torrentFile`). Only usable when PT-Reseeder can read
+    /// the same filesystem path (same host or shared mount).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub torrent_file: Option<String>,
 }
 
 #[cfg(test)]
@@ -160,7 +165,12 @@ mod tests {
             state: "downloading".to_string(),
             total_size: 1073741824,
             added_on: Some(1700000000),
+            torrent_file: Some("/var/lib/transmission/torrents/abc.torrent".to_string()),
         };
+        assert_eq!(
+            info.torrent_file.as_deref(),
+            Some("/var/lib/transmission/torrents/abc.torrent")
+        );
 
         let json = serde_json::to_string(&info).unwrap();
         let deserialized: TorrentInfo = serde_json::from_str(&json).unwrap();

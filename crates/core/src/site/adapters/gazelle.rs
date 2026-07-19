@@ -40,6 +40,7 @@ struct GazelleBrowseResponse {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct GazelleGroupResult {
+    #[allow(dead_code)]
     group_id: i64,
     group_name: String,
     #[serde(default)]
@@ -68,6 +69,7 @@ struct GazelleTorrentGroup {
     name: String,
     #[serde(default)]
     wiki_body: String,
+    #[allow(dead_code)]
     #[serde(default)]
     music_info: Option<serde_json::Value>,
     #[serde(default)]
@@ -77,8 +79,11 @@ struct GazelleTorrentGroup {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct GazelleTorrentDetail {
+    #[allow(dead_code)]
     id: i64,
+    #[allow(dead_code)]
     size: u64,
+    #[allow(dead_code)]
     #[serde(default)]
     info_hash: Option<String>,
     #[serde(default)]

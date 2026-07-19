@@ -58,6 +58,7 @@ struct ZhuqueTorrentEntry {
 
 #[derive(Deserialize)]
 struct ZhuqueTorrentDetail {
+    #[allow(dead_code)]
     id: i64,
     #[serde(default)]
     name: String,
@@ -65,8 +66,10 @@ struct ZhuqueTorrentDetail {
     small_descr: Option<String>,
     #[serde(default)]
     descr: Option<String>,
+    #[allow(dead_code)]
     #[serde(default)]
     size: u64,
+    #[allow(dead_code)]
     #[serde(default)]
     info_hash: Option<String>,
     #[serde(default)]

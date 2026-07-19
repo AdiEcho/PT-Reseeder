@@ -52,6 +52,7 @@ struct Unit3dTorrentAttributes {
     description: Option<String>,
     #[serde(default)]
     mediainfo: Option<String>,
+    #[allow(dead_code)]
     #[serde(default)]
     category_id: Option<i64>,
     #[serde(default)]
@@ -63,6 +64,7 @@ struct Unit3dTorrentAttributes {
     #[serde(default)]
     imdb_id: Option<i64>,
     size: u64,
+    #[allow(dead_code)]
     #[serde(default)]
     files_count: Option<u64>,
     #[serde(default)]

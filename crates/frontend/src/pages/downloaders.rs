@@ -1,3 +1,4 @@
+use crate::components::async_view::AsyncView;
 use crate::components::confirm_modal::ConfirmModal;
 use crate::components::empty_state::EmptyState;
 use crate::components::toast::{show_toast, ToastType};
@@ -278,7 +279,7 @@ where
             {move || {
                 if show_form.get() {
                     Some(view! {
-                        <div class="add-form">
+                        <div class="form-section">
                             <div class="form-grid">
                                 <div class="form-group">
                                     <label>"名称" <span class="required">"*"</span></label>
@@ -411,70 +412,68 @@ where
             }}
 
             // Downloaders table
-            <Suspense fallback=move || view! { <p>"正在加载下载器..."</p> }>
-                {move || {
-                    downloaders.get().map(|result| match result {
-                        Err(e) => view! {
-                            <div class="load-error">
-                                <span>{format!("下载器加载失败：{e}")}</span>
-                                <button
-                                    class="btn btn--sm btn--outline"
-                                    on:click=move |_| downloaders.refetch()
-                                >
-                                    "重试"
-                                </button>
-                            </div>
-                        }.into_any(),
-                        Ok(list) if list.is_empty() => view! {
-                            <EmptyState icon="⬇" message="尚未配置任何下载器。" />
-                        }.into_any(),
-                        Ok(list) => view! {
-                            <div class="table-wrap">
-                                <table class="stats-table">
-                                    <thead>
-                                        <tr>
-                                            <th>"名称"</th>
-                                            <th>"类型"</th>
-                                            <th>"主机"</th>
-                                            <th>"用途"</th>
-                                            <th>"启用"</th>
-                                            <th>"操作"</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {list
-                                            .into_iter()
-                                            .map(|dl| {
-                                                view! {
-                                                    <DownloaderRow
-                                                        dl=dl
-                                                        test_dl_action=test_dl_action
-                                                        on_request_delete=on_request_delete
-                                                    />
-                                                }
-                                            })
-                                            .collect::<Vec<_>>()}
-                                    </tbody>
-                                </table>
-                            </div>
+            <AsyncView
+                resource=downloaders
+                error_label="下载器"
+                on_retry=move || downloaders.refetch()
+                render={move |list: Vec<DownloaderInfo>| {
+                    if list.is_empty() {
+                        return view! { <EmptyState icon="⬇" message="尚未配置任何下载器。" /> }
+                            .into_any();
+                    }
+                    view! {
+                        <div class="table-wrap">
+                            <table class="stats-table">
+                                <thead>
+                                    <tr>
+                                        <th>"名称"</th>
+                                        <th>"类型"</th>
+                                        <th>"主机"</th>
+                                        <th>"用途"</th>
+                                        <th>"启用"</th>
+                                        <th>"操作"</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {list
+                                        .into_iter()
+                                        .map(|dl| {
+                                            view! {
+                                                <DownloaderRow
+                                                    dl=dl
+                                                    test_dl_action=test_dl_action
+                                                    on_request_delete=on_request_delete
+                                                />
+                                            }
+                                        })
+                                        .collect::<Vec<_>>()}
+                                </tbody>
+                            </table>
+                        </div>
 
-                            // Show latest test result
-                            {move || {
-                                test_result.get().map(|res| match res {
-                                    Ok(msg) => view! {
-                                        <p class="test-result text-green">{msg}</p>
-                                    }.into_any(),
-                                    Err(e) => view! {
-                                        <p class="test-result text-red">
-                                            {format!("测试失败：{e}")}
-                                        </p>
-                                    }.into_any(),
+                        // Show latest test result
+                        {move || {
+                            test_result
+                                .get()
+                                .map(|res| match res {
+                                    Ok(msg) => {
+                                        view! { <p class="test-result text-green">{msg}</p> }
+                                            .into_any()
+                                    }
+                                    Err(e) => {
+                                        view! {
+                                            <p class="test-result text-red">
+                                                {format!("测试失败：{e}")}
+                                            </p>
+                                        }
+                                            .into_any()
+                                    }
                                 })
-                            }}
-                        }.into_any(),
-                    })
+                        }}
+                    }
+                        .into_any()
                 }}
-            </Suspense>
+            />
         </div>
     }
 }
@@ -507,7 +506,7 @@ where
             <td>{host_port}</td>
             <td>{role_label}</td>
             <td class=enabled_class>{enabled_label}</td>
-            <td class="actions-cell">
+            <td class="table__action-cell">
                 <button
                     class="btn btn--sm btn--outline"
                     on:click=move |_| {

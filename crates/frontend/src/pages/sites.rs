@@ -1,6 +1,9 @@
+use crate::components::async_view::AsyncView;
 use crate::components::confirm_modal::ConfirmModal;
 use crate::components::empty_state::EmptyState;
+use crate::components::modal_focus::use_modal_focus;
 use crate::components::toast::{show_toast, ToastType};
+use crate::server_fns::{SiteInfo, ValidateSiteResult};
 use leptos::prelude::*;
 use serde::Deserialize;
 
@@ -101,6 +104,52 @@ fn probe_failure_details(detail_json: Option<&str>) -> Vec<String> {
         ));
     }
     failures
+}
+
+/// Renders one probe/validate outcome as a status-coloured alert card with the
+/// parsed success and failure detail lists.
+#[component]
+fn ProbeResultCard(result: ValidateSiteResult) -> impl IntoView {
+    let (class, icon) = match result.status.as_str() {
+        "ok" => ("form-alert form-alert--success", "✅ "),
+        "partial" => ("form-alert form-alert--warning", "⚠️ "),
+        _ => ("form-alert form-alert--error", "❌ "),
+    };
+    let successes = probe_success_details(result.detail_json.as_deref());
+    let failures = probe_failure_details(result.detail_json.as_deref());
+    view! {
+        <div class=class>
+            <div>{format!("{}{}", icon, result.message)}</div>
+            {(!successes.is_empty()).then(|| view! {
+                <div class="probe-success-section">
+                    <div class="probe-section-title">"获取到的个人信息："</div>
+                    <ul class="probe-success-list">
+                        {successes
+                            .into_iter()
+                            .map(|(label, value)| view! {
+                                <li>
+                                    <span class="probe-field-label">{label}</span>
+                                    "："
+                                    <span class="probe-field-value">{value}</span>
+                                </li>
+                            })
+                            .collect::<Vec<_>>()}
+                    </ul>
+                </div>
+            })}
+            {(!failures.is_empty()).then(|| view! {
+                <div class="probe-failure-section">
+                    <div class="probe-section-title">"未获取到的项目："</div>
+                    <ul class="probe-failure-list">
+                        {failures
+                            .into_iter()
+                            .map(|failure| view! { <li>{failure}</li> })
+                            .collect::<Vec<_>>()}
+                    </ul>
+                </div>
+            })}
+        </div>
+    }
 }
 
 #[component]
@@ -244,7 +293,7 @@ pub fn SitesPage() -> impl IntoView {
             <div class="dashboard-header">
                 <h1>"站点管理"</h1>
                 <button
-                    class="btn btn-primary"
+                    class="btn btn--primary"
                     on:click=move |_| set_show_form.update(|v| *v = !*v)
                 >
                     {move || if show_form.get() { "取消" } else { "添加站点" }}
@@ -259,7 +308,7 @@ pub fn SitesPage() -> impl IntoView {
                             <h2>"添加新站点"</h2>
                             <div class="form-grid">
                                 // Preset selector
-                                <div class="form-group" style="grid-column: 1 / -1;">
+                                <div class="form-group form-group--full">
                                     <label>"选择站点预设"</label>
                                     <Suspense fallback=move || view! { <select disabled=true><option>"加载中..."</option></select> }>
                                         {move || {
@@ -409,7 +458,7 @@ pub fn SitesPage() -> impl IntoView {
                             </div>
                             <div class="form-actions">
                                 <button
-                                    class="btn btn-primary"
+                                    class="btn btn--primary"
                                     disabled=move || create_action.pending().get()
                                     on:click=move |_| { create_action.dispatch(()); }
                                 >
@@ -438,46 +487,7 @@ pub fn SitesPage() -> impl IntoView {
                             // Validate result display
                             {move || {
                                 validate_action.value().get().and_then(|r| r.ok()).map(|result| {
-                                    let (class, icon) = match result.status.as_str() {
-                                        "ok" => ("form-alert form-alert--success", "✅ "),
-                                        "partial" => ("form-alert form-alert--warning", "⚠️ "),
-                                        _ => ("form-alert form-alert--error", "❌ "),
-                                    };
-                                    let successes = probe_success_details(result.detail_json.as_deref());
-                                    let failures = probe_failure_details(result.detail_json.as_deref());
-                                    view! {
-                                        <div class=class>
-                                            <div>{format!("{}{}", icon, result.message)}</div>
-                                            {(!successes.is_empty()).then(|| view! {
-                                                <div class="probe-success-section">
-                                                    <div class="probe-section-title">"获取到的个人信息："</div>
-                                                    <ul class="probe-success-list">
-                                                        {successes
-                                                            .into_iter()
-                                                            .map(|(label, value)| view! {
-                                                                <li>
-                                                                    <span class="probe-field-label">{label}</span>
-                                                                    "："
-                                                                    <span class="probe-field-value">{value}</span>
-                                                                </li>
-                                                            })
-                                                            .collect::<Vec<_>>()}
-                                                    </ul>
-                                                </div>
-                                            })}
-                                            {(!failures.is_empty()).then(|| view! {
-                                                <div class="probe-failure-section">
-                                                    <div class="probe-section-title">"未获取到的项目："</div>
-                                                    <ul class="probe-failure-list">
-                                                        {failures
-                                                            .into_iter()
-                                                            .map(|failure| view! { <li>{failure}</li> })
-                                                            .collect::<Vec<_>>()}
-                                                    </ul>
-                                                </div>
-                                            })}
-                                        </div>
-                                    }
+                                    view! { <ProbeResultCard result=result /> }
                                 })
                             }}
                         </div>
@@ -513,174 +523,117 @@ pub fn SitesPage() -> impl IntoView {
                     .get()
                     .and_then(|r| r.ok())
                     .map(|result| {
-                        let (class, icon) = match result.status.as_str() {
-                            "ok" => ("form-alert form-alert--success", "✅ "),
-                            "partial" => ("form-alert form-alert--warning", "⚠️ "),
-                            _ => ("form-alert form-alert--error", "❌ "),
-                        };
-                        let successes = probe_success_details(result.detail_json.as_deref());
-                        let failures = probe_failure_details(result.detail_json.as_deref());
-                        view! {
-                            <div class=class>
-                                <div>{format!("{}{}", icon, result.message)}</div>
-                                {(!successes.is_empty()).then(|| view! {
-                                    <div class="probe-success-section">
-                                        <div class="probe-section-title">"获取到的个人信息："</div>
-                                        <ul class="probe-success-list">
-                                            {successes
-                                                .into_iter()
-                                                .map(|(label, value)| view! {
-                                                    <li>
-                                                        <span class="probe-field-label">{label}</span>
-                                                        "："
-                                                        <span class="probe-field-value">{value}</span>
-                                                    </li>
-                                                })
-                                                .collect::<Vec<_>>()}
-                                        </ul>
-                                    </div>
-                                })}
-                                {(!failures.is_empty()).then(|| view! {
-                                    <div class="probe-failure-section">
-                                        <div class="probe-section-title">"未获取到的项目："</div>
-                                        <ul class="probe-failure-list">
-                                            {failures
-                                                .into_iter()
-                                                .map(|failure| view! { <li>{failure}</li> })
-                                                .collect::<Vec<_>>()}
-                                        </ul>
-                                    </div>
-                                })}
-                            </div>
-                        }
+                        view! { <ProbeResultCard result=result /> }
                     })
             }}
             // 更新结果仅走 toast，避免与粘性 form-alert 叠用
 
             // Sites table
-            <Suspense fallback=move || view! { <p>"正在加载站点..."</p> }>
-                {move || {
-                    sites
-                        .get()
-                        .map(|result| match result {
-                            Ok(sites_list) => {
-                                if sites_list.is_empty() {
-                                    view! {
-                                        <div class="stats-table-section">
-                                            <EmptyState icon="◈" message="尚未配置任何站点，请在上方添加。" />
-                                        </div>
-                                    }
-                                        .into_any()
-                                } else {
-                                    view! {
-                                        <div class="stats-table-section">
-                                            <h2>"站点列表"</h2>
-                                            <div class="table-wrap">
-                                                <table class="stats-table">
-                                                    <thead>
-                                                        <tr>
-                                                            <th>"名称"</th>
-                                                            <th>"URL"</th>
-                                                            <th>"架构"</th>
-                                                            <th>"连通状态"</th>
-                                                            <th>"启用"</th>
-                                                            <th>"操作"</th>
-                                                        </tr>
-                                                    </thead>
-                                                    <tbody>
-                                                        {sites_list
-                                                            .into_iter()
-                                                            .map(|site| {
-                                                                let site_id = site.id;
-                                                                let site_name = site.name.clone();
-                                                                let site_url = site.url.clone();
-                                                                let site_api_url = site.api_url.clone().unwrap_or_default();
-                                                                let detail_href = format!(
-                                                                    "/sites/{}",
-                                                                    site.id,
-                                                                );
-                                                                let (probe_class, probe_label) = match site
-                                                                    .probe_status
-                                                                    .as_str()
-                                                                {
-                                                                    "ok" => ("text-green", "正常"),
-                                                                    "partial" => ("text-yellow", "部分可用"),
-                                                                    "failed" => ("text-red", "失败"),
-                                                                    "pending" => ("text-muted", "检测中"),
-                                                                    _ => ("text-muted", "未知"),
-                                                                };
-                                                                view! {
-                                                                    <tr>
-                                                                        <td>
-                                                                            <a href=detail_href>{site.name}</a>
-                                                                        </td>
-                                                                        <td class="text-muted">{site.url}</td>
-                                                                        <td>{site.adapter_type}</td>
-                                                                        <td class=probe_class>{probe_label}</td>
-                                                                        <td>
-                                                                            {if site.enabled {
-                                                                                view! { <span class="text-green">"是"</span> }
-                                                                                    .into_any()
-                                                                            } else {
-                                                                                view! { <span class="text-red">"否"</span> }
-                                                                                    .into_any()
-                                                                            }}
-                                                                        </td>
-                                                                        <td class="actions-cell">
-                                                                            <button
-                                                                                class="btn btn--sm btn--outline"
-                                                                                on:click=move |_| {
-                                                                                    set_edit_url.set(site_url.clone());
-                                                                                    set_edit_api_url.set(site_api_url.clone());
-                                                                                    set_edit_cookie.set(String::new());
-                                                                                    set_edit_passkey.set(String::new());
-                                                                                    set_edit_url_site.set(Some((site_id, site_url.clone(), site_api_url.clone())));
-                                                                                }
-                                                                            >
-                                                                                "编辑"
-                                                                            </button>
-                                                                            <button
-                                                                                class="btn btn--sm btn--outline"
-                                                                                on:click=move |_| { probe_action.dispatch(site_id); }
-                                                                            >
-                                                                                "连通测试"
-                                                                            </button>
-                                                                            <button
-                                                                                class="btn btn--sm btn--danger"
-                                                                                on:click=move |_| { set_confirm_delete.set(Some((site_id, site_name.clone()))); }
-                                                                            >
-                                                                                "删除"
-                                                                            </button>
-                                                                        </td>
-                                                                    </tr>
+            <AsyncView
+                resource=sites
+                error_label="站点"
+                on_retry=move || sites.refetch()
+                render={move |sites_list: Vec<SiteInfo>| {
+                    if sites_list.is_empty() {
+                        return view! {
+                            <div class="stats-table-section">
+                                <EmptyState icon="◈" message="尚未配置任何站点，请在上方添加。" />
+                            </div>
+                        }
+                            .into_any();
+                    }
+                    view! {
+                        <div class="stats-table-section">
+                            <h2>"站点列表"</h2>
+                            <div class="table-wrap">
+                                <table class="stats-table">
+                                    <thead>
+                                        <tr>
+                                            <th>"名称"</th>
+                                            <th>"URL"</th>
+                                            <th>"架构"</th>
+                                            <th>"连通状态"</th>
+                                            <th>"启用"</th>
+                                            <th>"操作"</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {sites_list
+                                            .into_iter()
+                                            .map(|site| {
+                                                let site_id = site.id;
+                                                let site_name = site.name.clone();
+                                                let site_url = site.url.clone();
+                                                let site_api_url = site.api_url.clone().unwrap_or_default();
+                                                let detail_href = format!(
+                                                    "/sites/{}",
+                                                    site.id,
+                                                );
+                                                let (probe_class, probe_label) = match site
+                                                    .probe_status
+                                                    .as_str()
+                                                {
+                                                    "ok" => ("text-green", "正常"),
+                                                    "partial" => ("text-yellow", "部分可用"),
+                                                    "failed" => ("text-red", "失败"),
+                                                    "pending" => ("text-muted", "检测中"),
+                                                    _ => ("text-muted", "未知"),
+                                                };
+                                                view! {
+                                                    <tr>
+                                                        <td>
+                                                            <a href=detail_href>{site.name}</a>
+                                                        </td>
+                                                        <td class="text-muted">{site.url}</td>
+                                                        <td>{site.adapter_type}</td>
+                                                        <td class=probe_class>{probe_label}</td>
+                                                        <td>
+                                                            {if site.enabled {
+                                                                view! { <span class="text-green">"是"</span> }
+                                                                    .into_any()
+                                                            } else {
+                                                                view! { <span class="text-red">"否"</span> }
+                                                                    .into_any()
+                                                            }}
+                                                        </td>
+                                                        <td class="table__action-cell">
+                                                            <button
+                                                                class="btn btn--sm btn--outline"
+                                                                on:click=move |_| {
+                                                                    set_edit_url.set(site_url.clone());
+                                                                    set_edit_api_url.set(site_api_url.clone());
+                                                                    set_edit_cookie.set(String::new());
+                                                                    set_edit_passkey.set(String::new());
+                                                                    set_edit_url_site.set(Some((site_id, site_url.clone(), site_api_url.clone())));
                                                                 }
-                                                            })
-                                                            .collect::<Vec<_>>()}
-                                                    </tbody>
-                                                </table>
-                                            </div>
-                                        </div>
-                                    }
-                                        .into_any()
-                                }
-                            }
-                            Err(e) => {
-                                view! {
-                                    <div class="load-error">
-                                        <span>{format!("站点加载失败：{e}")}</span>
-                                        <button
-                                            class="btn btn--sm btn--outline"
-                                            on:click=move |_| sites.refetch()
-                                        >
-                                            "重试"
-                                        </button>
-                                    </div>
-                                }
-                                    .into_any()
-                            }
-                        })
+                                                            >
+                                                                "编辑"
+                                                            </button>
+                                                            <button
+                                                                class="btn btn--sm btn--outline"
+                                                                on:click=move |_| { probe_action.dispatch(site_id); }
+                                                            >
+                                                                "连通测试"
+                                                            </button>
+                                                            <button
+                                                                class="btn btn--sm btn--danger"
+                                                                on:click=move |_| { set_confirm_delete.set(Some((site_id, site_name.clone()))); }
+                                                            >
+                                                                "删除"
+                                                            </button>
+                                                        </td>
+                                                    </tr>
+                                                }
+                                            })
+                                            .collect::<Vec<_>>()}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    }
+                        .into_any()
                 }}
-            </Suspense>
+            />
 
             // Edit site dialog (Esc closes via ConfirmModal-style overlay)
             {move || {
@@ -753,13 +706,10 @@ fn EditSiteModal(
     let on_cancel_esc = on_cancel.clone();
     let on_cancel_btn = on_cancel.clone();
     let on_cancel_overlay = on_cancel.clone();
-    let overlay_ref = NodeRef::<leptos::html::Div>::new();
 
-    Effect::new(move |_| {
-        if let Some(el) = overlay_ref.get() {
-            let _ = el.focus();
-        }
-    });
+    // Focuses the overlay so Esc is captured without a global listener, and
+    // returns focus to the opener when the modal closes.
+    let overlay_ref = use_modal_focus();
 
     let on_keydown = move |e: leptos::ev::KeyboardEvent| {
         if e.key() == "Escape" {
@@ -824,7 +774,7 @@ fn EditSiteModal(
                         "取消"
                     </button>
                     <button
-                        class="btn btn-primary"
+                        class="btn btn--primary"
                         disabled=move || pending.get()
                         on:click=move |_| on_save.clone()()
                     >

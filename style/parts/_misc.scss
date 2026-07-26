@@ -1,0 +1,33 @@
+// ── 杂项 ───────────────────────────────────────────────────────────────────
+button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+// ── Focus visible 增强 ──────────────────────────────────────────────────────
+.btn:focus-visible,
+button:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+
+a:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: 2px;
+}
+
+select:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+}
+
+.theme-toggle:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+
+.app-nav-link:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+}

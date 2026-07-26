@@ -426,12 +426,12 @@ fn UserInfoTable(info: UserInfoAggregate) -> impl IntoView {
                                     <th>"下载量"</th>
                                     <th>"分享率"</th>
                                     <th>"积分"</th>
-                                    <th class="col-secondary">"等级"</th>
+                                    <th class="table-col--secondary">"等级"</th>
                                     <th>"做种数"</th>
-                                    <th class="col-secondary">"吸血数"</th>
-                                    <th class="col-secondary">"做种体积"</th>
-                                    <th class="col-secondary">"上传时间"</th>
-                                    <th class="col-secondary">"更新时间"</th>
+                                    <th class="table-col--secondary">"吸血数"</th>
+                                    <th class="table-col--secondary">"做种体积"</th>
+                                    <th class="table-col--secondary">"上传时间"</th>
+                                    <th class="table-col--secondary">"更新时间"</th>
                                 </tr>
                             </thead>
                             <tbody>

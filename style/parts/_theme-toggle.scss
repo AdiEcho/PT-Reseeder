@@ -1,0 +1,23 @@
+// ── 主题切换按钮 ────────────────────────────────────────────────────────────
+.theme-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    background: var(--bg-muted);
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: var(--fs-md);
+    line-height: 1;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+    flex-shrink: 0;
+
+    &:hover {
+        background: var(--bg-elevated);
+        color: var(--text);
+        border-color: var(--border-strong);
+    }
+}

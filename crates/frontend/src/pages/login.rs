@@ -68,19 +68,19 @@ pub fn LoginPage() -> impl IntoView {
                             <h1 class="login-title">"PT-Reseeder"</h1>
                             <h2 class="login-subtitle">{move || if is_register.get() { "创建账号" } else { "登录" }}</h2>
 
-                            <form on:submit=move |ev| {
+                            <form class="login-form" on:submit=move |ev| {
                                 ev.prevent_default();
                                 login_action.dispatch((username.get_untracked(), password.get_untracked()));
                             }>
-                                <div style="margin-bottom: 20px;">
-                                    <label for="username" class="login-label">
+                                <div class="form-group">
+                                    <label for="username">
                                         "用户名" <span class="required">"*"</span>
                                     </label>
                                     <input
                                         type="text"
                                         id="username"
                                         name="username"
-                                        class="login-input"
+                                        class="input"
                                         autocomplete="username"
                                         required=true
                                         prop:value=move || username.get()
@@ -90,15 +90,15 @@ pub fn LoginPage() -> impl IntoView {
                                         }
                                     />
                                 </div>
-                                <div style="margin-bottom: 28px;">
-                                    <label for="password" class="login-label">
+                                <div class="form-group">
+                                    <label for="password">
                                         "密码" <span class="required">"*"</span>
                                     </label>
                                     <input
                                         type="password"
                                         id="password"
                                         name="password"
-                                        class="login-input"
+                                        class="input"
                                         autocomplete=move || {
                                             if is_register.get() {
                                                 "new-password"
@@ -117,15 +117,15 @@ pub fn LoginPage() -> impl IntoView {
                                 {move || {
                                     if is_register.get() {
                                         Some(view! {
-                                            <div style="margin-bottom: 28px;">
-                                                <label for="password_confirm" class="login-label">
+                                            <div class="form-group">
+                                                <label for="password_confirm">
                                                     "确认密码" <span class="required">"*"</span>
                                                 </label>
                                                 <input
                                                     type="password"
                                                     id="password_confirm"
                                                     name="password_confirm"
-                                                    class="login-input"
+                                                    class="input"
                                                     autocomplete="new-password"
                                                     required=true
                                                     prop:value=move || password_confirm.get()
@@ -151,7 +151,7 @@ pub fn LoginPage() -> impl IntoView {
                                 }}
                                 <button
                                     type="submit"
-                                    class="login-submit"
+                                    class="btn btn--primary login-submit"
                                     disabled=move || pending.get()
                                 >
                                     {move || {
@@ -182,10 +182,9 @@ pub fn LoginPage() -> impl IntoView {
                                     view! { <div /> }.into_any()
                                 } else {
                                     view! {
-                                        <p style="text-align: center; margin-top: 24px;">
+                                        <p class="login-toggle-row">
                                             <a
                                                 href="#"
-                                                class="login-toggle"
                                                 on:click=move |_| set_is_register.update(|v| *v = !*v)
                                             >
                                                 {move || {

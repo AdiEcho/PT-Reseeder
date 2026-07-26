@@ -1,0 +1,94 @@
+// ── Toast 通知 ──────────────────────────────────────────────────────────────
+.toast-container {
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    z-index: 200;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-width: 420px;
+    pointer-events: none;
+}
+
+.toast {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border-radius: var(--radius);
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow-lg);
+    font-size: var(--fs-base);
+    color: var(--text);
+    pointer-events: auto;
+    animation: toast-slide-in 0.25s ease-out;
+
+    &__icon {
+        font-size: var(--fs-lg);
+        font-weight: 700;
+        flex-shrink: 0;
+        width: 18px;
+        text-align: center;
+    }
+
+    &__message {
+        flex: 1;
+        line-height: var(--lh-base);
+    }
+
+    &__close {
+        background: none;
+        border: none;
+        color: var(--text-muted);
+        cursor: pointer;
+        font-size: 18px;
+        padding: 0 2px;
+        line-height: 1;
+        opacity: 0.6;
+        transition: opacity 0.15s;
+        flex-shrink: 0;
+
+        &:hover {
+            opacity: 1;
+        }
+    }
+
+    // 变体着色的 `__icon` 规则放在 `&__icon` 之后，保持原文件中
+    // 「基础色 → 变体色」的层叠顺序。
+    &--success {
+        border-left: 4px solid var(--green);
+
+        .toast__icon {
+            color: var(--green);
+        }
+    }
+
+    &--error {
+        border-left: 4px solid var(--red);
+
+        .toast__icon {
+            color: var(--red);
+        }
+    }
+
+    &--info {
+        border-left: 4px solid var(--accent);
+
+        .toast__icon {
+            color: var(--accent);
+        }
+    }
+}
+
+@keyframes toast-slide-in {
+    from {
+        opacity: 0;
+        transform: translateX(40px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}

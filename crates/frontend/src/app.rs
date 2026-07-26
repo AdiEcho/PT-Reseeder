@@ -78,7 +78,7 @@ pub fn App() -> impl IntoView {
 #[component]
 fn NotFound() -> impl IntoView {
     view! {
-        <div class="app-loading" style="padding: 48px; text-align: center;">
+        <div class="app-loading app-loading--page">
             <h1>"404"</h1>
             <p>"页面不存在。"</p>
             <a href="/dashboard">"返回仪表盘"</a>

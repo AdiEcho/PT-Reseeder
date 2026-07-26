@@ -28,3 +28,6 @@ pt-reseeder.db*
 .claude/
 .agents/
 skills-lock.json
+# Runtime logs (AppConfig defaults log_dir to ./logs)
+logs/
+.mcp.json

@@ -1,0 +1,66 @@
+// ── 登录页 ─────────────────────────────────────────────────────────────────
+// 表单控件复用全站体系（`.form-group` / `.input` / `.btn`），这里只保留
+// 页面专属的居中容器、卡片与标题。全站 class 本身是主题感知的，
+// 因此不再需要单独的 light 覆盖。
+.login-container {
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background: var(--bg-app);
+    padding: 24px;
+}
+
+.login-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 24px;
+    width: 100%;
+    max-width: 360px;
+}
+
+.login-title {
+    text-align: center;
+    font-size: var(--fs-xl);
+    margin: 0 0 4px;
+}
+
+.login-subtitle {
+    color: var(--text-muted);
+    text-align: center;
+    font-size: var(--fs-base);
+    font-weight: 400;
+    margin: 0 0 20px;
+}
+
+// 字段纵向堆叠：原先靠每个 `<div>` 的内联 margin-bottom，现由 gap 统一。
+.login-form {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+// 提交按钮撑满卡片宽度；配色与状态走 `.btn--primary`。
+.login-submit {
+    width: 100%;
+    margin-top: 4px;
+}
+
+.login-error {
+    color: var(--red);
+    background: var(--error-bg);
+    border: 1px solid var(--error-border);
+    border-radius: var(--radius-sm);
+    padding: 8px 10px;
+    margin-top: 12px;
+    font-size: var(--fs-base);
+    text-align: center;
+}
+
+// 「去注册 / 去登录」切换链接所在的居中段落。
+.login-toggle-row {
+    text-align: center;
+    margin-top: 16px;
+    font-size: var(--fs-base);
+}

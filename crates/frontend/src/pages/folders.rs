@@ -1,3 +1,4 @@
+use crate::components::async_view::AsyncView;
 use crate::components::confirm_modal::ConfirmModal;
 use crate::components::empty_state::EmptyState;
 use crate::components::toast::{show_toast, ToastType};
@@ -72,7 +73,7 @@ pub fn FoldersPage() -> impl IntoView {
             <div class="dashboard-header">
                 <h1>"文件夹管理"</h1>
                 <button
-                    class="btn btn-primary"
+                    class="btn btn--primary"
                     on:click=move |_| set_show_form.update(|v| *v = !*v)
                 >
                     {move || if show_form.get() { "取消" } else { "添加文件夹" }}
@@ -229,86 +230,66 @@ pub fn FoldersPage() -> impl IntoView {
             // --- Folders Table ---
             <div class="stats-table-section">
                 <h2>"种子文件夹"</h2>
-                <Suspense fallback=move || {
-                    view! { <p>"正在加载文件夹..."</p> }
-                }>
-                    {move || {
-                        folders
+                <AsyncView
+                    resource=folders
+                    error_label="文件夹"
+                    on_retry=move || set_version.update(|v| *v += 1)
+                    render={move |list: Vec<FolderInfo>| {
+                        if list.is_empty() {
+                            return view! { <EmptyState icon="📁" message="尚未配置任何文件夹。" /> }
+                                .into_any();
+                        }
+                        let dl_map = downloaders
                             .get()
-                            .map(|result| {
-                                match result {
-                                    Err(e) => {
-                                        view! {
-                                            <div class="load-error">
-                                                <span>{format!("文件夹加载失败：{e}")}</span>
-                                                <button
-                                                    class="btn btn--sm btn--outline"
-                                                    on:click=move |_| set_version.update(|v| *v += 1)
-                                                >
-                                                    "重试"
-                                                </button>
-                                            </div>
-                                        }
-                                            .into_any()
-                                    }
-                                    Ok(list) if list.is_empty() => {
-                                        view! { <EmptyState icon="📁" message="尚未配置任何文件夹。" /> }.into_any()
-                                    }
-                                    Ok(list) => {
-                                        let dl_map = downloaders
-                                            .get()
-                                            .and_then(|r| r.ok())
-                                            .unwrap_or_default()
+                            .and_then(|r| r.ok())
+                            .unwrap_or_default()
+                            .into_iter()
+                            .map(|d| (d.id, d.name))
+                            .collect::<std::collections::HashMap<_, _>>();
+                        view! {
+                            <div class="table-wrap">
+                                <table class="stats-table">
+                                    <thead>
+                                        <tr>
+                                            <th>"路径"</th>
+                                            <th>"种子来源"</th>
+                                            <th>"下载器"</th>
+                                            <th>"启用"</th>
+                                            <th class="table-col--secondary">"上次扫描"</th>
+                                            <th>"操作"</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {list
                                             .into_iter()
-                                            .map(|d| (d.id, d.name))
-                                            .collect::<std::collections::HashMap<_, _>>();
-                                        view! {
-                                            <div class="table-wrap">
-                                                <table class="stats-table">
-                                                    <thead>
-                                                        <tr>
-                                                            <th>"路径"</th>
-                                                            <th>"种子来源"</th>
-                                                            <th>"下载器"</th>
-                                                            <th>"启用"</th>
-                                                            <th class="col-secondary">"上次扫描"</th>
-                                                            <th>"操作"</th>
-                                                        </tr>
-                                                    </thead>
-                                                    <tbody>
-                                                        {list
-                                                            .into_iter()
-                                                            .map(|folder| {
-                                                                let dl_label = folder
-                                                                    .downloader_id
-                                                                    .map(|id| {
-                                                                        dl_map
-                                                                            .get(&id)
-                                                                            .map(|n| format!("{n} (#{id})"))
-                                                                            .unwrap_or_else(|| format!("#{id}"))
-                                                                    })
-                                                                    .unwrap_or_else(|| "-".into());
-                                                                view! {
-                                                                    <FolderRow
-                                                                        folder=folder
-                                                                        downloader_label=dl_label
-                                                                        on_request_delete=move |id: i64, path: String| {
-                                                                            set_confirm_delete.set(Some((id, path)));
-                                                                        }
-                                                                    />
-                                                                }
-                                                            })
-                                                            .collect::<Vec<_>>()}
-                                                    </tbody>
-                                                </table>
-                                            </div>
-                                        }
-                                            .into_any()
-                                    }
-                                }
-                            })
+                                            .map(|folder| {
+                                                let dl_label = folder
+                                                    .downloader_id
+                                                    .map(|id| {
+                                                        dl_map
+                                                            .get(&id)
+                                                            .map(|n| format!("{n} (#{id})"))
+                                                            .unwrap_or_else(|| format!("#{id}"))
+                                                    })
+                                                    .unwrap_or_else(|| "-".into());
+                                                view! {
+                                                    <FolderRow
+                                                        folder=folder
+                                                        downloader_label=dl_label
+                                                        on_request_delete=move |id: i64, path: String| {
+                                                            set_confirm_delete.set(Some((id, path)));
+                                                        }
+                                                    />
+                                                }
+                                            })
+                                            .collect::<Vec<_>>()}
+                                    </tbody>
+                                </table>
+                            </div>
+                        }
+                            .into_any()
                     }}
-                </Suspense>
+                />
             </div>
         </div>
     }
@@ -350,8 +331,8 @@ where
             <td>{scan_mode_label}</td>
             <td class="text-muted">{downloader_label}</td>
             <td class=enabled_class>{enabled_label}</td>
-            <td class="text-muted col-secondary">{last_scanned}</td>
-            <td class="action-cell">
+            <td class="text-muted table-col--secondary">{last_scanned}</td>
+            <td class="table__action-cell">
                 <button
                     class="btn btn--sm btn--danger"
                     on:click=move |_| on_request_delete(folder_id, folder_path.clone())

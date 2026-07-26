@@ -1,5 +1,5 @@
+use crate::components::modal_focus::use_modal_focus;
 use leptos::ev;
-use leptos::html::Div;
 use leptos::prelude::*;
 
 #[component]
@@ -15,14 +15,10 @@ pub fn ConfirmModal(
     let on_cancel_esc = on_cancel.clone();
     let on_cancel_btn = on_cancel.clone();
     let on_cancel_overlay = on_cancel.clone();
-    let overlay_ref = NodeRef::<Div>::new();
 
-    // Focus overlay so Esc keydown is captured without global listeners.
-    Effect::new(move |_| {
-        if let Some(el) = overlay_ref.get() {
-            let _ = el.focus();
-        }
-    });
+    // Focuses the overlay so Esc is captured without a global listener, and
+    // returns focus to the opener when the modal closes.
+    let overlay_ref = use_modal_focus();
 
     let on_keydown = move |e: ev::KeyboardEvent| {
         if e.key() == "Escape" {
@@ -33,7 +29,7 @@ pub fn ConfirmModal(
     let confirm_class = if danger {
         "btn btn--danger"
     } else {
-        "btn btn-primary"
+        "btn btn--primary"
     };
 
     view! {
@@ -52,7 +48,7 @@ pub fn ConfirmModal(
             >
                 <h3>{title}</h3>
                 <p>{message}</p>
-                <div class="form-actions" style="justify-content: flex-end;">
+                <div class="form-actions form-actions--end">
                     <button
                         class="btn btn--outline"
                         on:click=move |_| on_cancel_btn.clone()()

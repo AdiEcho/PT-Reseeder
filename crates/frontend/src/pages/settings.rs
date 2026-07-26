@@ -1,7 +1,8 @@
+use crate::components::async_view::AsyncView;
+use crate::components::toast::{show_toast, ToastType};
 use crate::server_fns::{
     get_app_config, update_app_config, ConfigEntry, FETCH_SEEDING_SIZE_CONFIG_KEY,
 };
-use crate::components::toast::{show_toast, ToastType};
 use leptos::prelude::*;
 
 /// Known settings with human-readable labels and optional masking.
@@ -49,36 +50,14 @@ pub fn SettingsPage() -> impl IntoView {
                 <h1>"设置"</h1>
             </div>
 
-            <Suspense fallback=move || {
-                view! { <p>"正在加载设置..."</p> }
-            }>
-                {move || {
-                    config
-                        .get()
-                        .map(|result| {
-                            match result {
-                                Err(e) => {
-                                    view! {
-                                        <div class="load-error">
-                                            <span>{format!("设置加载失败：{e}")}</span>
-                                            <button
-                                                class="btn btn--sm btn--outline"
-                                                on:click=move |_| refetch()
-                                            >
-                                                "重试"
-                                            </button>
-                                        </div>
-                                    }
-                                        .into_any()
-                                }
-                                Ok(entries) => {
-                                    view! { <SettingsTable entries=entries on_saved=refetch /> }
-                                        .into_any()
-                                }
-                            }
-                        })
+            <AsyncView
+                resource=config
+                error_label="设置"
+                on_retry=refetch
+                render={move |entries: Vec<ConfigEntry>| {
+                    view! { <SettingsTable entries=entries on_saved=refetch /> }
                 }}
-            </Suspense>
+            />
         </div>
     }
 }
@@ -144,7 +123,7 @@ where
             <td>
                 <strong>{label}</strong>
                 <br />
-                <span class="text-muted" style="font-size: 0.85em;">
+                <span class="text-muted setting-key">
                     {key.clone()}
                 </span>
             </td>
@@ -152,7 +131,7 @@ where
                 <div class="setting-value">
                     {if key == FETCH_SEEDING_SIZE_CONFIG_KEY {
                         view! {
-                            <label style="display: inline-flex; align-items: center; gap: 8px;">
+                            <label class="setting-checkbox">
                                 <input
                                     type="checkbox"
                                     prop:checked=move || value.get() == "true"
@@ -200,7 +179,7 @@ where
                 </div>
                 {if key == FETCH_SEEDING_SIZE_CONFIG_KEY {
                     Some(view! {
-                        <div class="text-muted" style="font-size: 12px; margin-top: 4px;">
+                        <div class="text-muted setting-hint">
                             "开启后，NexusPHP 用户信息刷新会额外请求一次当前做种列表。"
                         </div>
                     })
@@ -209,7 +188,7 @@ where
                 }}
                 {move || {
                     save_error.get().map(|msg| view! {
-                        <span class="text-red" style="font-size: 12px;">{msg}</span>
+                        <span class="text-red setting-save-error">{msg}</span>
                     })
                 }}
             </td>
@@ -259,7 +238,7 @@ where
     let (add_error, set_add_error) = signal(None::<String>);
 
     view! {
-        <div class="add-setting-form">
+        <div class="form-section">
             <h3>"添加设置项"</h3>
             <div class="form-risk-hint">
                 "可自由添加任意键名，但错误的键/值可能导致功能异常。建议仅添加你明确了解的配置项；未知键不会做 schema 校验。"

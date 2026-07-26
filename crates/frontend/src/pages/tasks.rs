@@ -1,5 +1,7 @@
+use crate::components::async_view::AsyncView;
 use crate::components::confirm_modal::ConfirmModal;
 use crate::components::empty_state::EmptyState;
+use crate::components::modal_focus::use_modal_focus;
 use crate::components::toast::{show_toast, ToastType};
 use crate::server_fns::{
     create_task, delete_task, get_downloaders, get_folders, get_latest_dry_run_preview, get_sites,
@@ -240,7 +242,7 @@ pub fn TasksPage() -> impl IntoView {
             <div class="dashboard-header">
                 <h1>"任务管理"</h1>
                 <button
-                    class="btn btn-primary"
+                    class="btn btn--primary"
                     on:click=move |_| {
                         set_show_form.update(|v| {
                             *v = !*v;
@@ -553,76 +555,56 @@ pub fn TasksPage() -> impl IntoView {
             // --- Tasks Table ---
             <div class="stats-table-section">
                 <h2>"任务列表"</h2>
-                <Suspense fallback=move || {
-                    view! { <p>"正在加载任务..."</p> }
-                }>
-                    {move || {
-                        tasks
-                            .get()
-                            .map(|result| {
-                                match result {
-                                    Err(e) => {
-                                        view! {
-                                            <div class="load-error">
-                                                <span>{format!("任务加载失败：{e}")}</span>
-                                                <button
-                                                    class="btn btn--sm btn--outline"
-                                                    on:click=move |_| set_version.update(|v| *v += 1)
-                                                >
-                                                    "重试"
-                                                </button>
-                                            </div>
-                                        }
-                                            .into_any()
-                                    }
-                                    Ok(list) if list.is_empty() => {
-                                        view! { <EmptyState icon="⏱" message="尚未配置任何任务。" /> }.into_any()
-                                    }
-                                    Ok(list) => {
-                                        view! {
-                                            <div class="table-wrap">
-                                                <table class="stats-table">
-                                                    <thead>
-                                                        <tr>
-                                                            <th>"名称"</th>
-                                                            <th>"类型"</th>
-                                                            <th>"触发方式"</th>
-                                                            <th class="col-secondary">"Cron"</th>
-                                                            <th>"状态"</th>
-                                                            <th class="col-secondary">"上次运行"</th>
-                                                            <th class="col-secondary">"下次运行"</th>
-                                                            <th>"运行次数"</th>
-                                                            <th>"操作"</th>
-                                                        </tr>
-                                                    </thead>
-                                                    <tbody>
-                                                        {list
-                                                            .into_iter()
-                                                            .map(|task| {
-                                                                view! {
-                                                                    <TaskRow
-                                                                        task=task
-                                                                        on_change=move || set_version.update(|v| *v += 1)
-                                                                        on_request_delete=move |id: i64, name: String| {
-                                                                            set_confirm_delete.set(Some((id, name)));
-                                                                        }
-                                                                        on_dry_run_preview=move |preview: DryRunPreviewInfo| {
-                                                                            set_dry_run_preview.set(Some(preview));
-                                                                        }
-                                                                    />
-                                                                }
-                                                            })
-                                                            .collect::<Vec<_>>()}
-                                                    </tbody>
-                                                </table>
-                                            </div>
-                                        }
-                                            .into_any()
-                                    }
-                                }
-                            })
+                <AsyncView
+                    resource=tasks
+                    error_label="任务"
+                    on_retry=move || set_version.update(|v| *v += 1)
+                    render={move |list: Vec<TaskInfo>| {
+                        if list.is_empty() {
+                            return view! { <EmptyState icon="⏱" message="尚未配置任何任务。" /> }
+                                .into_any();
+                        }
+                        view! {
+                            <div class="table-wrap">
+                                <table class="stats-table">
+                                    <thead>
+                                        <tr>
+                                            <th>"名称"</th>
+                                            <th>"类型"</th>
+                                            <th>"触发方式"</th>
+                                            <th class="table-col--secondary">"Cron"</th>
+                                            <th>"状态"</th>
+                                            <th class="table-col--secondary">"上次运行"</th>
+                                            <th class="table-col--secondary">"下次运行"</th>
+                                            <th>"运行次数"</th>
+                                            <th>"操作"</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {list
+                                            .into_iter()
+                                            .map(|task| {
+                                                view! {
+                                                    <TaskRow
+                                                        task=task
+                                                        on_change=move || set_version.update(|v| *v += 1)
+                                                        on_request_delete=move |id: i64, name: String| {
+                                                            set_confirm_delete.set(Some((id, name)));
+                                                        }
+                                                        on_dry_run_preview=move |preview: DryRunPreviewInfo| {
+                                                            set_dry_run_preview.set(Some(preview));
+                                                        }
+                                                    />
+                                                }
+                                            })
+                                            .collect::<Vec<_>>()}
+                                    </tbody>
+                                </table>
+                            </div>
+                        }
+                            .into_any()
                     }}
-                </Suspense>
+                />
             </div>
         </div>
     }
@@ -799,12 +781,12 @@ where
                     "file_watch" => "文件监控".to_string(),
                     other => other.to_string(),
                 }}</td>
-                <td class="text-muted col-secondary table-col--secondary" title=cron_title>{cron_display}</td>
+                <td class="text-muted table-col--secondary" title=cron_title>{cron_display}</td>
                 <td class=sc>{status_label}</td>
-                <td class="text-muted col-secondary">{last_run}</td>
-                <td class="text-muted col-secondary">{next_run}</td>
+                <td class="text-muted table-col--secondary">{last_run}</td>
+                <td class="text-muted table-col--secondary">{next_run}</td>
                 <td>{task.run_count}</td>
-                <td class="action-cell">
+                <td class="table__action-cell">
                     {if is_reseed {
                         Some(view! {
                             <button
@@ -877,19 +859,36 @@ where
 {
     let count = preview.would_add_count;
     let items = preview.items;
+    let on_close_esc = on_close.clone();
     let on_close_overlay = on_close.clone();
     let on_close_btn = on_close.clone();
+
+    // Focuses the overlay so Esc is captured without a global listener, and
+    // returns focus to the opener when the modal closes.
+    let overlay_ref = use_modal_focus();
+
+    let on_keydown = move |e: ev::KeyboardEvent| {
+        if e.key() == "Escape" {
+            on_close_esc.clone()();
+        }
+    };
+
     view! {
-        <div class="confirm-overlay" on:click=move |_| on_close_overlay.clone()()>
+        <div
+            class="confirm-overlay"
+            tabindex="-1"
+            node_ref=overlay_ref
+            on:keydown=on_keydown
+            on:click=move |_| on_close_overlay.clone()()
+        >
             <div
-                class="confirm-dialog"
+                class="confirm-dialog confirm-dialog--wide"
                 role="dialog"
                 aria-modal="true"
-                style="max-width: 960px; width: min(960px, 92vw);"
                 on:click=move |ev| ev.stop_propagation()
             >
-                <div class="form-actions" style="justify-content: space-between; align-items: center;">
-                    <h3 style="margin: 0;">"试运行预览"</h3>
+                <div class="form-actions form-actions--split">
+                    <h3 class="confirm-dialog__heading">"试运行预览"</h3>
                     <button class="btn btn--sm btn--outline" on:click=move |_| on_close_btn.clone()()>
                         "关闭"
                     </button>

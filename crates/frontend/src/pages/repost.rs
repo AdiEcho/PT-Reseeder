@@ -1,3 +1,4 @@
+use crate::components::async_view::AsyncView;
 use crate::components::confirm_modal::ConfirmModal;
 use crate::components::empty_state::EmptyState;
 use crate::components::toast::{show_toast, ToastType};
@@ -27,8 +28,14 @@ struct ApiErrorResponse {
 
 #[derive(Clone)]
 enum ConfirmKind {
-    Submit { id: i64, label: String },
-    Delete { id: i64, label: String },
+    Submit {
+        id: i64,
+        label: String,
+    },
+    Delete {
+        id: i64,
+        label: String,
+    },
     Reject {
         id: i64,
         label: String,
@@ -377,46 +384,25 @@ pub fn RepostPage() -> impl IntoView {
                 })
             }}
 
-            <Suspense fallback=move || {
-                view! { <p>"正在加载转种队列..."</p> }
-            }>
-                {move || {
-                    queue
-                        .get()
-                        .map(|result| {
-                            match result {
-                                Err(e) => {
-                                    view! {
-                                        <div class="load-error">
-                                            <span>{format!("转种队列加载失败：{e}")}</span>
-                                            <button
-                                                class="btn btn--sm btn--outline"
-                                                on:click=move |_| refetch()
-                                            >
-                                                "重试"
-                                            </button>
-                                        </div>
-                                    }
-                                        .into_any()
-                                }
-                                Ok(entries) => {
-                                    if entries.is_empty() {
-                                        view! { <EmptyState icon="↻" message="队列中没有条目。" /> }.into_any()
-                                    } else {
-                                        view! {
-                                            <RepostTable
-                                                entries=entries
-                                                on_mutated=refetch
-                                                on_confirm=move |kind: ConfirmKind| set_confirm.set(Some(kind))
-                                            />
-                                        }
-                                            .into_any()
-                                    }
-                                }
-                            }
-                        })
+            <AsyncView
+                resource=queue
+                error_label="转种队列"
+                on_retry=move || refetch()
+                render={move |entries: Vec<RepostEntry>| {
+                    if entries.is_empty() {
+                        return view! { <EmptyState icon="↻" message="队列中没有条目。" /> }
+                            .into_any();
+                    }
+                    view! {
+                        <RepostTable
+                            entries=entries
+                            on_mutated=refetch
+                            on_confirm=move |kind: ConfirmKind| set_confirm.set(Some(kind))
+                        />
+                    }
+                        .into_any()
                 }}
-            </Suspense>
+            />
         </div>
     }
 }
@@ -437,8 +423,8 @@ where
                             <th>"种子 ID"</th>
                             <th>"目标站点"</th>
                             <th>"状态"</th>
-                            <th class="col-secondary">"备注"</th>
-                            <th class="col-secondary">"时间"</th>
+                            <th class="table-col--secondary">"备注"</th>
+                            <th class="table-col--secondary">"时间"</th>
                             <th>"操作"</th>
                         </tr>
                     </thead>
@@ -518,10 +504,10 @@ where
             <td class="text-muted table-col--secondary" title=notes_title>
                 {notes_cell}
             </td>
-            <td class="text-muted col-secondary" title=time_title>
+            <td class="text-muted table-col--secondary" title=time_title>
                 {time_display}
             </td>
-            <td class="action-cell">
+            <td class="table__action-cell">
                 <RowActions
                     id=id
                     status=status
@@ -535,7 +521,13 @@ where
 }
 
 #[component]
-fn RowActions<F, G>(id: i64, status: String, label: String, on_mutated: F, on_confirm: G) -> impl IntoView
+fn RowActions<F, G>(
+    id: i64,
+    status: String,
+    label: String,
+    on_mutated: F,
+    on_confirm: G,
+) -> impl IntoView
 where
     F: Fn() + Copy + Send + Sync + 'static,
     G: Fn(ConfirmKind) + Copy + Send + Sync + 'static,

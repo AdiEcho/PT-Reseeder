@@ -1,0 +1,183 @@
+// ── 表单 ───────────────────────────────────────────────────────────────────
+.form-section {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 12px;
+    margin-bottom: 12px;
+    box-shadow: var(--shadow-card);
+
+    h2,
+    h3 {
+        margin-bottom: 12px;
+    }
+}
+
+.form-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 10px;
+}
+
+// 表单网格里需要独占整行的字段（站点预设下拉等）。
+.form-group--full {
+    grid-column: 1 / -1;
+}
+
+.form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.form-group label,
+form label {
+    font-size: var(--fs-sm);
+    font-weight: 500;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+}
+
+.form-row {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    align-items: flex-end;
+}
+
+.form-actions {
+    margin-top: 12px;
+    display: flex;
+    gap: 8px;
+
+    // 弹窗底部按钮组靠右（ConfirmModal）。
+    &--end {
+        justify-content: flex-end;
+    }
+
+    // 弹窗标题栏：左标题、右关闭按钮（任务试运行预览）。
+    &--split {
+        justify-content: space-between;
+        align-items: center;
+    }
+}
+
+.inline-form,
+.inline-notes {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+// 扁平保留：`.input` 与裸元素选择器（`input[type=…]` / `select` / `textarea`）
+// 共享同一声明块，嵌套后无法保留这个选择器组。
+.input,
+input[type="text"],
+input[type="password"],
+input[type="number"],
+select,
+textarea {
+    width: 100%;
+    padding: 6px 10px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+    background: var(--bg-card);
+    color: var(--text);
+    font-size: var(--fs-md);
+    font-family: inherit;
+    outline: none;
+    transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.input:focus,
+input:focus,
+select:focus,
+textarea:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--focus-ring);
+}
+
+.input--sm {
+    padding: 4px 8px;
+    font-size: var(--fs-sm);
+}
+
+.setting-value {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+
+    .input {
+        flex: 1;
+    }
+}
+
+// 设置表：配置项名称下方的原始 key。
+.setting-key {
+    font-size: var(--fs-xs);
+}
+
+// 布尔型配置项的开关标签。
+.setting-checkbox {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+// 配置项下方的一行补充说明。
+.setting-hint {
+    font-size: var(--fs-sm);
+    margin-top: 4px;
+    line-height: var(--lh-base);
+}
+
+// 保存失败时的行内提示。
+.setting-save-error {
+    font-size: var(--fs-sm);
+}
+
+// ── 表单验证 & 连接测试 ────────────────────────────────────────────────────
+.test-result {
+    font-size: var(--fs-sm);
+    color: var(--text-muted);
+    margin-top: 6px;
+}
+
+.required {
+    color: var(--red, #e74c3c);
+    margin-left: 2px;
+}
+
+.field-error {
+    margin: 4px 0 0;
+    font-size: var(--fs-sm);
+    line-height: var(--lh-tight);
+    color: var(--red);
+}
+
+.form-alert {
+    padding: 6px 10px;
+    border-radius: var(--radius-sm);
+    font-size: var(--fs-base);
+    margin-bottom: 10px;
+
+    &--error {
+        background: rgba(231, 76, 60, 0.1);
+        border: 1px solid rgba(231, 76, 60, 0.3);
+        color: var(--red, #e74c3c);
+    }
+
+    &--success {
+        background: rgba(46, 204, 113, 0.1);
+        border: 1px solid rgba(46, 204, 113, 0.3);
+        color: var(--green, #2ecc71);
+    }
+
+    &--warning {
+        background: rgba(245, 158, 11, 0.1);
+        border: 1px solid rgba(245, 158, 11, 0.3);
+        color: var(--amber, #f59e0b);
+    }
+}

@@ -1,0 +1,117 @@
+// ── 设计变量 ───────────────────────────────────────────────────────────────
+// 默认：暗黑模式（:root 即 data-theme="dark"）。
+:root {
+    color-scheme: dark;
+    --bg-app: #0f172a;
+    --bg-sidebar: #0b1220;
+    --bg-content: #0f172a;
+    --bg-card: #1e293b;
+    --bg-muted: #18233a;
+    --bg-elevated: #243349;
+    --border: #2a3a55;
+    --border-strong: #3d4f6b;
+    --text: #e2e8f0;
+    --text-muted: #94a3b8;
+    --text-on-dark: #e2e8f0;
+    --text-on-dark-muted: #94a3b8;
+    --sidebar-border: rgba(255, 255, 255, 0.08);
+    --sidebar-hover: rgba(255, 255, 255, 0.06);
+    --sidebar-active-bg: rgba(59, 130, 246, 0.22);
+    --sidebar-active-fg: #ffffff;
+    --code-bg: #0b1220;
+    --code-fg: #cbd5e1;
+    --accent: #3b82f6;
+    --accent-strong: #60a5fa;
+    --green: #22c55e;
+    --red: #ef4444;
+    --purple: #a855f7;
+    --teal: #14b8a6;
+    --amber: #f59e0b;
+    --badge-blue-bg: rgba(59, 130, 246, 0.18);
+    --badge-blue-fg: #93c5fd;
+    --error-bg: rgba(239, 68, 68, 0.12);
+    --error-border: rgba(239, 68, 68, 0.32);
+    --chart-axis: #64748b;
+    --chart-label: #94a3b8;
+    --chart-success: #22c55e;
+    --chart-failed: #ef4444;
+    --focus-ring: rgba(59, 130, 246, 0.32);
+    --sidebar-w: 240px;
+    --topbar-h: 56px;
+    // 圆角收紧：工具型界面靠边框划分区域，大圆角会稀释信息密度。
+    --radius: 6px;
+    --radius-sm: 4px;
+    --radius-lg: 8px;
+    // 字号尺度：xs 徽章/次要列，sm 表头/label，base 正文/单元格，
+    // md 表单控件/按钮，lg 区块标题，xl 页面标题，num 统计数值。
+    --fs-xs: 11px;
+    --fs-sm: 12px;
+    --fs-base: 13px;
+    --fs-md: 14px;
+    --fs-lg: 16px;
+    --fs-xl: 20px;
+    --fs-num: 22px;
+    --lh-tight: 1.25;
+    --lh-base: 1.45;
+    --space-1: 4px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-5: 20px;
+    --space-6: 24px;
+    // 表格密度：主力页面是站点表 / 任务表 / 日志，一屏行数优先。
+    --table-cell-y: 6px;
+    --table-cell-x: 10px;
+    --table-head-y: 5px;
+    --transition: 0.18s ease;
+    // 面板与卡片一律靠 1px 边框区分层级，投影只留给 modal / 浮层。
+    --shadow: none;
+    --shadow-card: none;
+    --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.42);
+    font-synthesis: none;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+// 白天模式覆盖。
+:root[data-theme="light"] {
+    color-scheme: light;
+    --bg-app: #f8fafc;
+    --bg-sidebar: #111827;
+    --bg-content: #f8fafc;
+    --bg-card: #ffffff;
+    --bg-muted: #f1f5f9;
+    --bg-elevated: #ffffff;
+    --border: #e2e8f0;
+    --border-strong: #cbd5e1;
+    --text: #0f172a;
+    --text-muted: #64748b;
+    --text-on-dark: #e2e8f0;
+    --text-on-dark-muted: #94a3b8;
+    --sidebar-border: rgba(255, 255, 255, 0.08);
+    --sidebar-hover: rgba(255, 255, 255, 0.06);
+    --sidebar-active-bg: rgba(59, 130, 246, 0.18);
+    --sidebar-active-fg: #ffffff;
+    --code-bg: #0f172a;
+    --code-fg: #cbd5e1;
+    --accent: #3b82f6;
+    --accent-strong: #2563eb;
+    --green: #16a34a;
+    --red: #ef4444;
+    --purple: #9333ea;
+    --teal: #0d9488;
+    --amber: #d97706;
+    --badge-blue-bg: rgba(59, 130, 246, 0.14);
+    --badge-blue-fg: #2563eb;
+    --error-bg: rgba(239, 68, 68, 0.08);
+    --error-border: rgba(239, 68, 68, 0.2);
+    --chart-axis: #94a3b8;
+    --chart-label: #64748b;
+    --chart-success: #16a34a;
+    --chart-failed: #ef4444;
+    --focus-ring: rgba(59, 130, 246, 0.12);
+    --shadow: none;
+    --shadow-card: none;
+    --shadow-lg: 0 12px 40px rgba(15, 23, 42, 0.12);
+}

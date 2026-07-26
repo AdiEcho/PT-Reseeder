@@ -1,6 +1,7 @@
+use crate::components::async_view::AsyncView;
 use crate::components::empty_state::EmptyState;
 use crate::server_fns::{
-    get_log_files, get_logs, log_entry_matches_task_id, LogEntry, LogFileInfo,
+    get_log_files, get_logs, log_entry_matches_task_id, LogEntry, LogFileInfo, LogPage,
 };
 use crate::ws::use_logs_ws;
 use leptos::prelude::*;
@@ -282,131 +283,105 @@ pub fn LogsPage() -> impl IntoView {
             }}
 
             // Historical logs (from file)
-            <Suspense fallback=move || {
-                view! { <p>"正在加载日志..."</p> }
-            }>
-                {move || {
-                    logs.get()
-                        .map(|result| {
-                            match result {
-                                Err(e) => {
-                                    view! {
-                                        <div class="load-error">
-                                            <span>{format!("日志加载失败：{e}")}</span>
-                                            <button
-                                                class="btn btn--sm btn--outline"
-                                                on:click=move |_| refetch()
-                                            >
-                                                "重试"
-                                            </button>
-                                        </div>
-                                    }
-                                        .into_any()
-                                }
-                                Ok(page) if page.entries.is_empty() => {
-                                    view! {
-                                        <div class="stats-table-section">
-                                            <EmptyState icon="📄" message="当前筛选条件下没有日志。" />
-                                        </div>
-                                    }
-                                        .into_any()
-                                }
-                                Ok(page) => {
-                                    let total_pages = (page.total_lines + page.page_size - 1)
-                                        .max(1) / page.page_size.max(1);
-                                    view! {
-                                        <div class="stats-table-section">
-                                            <h2>
-                                                {format!(
-                                                    "历史日志（共 {} 条，第 {}/{} 页）",
-                                                    page.total_lines,
-                                                    page.page,
-                                                    total_pages.max(1),
-                                                )}
-                                            </h2>
-                                            <div class="table-wrap">
-                                                <table class="stats-table log-table">
-                                                    <thead>
-                                                        <tr>
-                                                            <th>"时间"</th>
-                                                            <th>"级别"</th>
-                                                            <th>"来源"</th>
-                                                            <th>"消息"</th>
-                                                        </tr>
-                                                    </thead>
-                                                    <tbody>
-                                                        {page
-                                                            .entries
-                                                            .into_iter()
-                                                            .map(|entry| {
-                                                                let level_class = level_css_class(
-                                                                    &entry.level,
-                                                                );
-                                                                view! {
-                                                                    <tr>
-                                                                        <td class="log-ts">
-                                                                            {entry.timestamp.clone()}
-                                                                        </td>
-                                                                        <td>
-                                                                            <span class=level_class>
-                                                                                {entry.level.clone()}
-                                                                            </span>
-                                                                        </td>
-                                                                        <td class="log-target">
-                                                                            {entry.target.clone()}
-                                                                        </td>
-                                                                        <td class="log-msg">
-                                                                            {entry.message.clone()}
-                                                                        </td>
-                                                                    </tr>
-                                                                }
-                                                            })
-                                                            .collect::<Vec<_>>()}
-                                                    </tbody>
-                                                </table>
-                                            </div>
+            <AsyncView
+                resource=logs
+                error_label="日志"
+                on_retry=refetch
+                render={move |page: LogPage| {
+                    if page.entries.is_empty() {
+                        return view! {
+                            <div class="stats-table-section">
+                                <EmptyState icon="📄" message="当前筛选条件下没有日志。" />
+                            </div>
+                        }
+                            .into_any();
+                    }
+                    let total_pages = (page.total_lines + page.page_size - 1).max(1)
+                        / page.page_size.max(1);
+                    view! {
+                        <div class="stats-table-section">
+                            <h2>
+                                {format!(
+                                    "历史日志（共 {} 条，第 {}/{} 页）",
+                                    page.total_lines,
+                                    page.page,
+                                    total_pages.max(1),
+                                )}
+                            </h2>
+                            <div class="table-wrap">
+                                <table class="stats-table log-table">
+                                    <thead>
+                                        <tr>
+                                            <th>"时间"</th>
+                                            <th>"级别"</th>
+                                            <th>"来源"</th>
+                                            <th>"消息"</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {page
+                                            .entries
+                                            .into_iter()
+                                            .map(|entry| {
+                                                let level_class = level_css_class(&entry.level);
+                                                view! {
+                                                    <tr>
+                                                        <td class="log-ts">
+                                                            {entry.timestamp.clone()}
+                                                        </td>
+                                                        <td>
+                                                            <span class=level_class>
+                                                                {entry.level.clone()}
+                                                            </span>
+                                                        </td>
+                                                        <td class="log-target">
+                                                            {entry.target.clone()}
+                                                        </td>
+                                                        <td class="log-msg">
+                                                            {entry.message.clone()}
+                                                        </td>
+                                                    </tr>
+                                                }
+                                            })
+                                            .collect::<Vec<_>>()}
+                                    </tbody>
+                                </table>
+                            </div>
 
-                                            // Pagination
-                                            <div class="log-pagination">
-                                                <button
-                                                    class="btn btn--gray btn--sm"
-                                                    disabled=move || current_page.get() <= 1
-                                                    on:click=move |_| {
-                                                        set_current_page
-                                                            .update(|p| {
-                                                                if *p > 1 {
-                                                                    *p -= 1
-                                                                }
-                                                            });
-                                                    }
-                                                >
-                                                    "上一页"
-                                                </button>
-                                                <span class="text-muted">
-                                                    {move || {
-                                                        format!("第 {} 页", current_page.get())
-                                                    }}
-                                                </span>
-                                                <button
-                                                    class="btn btn--gray btn--sm"
-                                                    disabled=move || {
-                                                        current_page.get() >= total_pages.max(1)
-                                                    }
-                                                    on:click=move |_| {
-                                                        set_current_page.update(|p| *p += 1);
-                                                    }
-                                                >
-                                                    "下一页"
-                                                </button>
-                                            </div>
-                                        </div>
+                            // Pagination
+                            <div class="log-pagination">
+                                <button
+                                    class="btn btn--gray btn--sm"
+                                    disabled=move || current_page.get() <= 1
+                                    on:click=move |_| {
+                                        set_current_page
+                                            .update(|p| {
+                                                if *p > 1 {
+                                                    *p -= 1
+                                                }
+                                            });
                                     }
-                                        .into_any()
-                                }
-                            }
-                        })
+                                >
+                                    "上一页"
+                                </button>
+                                <span class="text-muted">
+                                    {move || { format!("第 {} 页", current_page.get()) }}
+                                </span>
+                                <button
+                                    class="btn btn--gray btn--sm"
+                                    disabled=move || current_page.get() >= total_pages.max(1)
+                                    on:click=move |_| {
+                                        set_current_page.update(|p| *p += 1);
+                                    }
+                                >
+                                    "下一页"
+                                </button>
+                            </div>
+                        </div>
+                    }
+                        .into_any()
                 }}
-            </Suspense>
+            />
         </div>
     }
 }

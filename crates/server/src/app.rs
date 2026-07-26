@@ -15,16 +15,24 @@ use leptos_axum::{generate_route_list, LeptosRoutes};
 use tower::ServiceExt;
 use tower_http::services::ServeDir;
 
-fn server_fn_requires_auth(path: &str) -> bool {
-    !matches!(
-        path.rsplit('/').next().unwrap_or_default(),
-        "login" | "register" | "get_current_user" | "has_user"
-    )
+/// Server function endpoints are generated as `/api/{fn_name}{hash}`, where the
+/// hash is derived from `module_path!()` by the `#[server]` macro. Strip that
+/// trailing hash so the public-endpoint allowlist matches the function name.
+///
+/// No server function in this crate ends in a digit, so trimming trailing digits
+/// cannot truncate a real name.
+fn server_fn_name(path: &str) -> &str {
+    path.rsplit('/')
+        .next()
+        .unwrap_or_default()
+        .trim_end_matches(|c: char| c.is_ascii_digit())
 }
 
-fn server_fn_requires_csrf(method: &Method, path: &str) -> bool {
-    server_fn_requires_auth(path)
-        && !matches!(method, &Method::GET | &Method::HEAD | &Method::OPTIONS)
+fn server_fn_requires_auth(path: &str) -> bool {
+    !matches!(
+        server_fn_name(path),
+        "login" | "register" | "get_current_user" | "has_user"
+    )
 }
 
 async fn validate_server_fn_request(
@@ -33,11 +41,16 @@ async fn validate_server_fn_request(
     path: &str,
     headers: &HeaderMap,
 ) -> Result<Option<i64>, StatusCode> {
-    if server_fn_requires_csrf(method, path)
-        && headers.get("X-PT-Reseeder").map(|v| v == "1") != Some(true)
-    {
-        return Err(StatusCode::FORBIDDEN);
-    }
+    // No `X-PT-Reseeder` check here. Server functions are issued by the stock
+    // Leptos browser client, which sends only `Content-Type` and `Accept`
+    // (`server_fn::request::browser`), so requiring a custom header would reject
+    // every call the app makes. CSRF is covered instead by the session cookie's
+    // `SameSite=Strict` attribute (see `create_session_cookie`), which the
+    // browser enforces on cross-site requests.
+    //
+    // The hand-written REST routes under `/api/…` keep their own `csrf_check`
+    // layer, because `pages/repost.rs` sends the header explicitly for those.
+    let _ = method;
 
     if !server_fn_requires_auth(path) {
         return Ok(None);
@@ -105,6 +118,58 @@ async fn static_fallback(State(state): State<AppState>, request: Request<Body>) 
         })
 }
 
+/// Guards the server-function endpoints that `leptos_routes_with_context`
+/// registers.
+///
+/// `leptos_routes_with_context` auto-registers every `#[server]` function as an
+/// *exact* route (`server_fn::axum::server_fn_paths()`), and in axum an exact
+/// route wins over the `/api/{*fn_name}` wildcard. Those generated routes call
+/// `handle_server_fns_with_context` directly, so `server_fn_handler` — and the
+/// auth and CSRF checks inside it — never run for a real server function. Only
+/// *unregistered* paths fall through to the wildcard, which is why an unknown
+/// endpoint used to 401 while every real one answered unauthenticated.
+///
+/// Applying the same validation as a layer closes that gap: a layer runs for
+/// whichever route matched.
+async fn guard_server_fns(
+    State(state): State<AppState>,
+    request: Request<Body>,
+    next: axum::middleware::Next,
+) -> Response {
+    let path = request.uri().path();
+
+    // Hand-written REST endpoints under /api are nested separately and carry
+    // their own `require_auth` / `csrf_check` layers; re-checking here would
+    // double-guard them and reject the public auth routes.
+    if !is_server_fn_path(path) {
+        return next.run(request).await;
+    }
+
+    let method = request.method().clone();
+    let path = path.to_string();
+    let headers = request.headers().clone();
+    match validate_server_fn_request(&state, &method, &path, &headers).await {
+        Ok(_) => next.run(request).await,
+        Err(status) => status.into_response(),
+    }
+}
+
+/// Whether `path` is one of the registered `#[server]` endpoints.
+///
+/// The layer runs on every request, including static assets and SSR page loads,
+/// so the registry is collected into a set once rather than rescanned per call.
+fn is_server_fn_path(path: &str) -> bool {
+    static PATHS: std::sync::OnceLock<std::collections::HashSet<&'static str>> =
+        std::sync::OnceLock::new();
+    PATHS
+        .get_or_init(|| {
+            leptos::server_fn::axum::server_fn_paths()
+                .map(|(registered, _)| registered)
+                .collect()
+        })
+        .contains(path)
+}
+
 pub fn build_router(state: AppState) -> Router {
     let routes = generate_route_list(pt_reseeder_frontend::app::App);
     let leptos_options = state.leptos_options();
@@ -150,5 +215,87 @@ pub fn build_router(state: AppState) -> Router {
                 move || pt_reseeder_frontend::app::shell(leptos_options.clone())
             },
         )
+        // Applied last so it wraps the routes `leptos_routes_with_context`
+        // registered above, which is where the server functions actually live.
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            guard_server_fns,
+        ))
         .with_state(state)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The generated endpoints carry a `module_path!()`-derived hash suffix, so
+    /// the allowlist has to match on the name with that suffix stripped.
+    #[test]
+    fn allowlist_matches_hashed_endpoints() {
+        const HASH: &str = "13234041467895400166";
+
+        for name in ["login", "register", "get_current_user", "has_user"] {
+            let path = format!("/api/{name}{HASH}");
+            assert!(!server_fn_requires_auth(&path), "{path} should be public");
+        }
+
+        for name in ["get_sites", "delete_site", "create_task", "logout"] {
+            let path = format!("/api/{name}{HASH}");
+            assert!(
+                server_fn_requires_auth(&path),
+                "{path} must stay authenticated"
+            );
+        }
+    }
+
+    /// A name that merely starts with a public one must not be let through.
+    #[test]
+    fn allowlist_does_not_match_on_prefix() {
+        for path in ["/api/login_v2", "/api/relogin", "/api/loginX", "/api/"] {
+            assert!(
+                server_fn_requires_auth(path),
+                "{path} must stay authenticated"
+            );
+        }
+    }
+
+    /// The stock Leptos browser client sends only `Content-Type` and `Accept`
+    /// (`server_fn::request::browser`), so `validate_server_fn_request` must not
+    /// demand a custom header. Requiring `X-PT-Reseeder` here previously made
+    /// every authenticated call — including logout — return 403 in a real
+    /// browser while still passing header-carrying curl tests.
+    #[test]
+    fn validation_does_not_depend_on_a_custom_header() {
+        let src = include_str!("app.rs");
+        let body = src
+            .split_once("async fn validate_server_fn_request")
+            .expect("validator present")
+            .1
+            .split_once("\nasync fn ")
+            .map(|(body, _)| body)
+            .unwrap_or(src);
+        let code: String = body
+            .lines()
+            .filter(|line| !line.trim_start().starts_with("//"))
+            .collect();
+        assert!(
+            !code.contains("X-PT-Reseeder"),
+            "server-fn validation must not require a custom header; the Leptos \
+             client cannot send one"
+        );
+    }
+
+    /// Guards the regression this middleware exists for: `leptos_routes_with_context`
+    /// registers each server function as an exact route, which takes precedence
+    /// over the `/api/{*fn_name}` wildcard and therefore bypasses
+    /// `server_fn_handler`. If the registry ever comes back empty, the layer
+    /// would wave every request through instead of validating it.
+    #[test]
+    fn server_fn_registry_is_populated() {
+        let count = leptos::server_fn::axum::server_fn_paths().count();
+        assert!(
+            count > 0,
+            "no server functions registered; guard_server_fns would be a no-op"
+        );
+    }
 }

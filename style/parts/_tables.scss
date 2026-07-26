@@ -1,0 +1,87 @@
+// ── 表格 ───────────────────────────────────────────────────────────────────
+.table-wrap {
+    overflow-x: auto;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+}
+
+.stats-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--fs-base);
+    line-height: var(--lh-tight);
+    // 表格里的数字（大小、比率、计数）需要等宽对齐。
+    font-variant-numeric: tabular-nums;
+
+    thead th {
+        background: var(--bg-muted);
+        color: var(--text-muted);
+        font-weight: 600;
+        text-align: left;
+        padding: var(--table-head-y) var(--table-cell-x);
+        border-bottom: 1px solid var(--border);
+        white-space: nowrap;
+        font-size: var(--fs-sm);
+        text-transform: uppercase;
+        letter-spacing: 0.4px;
+    }
+
+    tbody td {
+        padding: var(--table-cell-y) var(--table-cell-x);
+        border-bottom: 1px solid var(--border);
+        vertical-align: top;
+    }
+
+    tbody tr:last-child td {
+        border-bottom: none;
+    }
+
+    tbody tr:hover {
+        background: var(--bg-muted);
+    }
+
+    // 提升到 `.stats-table` 内以压过 `thead th` / `tbody td` 的同权重声明。
+    th.table-col--secondary,
+    td.table-col--secondary {
+        color: var(--text-muted);
+        font-size: var(--fs-xs);
+    }
+}
+
+.clickable-row {
+    cursor: pointer;
+}
+
+// 主单元格下的次要说明行（任务名下的关联摘要等）。
+.table-subtext {
+    font-size: var(--fs-xs);
+    line-height: var(--lh-tight);
+    margin-top: 2px;
+}
+
+.expand-row td {
+    background: var(--bg-muted);
+    padding: 10px var(--table-cell-x) 12px;
+}
+
+.nested-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--fs-sm);
+    line-height: var(--lh-tight);
+    font-variant-numeric: tabular-nums;
+
+    th,
+    td {
+        padding: 4px var(--table-cell-x);
+        border-bottom: 1px solid var(--border);
+        text-align: left;
+    }
+}
+
+.table-col--secondary {
+    max-width: 140px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}

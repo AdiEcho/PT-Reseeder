@@ -1,3 +1,4 @@
+use crate::components::icons::{Icon, NavIcon};
 use crate::components::theme::ThemeToggle;
 use crate::server_fns::{get_current_user, logout, UserInfo};
 use leptos::ev;
@@ -7,43 +8,13 @@ use leptos_router::{
     hooks::use_navigate,
 };
 
-#[cfg(target_arch = "wasm32")]
-fn toggle_sidebar() {
-    let Some(document) = web_sys::window().and_then(|w| w.document()) else {
-        return;
-    };
-    if let Some(sidebar) = document.query_selector(".app-sidebar").ok().flatten() {
-        let _ = sidebar.class_list().toggle("open");
-    }
-    if let Some(backdrop) = document.query_selector(".sidebar-backdrop").ok().flatten() {
-        let _ = backdrop.class_list().toggle("visible");
-    }
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-fn toggle_sidebar() {}
-
-#[cfg(target_arch = "wasm32")]
-fn close_sidebar() {
-    let Some(document) = web_sys::window().and_then(|w| w.document()) else {
-        return;
-    };
-    if let Some(sidebar) = document.query_selector(".app-sidebar").ok().flatten() {
-        let _ = sidebar.class_list().remove_1("open");
-    }
-    if let Some(backdrop) = document.query_selector(".sidebar-backdrop").ok().flatten() {
-        let _ = backdrop.class_list().remove_1("visible");
-    }
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-fn close_sidebar() {}
-
 /// A single entry in the sidebar navigation.
 struct NavEntry {
     label: &'static str,
     href: &'static str,
-    icon: &'static str,
+    /// Identifies the inline SVG rendered by `<Icon />`. Stored as an enum
+    /// rather than a component so all entries share one type in `NAV`.
+    icon: NavIcon,
     /// When `true`, the link is active only on an exact path match.
     /// Otherwise it is active when the current path starts with `href`
     /// (so `/sites` stays highlighted on `/sites/:id`).
@@ -54,49 +25,49 @@ const NAV: &[NavEntry] = &[
     NavEntry {
         label: "仪表盘",
         href: "/dashboard",
-        icon: "▣",
+        icon: NavIcon::Dashboard,
         exact: true,
     },
     NavEntry {
         label: "站点",
         href: "/sites",
-        icon: "◈",
+        icon: NavIcon::Sites,
         exact: false,
     },
     NavEntry {
         label: "下载器",
         href: "/downloaders",
-        icon: "⬇",
+        icon: NavIcon::Downloaders,
         exact: true,
     },
     NavEntry {
         label: "任务",
         href: "/tasks",
-        icon: "⏱",
+        icon: NavIcon::Tasks,
         exact: true,
     },
     NavEntry {
         label: "文件夹",
         href: "/folders",
-        icon: "📁",
+        icon: NavIcon::Folders,
         exact: true,
     },
     NavEntry {
         label: "转种",
         href: "/repost",
-        icon: "↻",
+        icon: NavIcon::Repost,
         exact: true,
     },
     NavEntry {
         label: "日志",
         href: "/logs",
-        icon: "📋",
+        icon: NavIcon::Logs,
         exact: true,
     },
     NavEntry {
         label: "设置",
         href: "/settings",
-        icon: "⚙",
+        icon: NavIcon::Settings,
         exact: true,
     },
 ];
@@ -143,11 +114,27 @@ fn Shell(user: UserInfo) -> impl IntoView {
         });
     };
 
+    // Mobile sidebar visibility. Signal-driven rather than toggling classes on
+    // the DOM directly, so the open state stays inside the reactive graph.
+    let (sidebar_open, set_sidebar_open) = signal(false);
+
     view! {
         <div class="app-shell">
-            <div class="sidebar-backdrop" on:click=move |_| close_sidebar()></div>
-            <Sidebar on_logout=on_logout />
-            <Topbar username=username.clone() initial=initial />
+            <div
+                class="sidebar-backdrop"
+                class:visible=move || sidebar_open.get()
+                on:click=move |_| set_sidebar_open.set(false)
+            ></div>
+            <Sidebar
+                on_logout=on_logout
+                is_open=sidebar_open
+                on_navigate=move || set_sidebar_open.set(false)
+            />
+            <Topbar
+                username=username.clone()
+                initial=initial
+                on_toggle_sidebar=move || set_sidebar_open.update(|open| *open = !*open)
+            />
             <main class="app-content">
                 <Outlet />
             </main>
@@ -156,12 +143,13 @@ fn Shell(user: UserInfo) -> impl IntoView {
 }
 
 #[component]
-fn Sidebar<F>(on_logout: F) -> impl IntoView
+fn Sidebar<F, N>(on_logout: F, is_open: ReadSignal<bool>, on_navigate: N) -> impl IntoView
 where
     F: Fn(ev::MouseEvent) + 'static + Clone,
+    N: Fn() + Copy + 'static,
 {
     view! {
-        <aside class="app-sidebar">
+        <aside class="app-sidebar" class:open=move || is_open.get()>
             <div class="app-sidebar__brand">
                 <div class="app-sidebar__logo">"P"</div>
                 <span class="app-sidebar__title">"PT-Reseeder"</span>
@@ -177,9 +165,11 @@ where
                                 exact=entry.exact
                                 {..}
                                 attr:class="app-nav-link"
-                                on:click=move |_| close_sidebar()
+                                on:click=move |_| on_navigate()
                             >
-                                <span class="app-nav-link__icon">{entry.icon}</span>
+                                <span class="app-nav-link__icon">
+                                    <Icon icon=entry.icon />
+                                </span>
                                 <span>{entry.label}</span>
                             </A>
                         }
@@ -188,7 +178,9 @@ where
             </nav>
             <div class="app-sidebar__footer">
                 <button class="app-nav-link" on:click=move |ev| on_logout.clone()(ev)>
-                    <span class="app-nav-link__icon">"⏻"</span>
+                    <span class="app-nav-link__icon">
+                        <Icon icon=NavIcon::Logout />
+                    </span>
                     <span>"退出登录"</span>
                 </button>
             </div>
@@ -197,7 +189,10 @@ where
 }
 
 #[component]
-fn Topbar(username: String, initial: String) -> impl IntoView {
+fn Topbar<T>(username: String, initial: String, on_toggle_sidebar: T) -> impl IntoView
+where
+    T: Fn() + 'static,
+{
     view! {
         <header class="app-topbar">
             <div class="app-topbar__left">
@@ -205,7 +200,7 @@ fn Topbar(username: String, initial: String) -> impl IntoView {
                     class="mobile-menu-toggle"
                     type="button"
                     aria-label="打开菜单"
-                    on:click=move |_| toggle_sidebar()
+                    on:click=move |_| on_toggle_sidebar()
                 >
                     "☰"
                 </button>

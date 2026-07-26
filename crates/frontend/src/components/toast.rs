@@ -82,7 +82,11 @@ pub fn ToastContainer() -> impl IntoView {
         .toasts;
 
     view! {
-        <div class="toast-container">
+        // `aria-live` belongs on the always-mounted container, not on the
+        // individual toasts: screen readers announce mutations inside a live
+        // region, so a region that appears alongside its content is not read.
+        // `polite` because toasts never interrupt the current task.
+        <div class="toast-container" role="status" aria-live="polite">
             {move || {
                 toasts
                     .get()
@@ -135,5 +139,21 @@ mod tests {
                 assert_eq!(state.counter.get_untracked(), 1);
             });
         }
+    }
+}
+
+#[cfg(all(test, feature = "ssr"))]
+mod toast_a11y_tests {
+    use super::*;
+
+    #[test]
+    fn container_is_a_polite_live_region() {
+        let owner = Owner::new();
+        owner.with(|| {
+            provide_toast_context();
+            let html = view! { <ToastContainer /> }.to_html();
+            assert!(html.contains(r#"aria-live="polite""#), "got: {html}");
+            assert!(html.contains(r#"role="status""#), "got: {html}");
+        });
     }
 }

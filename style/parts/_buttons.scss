@@ -1,0 +1,92 @@
+// ── 按钮 ───────────────────────────────────────────────────────────────────
+.btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-radius: var(--radius-sm);
+    border: 1px solid transparent;
+    background: var(--bg-muted);
+    color: var(--text);
+    font-size: var(--fs-base);
+    font-weight: 500;
+    font-family: inherit;
+    line-height: var(--lh-tight);
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s, opacity 0.15s;
+    white-space: nowrap;
+    text-decoration: none;
+
+    &:hover {
+        text-decoration: none;
+    }
+
+    &:disabled {
+        opacity: 0.55;
+        cursor: not-allowed;
+    }
+
+    &--sm {
+        padding: 3px 8px;
+        font-size: var(--fs-xs);
+    }
+
+    &--primary,
+    &--blue {
+        background: var(--accent);
+        color: #fff;
+
+        &:hover {
+            background: var(--accent-strong);
+        }
+    }
+
+    &--green {
+        background: var(--green);
+        color: #fff;
+    }
+
+    &--red,
+    &--danger {
+        background: var(--red);
+        color: #fff;
+    }
+
+    &--gray {
+        background: var(--bg-muted);
+        color: var(--text);
+        border-color: var(--border);
+    }
+
+    &--outline {
+        background: transparent;
+        color: var(--text);
+        border-color: var(--border-strong);
+
+        &:hover {
+            background: var(--bg-muted);
+        }
+    }
+}
+
+.btn-group {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+// `.action-group` 与 `.table__action-cell` 曾并列声明，现拆开：
+// 前者是 repost.rs 中的 `<div>` 容器，后者是各表格的 `<td>`，语义不同。
+.action-group {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.table__action-cell {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    white-space: nowrap;
+}

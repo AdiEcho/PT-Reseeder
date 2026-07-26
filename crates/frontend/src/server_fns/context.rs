@@ -1,0 +1,230 @@
+// Shared server-side context and cross-domain SSR helpers.
+//
+// `ServerFnContext` is the request context injected by the server crate; the
+// helpers below cover session cookies, credential encryption, pool access and
+// site-registry refresh, and are used by every other domain file.
+
+#[cfg(feature = "ssr")]
+#[derive(Clone)]
+pub struct ServerFnContext {
+    pub pool: sqlx::SqlitePool,
+    pub vault: std::sync::Arc<tokio::sync::RwLock<Option<pt_reseeder_core::crypto::Vault>>>,
+    pub session_ttl_hours: u64,
+    pub cookie_secure: bool,
+    pub data_dir: std::path::PathBuf,
+    /// Runtime log directory used by the process file appender.
+    pub log_dir: std::path::PathBuf,
+    pub site_registry: std::sync::Arc<
+        tokio::sync::RwLock<std::sync::Arc<pt_reseeder_core::site::registry::SiteRegistry>>,
+    >,
+    pub refresh_site_registry: std::sync::Arc<
+        dyn Fn() -> std::pin::Pin<
+                Box<dyn std::future::Future<Output = Result<(), String>> + Send + 'static>,
+            > + Send
+            + Sync,
+    >,
+    pub fetch_seeding_size: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    pub trigger_task_execution: std::sync::Arc<dyn Fn(i64, bool) + Send + Sync>,
+    pub reconfigure_task_runtime: std::sync::Arc<
+        dyn Fn(
+                i64,
+            ) -> std::pin::Pin<
+                Box<dyn std::future::Future<Output = Result<(), String>> + Send + 'static>,
+            > + Send
+            + Sync,
+    >,
+    pub remove_task_runtime: std::sync::Arc<
+        dyn Fn(
+                i64,
+            ) -> std::pin::Pin<
+                Box<dyn std::future::Future<Output = Result<(), String>> + Send + 'static>,
+            > + Send
+            + Sync,
+    >,
+    pub authenticated_user_id: Option<i64>,
+}
+
+#[cfg(feature = "ssr")]
+const SESSION_COOKIE_NAME: &str = "pt_reseeder_session";
+
+#[cfg(feature = "ssr")]
+fn generate_session_token() -> (String, Vec<u8>) {
+    use rand::RngCore;
+    use sha2::{Digest, Sha256};
+
+    let mut raw = [0u8; 32];
+    rand::thread_rng().fill_bytes(&mut raw);
+    let hash = Sha256::digest(raw);
+    (hex::encode(raw), hash.to_vec())
+}
+
+#[cfg(feature = "ssr")]
+fn hash_token(raw_hex: &str) -> Option<Vec<u8>> {
+    use sha2::{Digest, Sha256};
+
+    let raw_bytes = hex::decode(raw_hex).ok()?;
+    Some(Sha256::digest(raw_bytes).to_vec())
+}
+
+#[cfg(feature = "ssr")]
+fn build_session_cookie(
+    token: String,
+    secure: bool,
+) -> axum_extra::extract::cookie::Cookie<'static> {
+    use axum_extra::extract::cookie::{Cookie, SameSite};
+
+    Cookie::build((SESSION_COOKIE_NAME, token))
+        .path("/")
+        .http_only(true)
+        .same_site(SameSite::Strict)
+        .secure(secure)
+        .build()
+}
+
+#[cfg(feature = "ssr")]
+fn build_removal_cookie(secure: bool) -> axum_extra::extract::cookie::Cookie<'static> {
+    use axum_extra::extract::cookie::{Cookie, SameSite};
+
+    Cookie::build((SESSION_COOKIE_NAME, ""))
+        .path("/")
+        .http_only(true)
+        .same_site(SameSite::Strict)
+        .secure(secure)
+        .max_age(time::Duration::ZERO)
+        .build()
+}
+
+#[cfg(feature = "ssr")]
+fn append_set_cookie(
+    cookie: &axum_extra::extract::cookie::Cookie<'static>,
+) -> Result<(), ServerFnError> {
+    use axum::http::{header::SET_COOKIE, HeaderValue};
+    use leptos::prelude::expect_context;
+
+    let value = HeaderValue::from_str(&cookie.to_string())
+        .map_err(|e| ServerFnError::new(format!("invalid cookie header: {e}")))?;
+    expect_context::<leptos_axum::ResponseOptions>().append_header(SET_COOKIE, value);
+    Ok(())
+}
+
+#[cfg(feature = "ssr")]
+fn server_context() -> Result<ServerFnContext, ServerFnError> {
+    use leptos::prelude::use_context;
+
+    use_context::<ServerFnContext>()
+        .ok_or_else(|| ServerFnError::new("missing server function context"))
+}
+
+#[cfg(feature = "ssr")]
+async fn auth_register(username: String, password: String) -> Result<(), ServerFnError> {
+    use pt_reseeder_core::crypto::Vault;
+    use pt_reseeder_core::db::repo::Repository;
+
+    let context = server_context()?;
+    let repo = Repository::new(context.pool.clone());
+    let existing_count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM users")
+        .fetch_one(&context.pool)
+        .await
+        .map_err(|e| ServerFnError::new(format!("{e}")))?;
+    if existing_count.0 > 0 {
+        return Err(ServerFnError::new("A user already exists"));
+    }
+
+    let (vault, reg) =
+        Vault::create(&password).map_err(|e| ServerFnError::new(format!("crypto error: {e}")))?;
+    let user_id = repo
+        .create_user(
+            &username,
+            &reg.password_hash,
+            &reg.kdf_salt,
+            &reg.wrapped_dek,
+            &reg.dek_nonce,
+        )
+        .await
+        .map_err(|e| ServerFnError::new(format!("{e}")))?;
+    *context.vault.write().await = Some(vault);
+    create_session_cookie(
+        &repo,
+        user_id,
+        context.session_ttl_hours,
+        context.cookie_secure,
+    )
+    .await?;
+    refresh_site_registry_best_effort(&context).await;
+    Ok(())
+}
+
+#[cfg(feature = "ssr")]
+async fn auth_login(username: String, password: String) -> Result<(), ServerFnError> {
+    use pt_reseeder_core::crypto::Vault;
+    use pt_reseeder_core::db::repo::Repository;
+
+    let context = server_context()?;
+    let repo = Repository::new(context.pool.clone());
+    let user = repo
+        .find_user_by_username(&username)
+        .await
+        .map_err(|e| ServerFnError::new(format!("{e}")))?
+        .ok_or_else(|| ServerFnError::new("Invalid username or password"))?;
+    let vault = Vault::unlock(
+        &password,
+        &user.kdf_salt,
+        &user.wrapped_dek,
+        &user.dek_nonce,
+        &user.password_hash,
+    )
+    .map_err(|_| ServerFnError::new("Invalid username or password"))?;
+    *context.vault.write().await = Some(vault);
+    let _ = repo.update_last_login(user.id).await;
+    create_session_cookie(
+        &repo,
+        user.id,
+        context.session_ttl_hours,
+        context.cookie_secure,
+    )
+    .await?;
+    refresh_site_registry_best_effort(&context).await;
+    Ok(())
+}
+
+#[cfg(feature = "ssr")]
+fn encrypt_optional(
+    vault: &pt_reseeder_core::crypto::Vault,
+    value: &str,
+) -> Result<(Option<Vec<u8>>, Option<Vec<u8>>), ServerFnError> {
+    if value.trim().is_empty() {
+        return Ok((None, None));
+    }
+    let (ciphertext, nonce) = vault
+        .encrypt(value.as_bytes())
+        .map_err(|e| ServerFnError::new(format!("encryption error: {e}")))?;
+    Ok((Some(ciphertext), Some(nonce.to_vec())))
+}
+
+#[cfg(feature = "ssr")]
+async fn create_session_cookie(
+    repo: &pt_reseeder_core::db::repo::Repository,
+    user_id: i64,
+    ttl_hours: u64,
+    cookie_secure: bool,
+) -> Result<(), ServerFnError> {
+    let (raw_token, token_hash) = generate_session_token();
+    let expires_at = pt_reseeder_core::session::session_expiry_from_now(ttl_hours);
+    repo.create_session(user_id, &token_hash, &expires_at)
+        .await
+        .map_err(|e| ServerFnError::new(format!("{e}")))?;
+    let _ = repo.update_last_login(user_id).await;
+    append_set_cookie(&build_session_cookie(raw_token, cookie_secure))
+}
+
+#[cfg(feature = "ssr")]
+async fn refresh_site_registry_best_effort(context: &ServerFnContext) {
+    if let Err(error) = (context.refresh_site_registry)().await {
+        eprintln!("failed to refresh site registry: {error}");
+    }
+}
+
+#[cfg(feature = "ssr")]
+fn server_pool() -> Result<sqlx::SqlitePool, ServerFnError> {
+    Ok(server_context()?.pool)
+}

@@ -18,6 +18,51 @@ impl Repository {
         Self { pool }
     }
 
+    // --- Single-row CRUD helpers ---
+    //
+    // Six delete-by-id, five find-by-id and four list-all methods differed only
+    // by table name and row type. These helpers hold the shared body; the public
+    // methods keep their exact signatures and forward here.
+    //
+    // As with the association helpers above, `table` only ever receives string
+    // literals from this file, so interpolating it into the SQL is not an
+    // injection surface; `sqlx::query!` cannot check dynamic table names.
+
+    /// `DELETE FROM <table> WHERE id = ?`
+    async fn delete_by_id(&self, table: &str, id: i64) -> Result<(), CoreError> {
+        sqlx::query(&format!("DELETE FROM {table} WHERE id = ?"))
+            .bind(id)
+            .execute(&self.pool)
+            .await
+            .map_err(DbError::Sqlx)?;
+        Ok(())
+    }
+
+    /// `SELECT * FROM <table> WHERE id = ?`
+    async fn find_by_id<T>(&self, table: &str, id: i64) -> Result<Option<T>, CoreError>
+    where
+        T: for<'r> sqlx::FromRow<'r, sqlx::sqlite::SqliteRow> + Send + Unpin,
+    {
+        let row = sqlx::query_as::<_, T>(&format!("SELECT * FROM {table} WHERE id = ?"))
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(DbError::Sqlx)?;
+        Ok(row)
+    }
+
+    /// `SELECT * FROM <table> ORDER BY id`
+    async fn list_all<T>(&self, table: &str) -> Result<Vec<T>, CoreError>
+    where
+        T: for<'r> sqlx::FromRow<'r, sqlx::sqlite::SqliteRow> + Send + Unpin,
+    {
+        let rows = sqlx::query_as::<_, T>(&format!("SELECT * FROM {table} ORDER BY id"))
+            .fetch_all(&self.pool)
+            .await
+            .map_err(DbError::Sqlx)?;
+        Ok(rows)
+    }
+
     // --- Users ---
 
     pub async fn create_user(
@@ -116,12 +161,7 @@ impl Repository {
     }
 
     pub async fn delete_session(&self, session_id: i64) -> Result<(), CoreError> {
-        sqlx::query("DELETE FROM sessions WHERE id = ?")
-            .bind(session_id)
-            .execute(&self.pool)
-            .await
-            .map_err(DbError::Sqlx)?;
-        Ok(())
+        self.delete_by_id("sessions", session_id).await
     }
 
     pub async fn cleanup_expired_sessions(&self) -> Result<u64, CoreError> {
@@ -182,20 +222,11 @@ impl Repository {
     }
 
     pub async fn get_site(&self, id: i64) -> Result<Option<SiteRow>, CoreError> {
-        let site = sqlx::query_as::<_, SiteRow>("SELECT * FROM sites WHERE id = ?")
-            .bind(id)
-            .fetch_optional(&self.pool)
-            .await
-            .map_err(DbError::Sqlx)?;
-        Ok(site)
+        self.find_by_id("sites", id).await
     }
 
     pub async fn list_sites(&self) -> Result<Vec<SiteRow>, CoreError> {
-        let sites = sqlx::query_as::<_, SiteRow>("SELECT * FROM sites ORDER BY id")
-            .fetch_all(&self.pool)
-            .await
-            .map_err(DbError::Sqlx)?;
-        Ok(sites)
+        self.list_all("sites").await
     }
 
     // 8 个参数是 sites 表凭据列的直接映射（3 组 ciphertext+nonce）。抽 struct 会与
@@ -273,12 +304,7 @@ impl Repository {
     }
 
     pub async fn delete_site(&self, id: i64) -> Result<(), CoreError> {
-        sqlx::query("DELETE FROM sites WHERE id = ?")
-            .bind(id)
-            .execute(&self.pool)
-            .await
-            .map_err(DbError::Sqlx)?;
-        Ok(())
+        self.delete_by_id("sites", id).await
     }
 
     // --- User Stats ---
@@ -372,20 +398,11 @@ impl Repository {
     }
 
     pub async fn get_downloader(&self, id: i64) -> Result<Option<DownloaderRow>, CoreError> {
-        let row = sqlx::query_as::<_, DownloaderRow>("SELECT * FROM downloaders WHERE id = ?")
-            .bind(id)
-            .fetch_optional(&self.pool)
-            .await
-            .map_err(DbError::Sqlx)?;
-        Ok(row)
+        self.find_by_id("downloaders", id).await
     }
 
     pub async fn list_downloaders(&self) -> Result<Vec<DownloaderRow>, CoreError> {
-        let rows = sqlx::query_as::<_, DownloaderRow>("SELECT * FROM downloaders ORDER BY id")
-            .fetch_all(&self.pool)
-            .await
-            .map_err(DbError::Sqlx)?;
-        Ok(rows)
+        self.list_all("downloaders").await
     }
 
     pub async fn update_downloader(&self, row: &DownloaderRow) -> Result<(), CoreError> {
@@ -421,12 +438,7 @@ impl Repository {
     }
 
     pub async fn delete_downloader(&self, id: i64) -> Result<(), CoreError> {
-        sqlx::query("DELETE FROM downloaders WHERE id = ?")
-            .bind(id)
-            .execute(&self.pool)
-            .await
-            .map_err(DbError::Sqlx)?;
-        Ok(())
+        self.delete_by_id("downloaders", id).await
     }
 
     // --- Pieces Cache ---
@@ -667,20 +679,11 @@ impl Repository {
     }
 
     pub async fn list_folders(&self) -> Result<Vec<FolderRow>, CoreError> {
-        let rows = sqlx::query_as::<_, FolderRow>("SELECT * FROM folders ORDER BY id")
-            .fetch_all(&self.pool)
-            .await
-            .map_err(DbError::Sqlx)?;
-        Ok(rows)
+        self.list_all("folders").await
     }
 
     pub async fn get_folder(&self, id: i64) -> Result<Option<FolderRow>, CoreError> {
-        let row = sqlx::query_as::<_, FolderRow>("SELECT * FROM folders WHERE id = ?")
-            .bind(id)
-            .fetch_optional(&self.pool)
-            .await
-            .map_err(DbError::Sqlx)?;
-        Ok(row)
+        self.find_by_id("folders", id).await
     }
 
     pub async fn update_folder(
@@ -716,12 +719,7 @@ impl Repository {
     }
 
     pub async fn delete_folder(&self, id: i64) -> Result<(), CoreError> {
-        sqlx::query("DELETE FROM folders WHERE id = ?")
-            .bind(id)
-            .execute(&self.pool)
-            .await
-            .map_err(DbError::Sqlx)?;
-        Ok(())
+        self.delete_by_id("folders", id).await
     }
 
     // --- Task association tables ---
@@ -861,20 +859,11 @@ impl Repository {
     }
 
     pub async fn get_task(&self, id: i64) -> Result<Option<TaskRow>, CoreError> {
-        let row = sqlx::query_as::<_, TaskRow>("SELECT * FROM tasks WHERE id = ?")
-            .bind(id)
-            .fetch_optional(&self.pool)
-            .await
-            .map_err(DbError::Sqlx)?;
-        Ok(row)
+        self.find_by_id("tasks", id).await
     }
 
     pub async fn list_tasks(&self) -> Result<Vec<TaskRow>, CoreError> {
-        let rows = sqlx::query_as::<_, TaskRow>("SELECT * FROM tasks ORDER BY id")
-            .fetch_all(&self.pool)
-            .await
-            .map_err(DbError::Sqlx)?;
-        Ok(rows)
+        self.list_all("tasks").await
     }
 
     pub async fn update_task_status(&self, id: i64, status: &str) -> Result<(), CoreError> {
@@ -978,12 +967,7 @@ impl Repository {
     }
 
     pub async fn delete_task(&self, id: i64) -> Result<(), CoreError> {
-        sqlx::query("DELETE FROM tasks WHERE id = ?")
-            .bind(id)
-            .execute(&self.pool)
-            .await
-            .map_err(DbError::Sqlx)?;
-        Ok(())
+        self.delete_by_id("tasks", id).await
     }
 
     // --- Task Logs ---
@@ -1056,12 +1040,7 @@ impl Repository {
     }
 
     pub async fn get_repost_entry(&self, id: i64) -> Result<Option<RepostQueueEntry>, CoreError> {
-        let row = sqlx::query_as::<_, RepostQueueEntry>("SELECT * FROM repost_queue WHERE id = ?")
-            .bind(id)
-            .fetch_optional(&self.pool)
-            .await
-            .map_err(DbError::Sqlx)?;
-        Ok(row)
+        self.find_by_id("repost_queue", id).await
     }
 
     pub async fn list_repost_entries(
@@ -1112,12 +1091,7 @@ impl Repository {
     }
 
     pub async fn delete_repost_entry(&self, id: i64) -> Result<(), CoreError> {
-        sqlx::query("DELETE FROM repost_queue WHERE id = ?")
-            .bind(id)
-            .execute(&self.pool)
-            .await
-            .map_err(DbError::Sqlx)?;
-        Ok(())
+        self.delete_by_id("repost_queue", id).await
     }
 }
 

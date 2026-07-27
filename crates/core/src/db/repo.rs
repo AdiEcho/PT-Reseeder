@@ -309,6 +309,9 @@ impl Repository {
 
     // --- User Stats ---
 
+    // NOTE: 与 DbWriter 的 WriteOp::InsertUserStats（writer.rs:309）为双写关系，且
+    // 两条通道都有活跃生产调用方（本方法：executor.rs / server_fns/sites.rs）。
+    // 收敛为单一通道需要判定哪条才是正确语义，超出本次「不改变行为」的边界。
     pub async fn insert_user_stats(
         &self,
         site_id: i64,
@@ -443,6 +446,9 @@ impl Repository {
 
     // --- Pieces Cache ---
 
+    // NOTE: 与 DbWriter 的 WriteOp::UpsertPiecesCache / BulkUpsertPiecesCache 为双写
+    // 关系（writer.rs:249 / :341）。生产路径全部走 writer 通道，本方法仅被本文件的
+    // 测试使用；保留以维持对 ON CONFLICT 语义与表约束的覆盖。
     pub async fn upsert_pieces_cache(&self, entry: &PiecesCacheEntry) -> Result<(), CoreError> {
         sqlx::query(
             "INSERT INTO pieces_cache \
@@ -574,6 +580,8 @@ impl Repository {
 
     // --- Reseed History ---
 
+    // NOTE: 与 DbWriter 的 WriteOp::InsertReseedHistory（writer.rs:226）为双写关系。
+    // 生产路径走 writer 通道，本方法仅被本文件的测试使用；保留以维持表约束覆盖。
     pub async fn insert_reseed_history(
         &self,
         pieces_hash: &str,
@@ -974,6 +982,8 @@ impl Repository {
 
     // 参数即 task_logs 表的列。与 WriteOp::InsertTaskLog 的字段一一对应。
     #[allow(clippy::too_many_arguments)]
+    // NOTE: 与 DbWriter 的 WriteOp::InsertTaskLog（writer.rs:280）为双写关系。
+    // 生产路径走 writer 通道（executor.rs 的 write_log），本方法仅被测试使用。
     pub async fn insert_task_log(
         &self,
         task_id: i64,

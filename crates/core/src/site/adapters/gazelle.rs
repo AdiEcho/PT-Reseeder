@@ -37,6 +37,8 @@ struct GazelleBrowseResponse {
     results: Vec<GazelleGroupResult>,
 }
 
+// API 响应 DTO：带 #[allow(dead_code)] 的字段由 serde 写入但代码不读，
+// 保留字段是为了让反序列化贴合上游返回结构（AC-6.4 复核保留）。
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct GazelleGroupResult {

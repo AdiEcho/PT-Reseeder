@@ -75,6 +75,7 @@ struct Unit3dTorrentAttributes {
     info_hash: Option<String>,
 }
 
+// API 响应 DTO，同上（AC-6.4 复核保留）。
 #[derive(Debug, Deserialize)]
 struct Unit3dUserResource {
     #[allow(dead_code)]

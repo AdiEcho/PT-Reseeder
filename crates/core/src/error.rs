@@ -74,8 +74,6 @@ pub enum DownloaderError {
     ConnectionFailed(String),
     #[error("authentication failed: {0}")]
     AuthFailed(String),
-    #[error("torrent not found: {0}")]
-    TorrentNotFound(String),
     #[error("add torrent failed: {0}")]
     AddFailed(String),
 }
@@ -112,8 +110,6 @@ pub enum RepostError {
 pub enum SchedulerError {
     #[error("task not found: {0}")]
     TaskNotFound(i64),
-    #[error("task already running: {0}")]
-    TaskAlreadyRunning(i64),
     #[error("invalid cron expression: {0}")]
     InvalidCron(String),
     #[error("watcher error: {0}")]

@@ -166,7 +166,7 @@ impl DbWriter {
             return Ok(());
         }
 
-        let ops: Vec<WriteOp> = buffer.drain(..).collect();
+        let ops: Vec<WriteOp> = std::mem::take(buffer);
 
         // Prefer a single transaction for the whole batch.
         match Self::execute_ops_in_transaction(conn, &ops).await {

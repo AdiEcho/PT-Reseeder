@@ -205,7 +205,7 @@ async fn build_adapter(
     let selectors = definitions
         .get(&site.name)
         .and_then(|def| def.user_info.clone())
-        .unwrap_or_else(|| UserInfoSelectors {
+        .unwrap_or(UserInfoSelectors {
             profile_url_template: None,
             uid_selector: None,
             uploaded_selector: None,

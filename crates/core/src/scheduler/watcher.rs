@@ -61,7 +61,7 @@ impl FileWatcher {
 
         // Re-register existing watches
         let watches_snapshot = self.watches.read().await.clone();
-        for (_task_id, paths) in &watches_snapshot {
+        for paths in watches_snapshot.values() {
             for path in paths {
                 if let Some(ref mut w) = *self.watcher.write().await {
                     if let Err(e) = w.watch(path, RecursiveMode::NonRecursive) {

@@ -80,7 +80,7 @@ async fn test_ptcafe_fetch_user_info() {
             .build()
             .unwrap();
         let body = client
-            .get(&format!("{}/userdetails.php?id=13154", BASE_URL))
+            .get(format!("{}/userdetails.php?id=13154", BASE_URL))
             .send()
             .await
             .unwrap()
@@ -169,7 +169,7 @@ async fn test_ptcafe_probe_status() {
         .iter()
         .find(|f| f.field_name == "uploaded");
     assert!(
-        uploaded.map_or(false, |f| f.success),
+        uploaded.is_some_and(|f| f.success),
         "uploaded 字段应该解析成功"
     );
 
@@ -178,7 +178,7 @@ async fn test_ptcafe_probe_status() {
         .iter()
         .find(|f| f.field_name == "downloaded");
     assert!(
-        downloaded.map_or(false, |f| f.success),
+        downloaded.is_some_and(|f| f.success),
         "downloaded 字段应该解析成功"
     );
 }
@@ -592,7 +592,7 @@ fn extract_text_impl(html: &scraper::Html, sel_str: &str) -> Option<String> {
                 if let Some(el) = ElementRef::wrap(sibling) {
                     if !sibling_part.is_empty() {
                         let expected_tag = sibling_part
-                            .split(|c: char| c == '.' || c == '#' || c == '[' || c == ':')
+                            .split(['.', '#', '[', ':'])
                             .next()
                             .unwrap_or("");
                         if !expected_tag.is_empty()

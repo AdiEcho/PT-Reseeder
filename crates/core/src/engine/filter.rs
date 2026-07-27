@@ -61,7 +61,7 @@ pub fn extract_domain(url: &str) -> String {
         .unwrap_or(url);
     // Take everything before the first '/' or ':'
     without_proto
-        .split(|c| c == '/' || c == ':')
+        .split(['/', ':'])
         .next()
         .unwrap_or("")
         .to_lowercase()

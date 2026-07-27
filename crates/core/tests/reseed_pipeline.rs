@@ -49,7 +49,7 @@ fn build_torrent_bytes(name: &str, announce: &str, seed: u8) -> (Vec<u8>, String
     let name_bytes = name.as_bytes();
     let mut info_bytes = Vec::new();
     info_bytes.extend_from_slice(b"d");
-    info_bytes.extend_from_slice(format!("6:lengthi1024e").as_bytes());
+    info_bytes.extend_from_slice("6:lengthi1024e".to_string().as_bytes());
     info_bytes.extend_from_slice(format!("4:name{}:{}", name_bytes.len(), name).as_bytes());
     info_bytes.extend_from_slice(b"12:piece lengthi16384e");
     info_bytes.extend_from_slice(format!("6:pieces{}:", pieces.len()).as_bytes());

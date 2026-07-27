@@ -215,7 +215,7 @@ async fn create_task(
     validate_trigger_type(&req.trigger_type)?;
 
     // If trigger_type is "cron", cron_expression must be provided
-    if req.trigger_type == "cron" && req.cron_expression.as_ref().map_or(true, |s| s.is_empty()) {
+    if req.trigger_type == "cron" && req.cron_expression.as_ref().is_none_or(|s| s.is_empty()) {
         return Err(api_err(
             StatusCode::BAD_REQUEST,
             "cron_expression is required when trigger_type is 'cron'",
@@ -288,7 +288,7 @@ async fn update_task(
     validate_trigger_type(&req.trigger_type)?;
 
     // If trigger_type is "cron", cron_expression must be provided
-    if req.trigger_type == "cron" && req.cron_expression.as_ref().map_or(true, |s| s.is_empty()) {
+    if req.trigger_type == "cron" && req.cron_expression.as_ref().is_none_or(|s| s.is_empty()) {
         return Err(api_err(
             StatusCode::BAD_REQUEST,
             "cron_expression is required when trigger_type is 'cron'",

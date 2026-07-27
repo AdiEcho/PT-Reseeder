@@ -26,7 +26,5 @@ pub enum WsEvent {
         progress: CoreReseedProgress,
     },
     #[serde(rename = "log_line")]
-    LogLine {
-        line: String,
-    },
+    LogLine { line: String },
 }

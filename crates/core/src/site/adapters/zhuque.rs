@@ -560,7 +560,7 @@ impl RepostCapable for ZhuqueAdapter {
 
         // Try to parse response for torrent id
         if let Ok(api_resp) = serde_json::from_str::<ZhuqueApiResponse<serde_json::Value>>(&body) {
-            let success = api_resp.code.map_or(true, |c| c == 0);
+            let success = api_resp.code.is_none_or(|c| c == 0);
             if success {
                 // Extract torrent URL from response data if possible
                 let torrent_url = api_resp

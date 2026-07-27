@@ -122,7 +122,7 @@ impl TaskExecutor {
                 Ok(next_run_at) => next_run_at,
                 Err(e) => {
                     self.repo.update_task_status(task_id, "error").await?;
-                    return Err(e.into());
+                    return Err(e);
                 }
             }
         } else {

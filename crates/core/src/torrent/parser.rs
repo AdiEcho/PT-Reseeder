@@ -96,7 +96,7 @@ pub fn parse_bytes(data: &[u8]) -> Result<TorrentMeta, CoreError> {
         };
 
     let pieces_count = if piece_length > 0 {
-        (total_size + piece_length - 1) / piece_length
+        total_size.div_ceil(piece_length)
     } else {
         0
     };

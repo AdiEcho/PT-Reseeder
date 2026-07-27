@@ -15,7 +15,7 @@ pub fn generate_session_token() -> (String, Vec<u8>) {
     use rand::RngCore;
     let mut raw = [0u8; 32];
     rand::thread_rng().fill_bytes(&mut raw);
-    let hash = Sha256::digest(&raw);
+    let hash = Sha256::digest(raw);
     (hex::encode(raw), hash.to_vec())
 }
 
@@ -95,11 +95,11 @@ pub async fn csrf_check(
     let method = request.method().clone();
     let path = request.uri().path().to_string();
 
-    if path.starts_with("/api/") && !matches!(method, Method::GET | Method::HEAD | Method::OPTIONS)
+    if path.starts_with("/api/")
+        && !matches!(method, Method::GET | Method::HEAD | Method::OPTIONS)
+        && request.headers().get("X-PT-Reseeder").map(|v| v == "1") != Some(true)
     {
-        if request.headers().get("X-PT-Reseeder").map(|v| v == "1") != Some(true) {
-            return Err(StatusCode::FORBIDDEN);
-        }
+        return Err(StatusCode::FORBIDDEN);
     }
     Ok(next.run(request).await)
 }

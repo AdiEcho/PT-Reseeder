@@ -329,7 +329,7 @@ fn extract_text(html: &Html, selector_str: &Option<String>) -> Option<String> {
                 None => (sibling_part, None),
             };
             let expected_tag = sibling_tag
-                .split(|c: char| c == '.' || c == '#' || c == '[' || c == ':')
+                .split(['.', '#', '[', ':'])
                 .next()
                 .unwrap_or("");
             // Walk next element siblings via the tree

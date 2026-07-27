@@ -195,7 +195,7 @@ fn validate_task_request(req: &TaskCreateRequest) -> Result<(), CoreError> {
         if req
             .cron_expression
             .as_ref()
-            .map_or(true, |s| s.trim().is_empty())
+            .is_none_or(|s| s.trim().is_empty())
         {
             return Err(CoreError::Scheduler(SchedulerError::InvalidConfig(
                 "cron_expression is required when trigger_type is 'cron'".to_string(),

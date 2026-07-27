@@ -44,9 +44,8 @@ async fn validate_ws_auth(
     let session_token = cookie_header
         .split(';')
         .filter_map(|pair| {
-            let mut parts = pair.trim().splitn(2, '=');
-            let name = parts.next()?;
-            let value = parts.next()?;
+            let (name, value) = pair.trim().split_once('=')?;
+
             if name == SESSION_COOKIE_NAME {
                 Some(value.to_string())
             } else {

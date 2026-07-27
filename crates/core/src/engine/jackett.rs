@@ -67,7 +67,7 @@ pub async fn search(
         .and_then(|v| v.as_array())
         .map(|arr| {
             arr.iter()
-                .filter_map(|item| parse_jackett_item(item))
+                .filter_map(parse_jackett_item)
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
@@ -78,11 +78,7 @@ pub async fn search(
         results
             .into_iter()
             .filter(|r| {
-                let diff = if r.size > hint {
-                    r.size - hint
-                } else {
-                    hint - r.size
-                };
+                let diff = r.size.abs_diff(hint);
                 diff <= tolerance
             })
             .collect()

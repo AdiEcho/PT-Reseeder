@@ -724,126 +724,111 @@ impl Repository {
         Ok(())
     }
 
-    // --- Task-Folder Associations ---
+    // --- Task association tables ---
+    //
+    // task_folders / task_sites / task_source_downloaders share the same shape:
+    // (task_id, <child_id>) with a full replace on write. The two helpers below
+    // hold that logic once; the public methods are thin forwarders.
+    //
+    // `table` and `child_col` are only ever passed string literals from this
+    // file — they never carry caller input, so interpolating them into the SQL
+    // is not an injection surface. `sqlx::query!` cannot be used here because
+    // its compile-time checking does not support dynamic table names.
+
+    /// Replace the full set of child ids associated with `task_id`.
+    async fn set_task_assoc(
+        &self,
+        table: &str,
+        child_col: &str,
+        task_id: i64,
+        child_ids: &[i64],
+    ) -> Result<(), CoreError> {
+        let mut tx = self.pool.begin().await.map_err(DbError::Sqlx)?;
+        sqlx::query(&format!("DELETE FROM {table} WHERE task_id = ?"))
+            .bind(task_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(DbError::Sqlx)?;
+
+        if !child_ids.is_empty() {
+            // Chunked to stay under SQLite's bound-variable limit (999); each
+            // row binds 2 variables.
+            for chunk in child_ids.chunks(SQLITE_IN_CHUNK) {
+                // Trailing space matters: push_values appends "VALUES (...)".
+                let mut qb = sqlx::QueryBuilder::new(format!(
+                    "INSERT INTO {table} (task_id, {child_col}) "
+                ));
+                qb.push_values(chunk, |mut b, &child_id| {
+                    b.push_bind(task_id).push_bind(child_id);
+                });
+                qb.build()
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(DbError::Sqlx)?;
+            }
+        }
+
+        tx.commit().await.map_err(DbError::Sqlx)?;
+        Ok(())
+    }
+
+    /// Read the child ids associated with `task_id`.
+    async fn get_task_assoc(
+        &self,
+        table: &str,
+        child_col: &str,
+        task_id: i64,
+    ) -> Result<Vec<i64>, CoreError> {
+        let rows: Vec<(i64,)> = sqlx::query_as(&format!(
+            "SELECT {child_col} FROM {table} WHERE task_id = ?"
+        ))
+        .bind(task_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(DbError::Sqlx)?;
+        Ok(rows.into_iter().map(|r| r.0).collect())
+    }
 
     pub async fn set_task_folders(
         &self,
         task_id: i64,
         folder_ids: &[i64],
     ) -> Result<(), CoreError> {
-        let mut tx = self.pool.begin().await.map_err(DbError::Sqlx)?;
-        sqlx::query("DELETE FROM task_folders WHERE task_id = ?")
-            .bind(task_id)
-            .execute(&mut *tx)
+        self.set_task_assoc("task_folders", "folder_id", task_id, folder_ids)
             .await
-            .map_err(DbError::Sqlx)?;
-
-        if !folder_ids.is_empty() {
-            for chunk in folder_ids.chunks(SQLITE_IN_CHUNK) {
-                let mut qb =
-                    sqlx::QueryBuilder::new("INSERT INTO task_folders (task_id, folder_id) ");
-                qb.push_values(chunk, |mut b, &folder_id| {
-                    b.push_bind(task_id).push_bind(folder_id);
-                });
-                qb.build()
-                    .execute(&mut *tx)
-                    .await
-                    .map_err(DbError::Sqlx)?;
-            }
-        }
-
-        tx.commit().await.map_err(DbError::Sqlx)?;
-        Ok(())
     }
 
     pub async fn get_task_folders(&self, task_id: i64) -> Result<Vec<i64>, CoreError> {
-        let rows: Vec<(i64,)> =
-            sqlx::query_as("SELECT folder_id FROM task_folders WHERE task_id = ?")
-                .bind(task_id)
-                .fetch_all(&self.pool)
-                .await
-                .map_err(DbError::Sqlx)?;
-        Ok(rows.into_iter().map(|r| r.0).collect())
+        self.get_task_assoc("task_folders", "folder_id", task_id)
+            .await
     }
 
-    // --- Task-Site Associations ---
-
     pub async fn set_task_sites(&self, task_id: i64, site_ids: &[i64]) -> Result<(), CoreError> {
-        let mut tx = self.pool.begin().await.map_err(DbError::Sqlx)?;
-        sqlx::query("DELETE FROM task_sites WHERE task_id = ?")
-            .bind(task_id)
-            .execute(&mut *tx)
+        self.set_task_assoc("task_sites", "site_id", task_id, site_ids)
             .await
-            .map_err(DbError::Sqlx)?;
-
-        if !site_ids.is_empty() {
-            for chunk in site_ids.chunks(SQLITE_IN_CHUNK) {
-                let mut qb =
-                    sqlx::QueryBuilder::new("INSERT INTO task_sites (task_id, site_id) ");
-                qb.push_values(chunk, |mut b, &site_id| {
-                    b.push_bind(task_id).push_bind(site_id);
-                });
-                qb.build()
-                    .execute(&mut *tx)
-                    .await
-                    .map_err(DbError::Sqlx)?;
-            }
-        }
-
-        tx.commit().await.map_err(DbError::Sqlx)?;
-        Ok(())
     }
 
     pub async fn get_task_sites(&self, task_id: i64) -> Result<Vec<i64>, CoreError> {
-        let rows: Vec<(i64,)> = sqlx::query_as("SELECT site_id FROM task_sites WHERE task_id = ?")
-            .bind(task_id)
-            .fetch_all(&self.pool)
-            .await
-            .map_err(DbError::Sqlx)?;
-        Ok(rows.into_iter().map(|r| r.0).collect())
+        self.get_task_assoc("task_sites", "site_id", task_id).await
     }
-
-    // --- Task-Source-Downloader Associations ---
 
     pub async fn set_task_source_downloaders(
         &self,
         task_id: i64,
         downloader_ids: &[i64],
     ) -> Result<(), CoreError> {
-        let mut tx = self.pool.begin().await.map_err(DbError::Sqlx)?;
-        sqlx::query("DELETE FROM task_source_downloaders WHERE task_id = ?")
-            .bind(task_id)
-            .execute(&mut *tx)
-            .await
-            .map_err(DbError::Sqlx)?;
-
-        if !downloader_ids.is_empty() {
-            for chunk in downloader_ids.chunks(SQLITE_IN_CHUNK) {
-                let mut qb = sqlx::QueryBuilder::new(
-                    "INSERT INTO task_source_downloaders (task_id, downloader_id) ",
-                );
-                qb.push_values(chunk, |mut b, &downloader_id| {
-                    b.push_bind(task_id).push_bind(downloader_id);
-                });
-                qb.build()
-                    .execute(&mut *tx)
-                    .await
-                    .map_err(DbError::Sqlx)?;
-            }
-        }
-
-        tx.commit().await.map_err(DbError::Sqlx)?;
-        Ok(())
+        self.set_task_assoc(
+            "task_source_downloaders",
+            "downloader_id",
+            task_id,
+            downloader_ids,
+        )
+        .await
     }
 
     pub async fn get_task_source_downloaders(&self, task_id: i64) -> Result<Vec<i64>, CoreError> {
-        let rows: Vec<(i64,)> =
-            sqlx::query_as("SELECT downloader_id FROM task_source_downloaders WHERE task_id = ?")
-                .bind(task_id)
-                .fetch_all(&self.pool)
-                .await
-                .map_err(DbError::Sqlx)?;
-        Ok(rows.into_iter().map(|r| r.0).collect())
+        self.get_task_assoc("task_source_downloaders", "downloader_id", task_id)
+            .await
     }
 
     // --- Tasks ---

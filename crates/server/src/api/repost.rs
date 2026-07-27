@@ -1,20 +1,17 @@
 use axum::{
-    extract::{Path, Query, State},
+    extract::{Path, State},
     http::StatusCode,
-    routing::{delete, get, post},
+    routing::post,
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
-use tracing::info;
 
 use pt_reseeder_core::browser::AutofillResult;
 use pt_reseeder_core::db::models::RepostQueueEntry;
 use pt_reseeder_core::repost::adapter::adapt_torrent_info;
-use pt_reseeder_core::repost::extractor;
 use pt_reseeder_core::repost::models::{AdapterMapping, ReviewAction};
 use pt_reseeder_core::repost::review;
-use pt_reseeder_core::repost::submitter::{self, SubmitBatchCriteria, SubmitBatchResult};
-use pt_reseeder_core::site::models::SiteId;
+use pt_reseeder_core::repost::submitter;
 
 use crate::state::AppState;
 
@@ -22,17 +19,7 @@ use crate::state::AppState;
 // Request / Response types
 // ---------------------------------------------------------------------------
 
-#[derive(Deserialize)]
-pub struct ExtractRequest {
-    pub source_site_id: i64,
-    pub source_torrent_id: String,
-    pub target_site_id: i64,
-}
 
-#[derive(Deserialize)]
-pub struct QueueQuery {
-    pub status: Option<String>,
-}
 
 #[derive(Deserialize)]
 pub struct ReviewRequest {
@@ -41,17 +28,7 @@ pub struct ReviewRequest {
     pub mapping: Option<AdapterMapping>,
 }
 
-#[derive(Deserialize)]
-pub struct RetryRequest {
-    pub notes: Option<String>,
-}
 
-#[derive(Deserialize)]
-pub struct SubmitBatchRequest {
-    pub entry_ids: Option<Vec<i64>>,
-    pub target_site_ids: Option<Vec<i64>>,
-    pub limit: Option<usize>,
-}
 
 #[derive(Serialize)]
 pub struct RepostEntryResponse {
@@ -165,123 +142,8 @@ async fn build_adapted_json(
 // Handlers
 // ---------------------------------------------------------------------------
 
-/// POST /repost/extract -- extract torrent info from source site and create pending queue entry
-async fn extract_and_enqueue(
-    State(state): State<AppState>,
-    Json(req): Json<ExtractRequest>,
-) -> Result<(StatusCode, Json<RepostEntryResponse>), (StatusCode, Json<ApiError>)> {
-    let source_site = state
-        .inner
-        .repo
-        .get_site(req.source_site_id)
-        .await
-        .map_err(|e| {
-            api_err(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("database error: {}", e),
-            )
-        })?
-        .ok_or_else(|| api_err(StatusCode::NOT_FOUND, "source site not found"))?;
 
-    let target_site = state
-        .inner
-        .repo
-        .get_site(req.target_site_id)
-        .await
-        .map_err(|e| {
-            api_err(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("database error: {}", e),
-            )
-        })?
-        .ok_or_else(|| api_err(StatusCode::NOT_FOUND, "target site not found"))?;
 
-    let registry = state.site_registry_snapshot().await;
-    let raw_info = extractor::extract_torrent_info(
-        &registry,
-        SiteId::from(req.source_site_id),
-        &req.source_torrent_id,
-    )
-    .await
-    .map_err(|e| api_err(core_error_status(&e), format!("extraction failed: {}", e)))?;
-
-    let raw_json = serde_json::to_string(&raw_info).map_err(|e| {
-        api_err(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("serialization error: {}", e),
-        )
-    })?;
-
-    let entry_id = state
-        .inner
-        .repo
-        .create_repost_entry(
-            req.source_site_id,
-            &req.source_torrent_id,
-            req.target_site_id,
-            &raw_json,
-        )
-        .await
-        .map_err(|e| {
-            api_err(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("database error: {}", e),
-            )
-        })?;
-
-    let entry = state
-        .inner
-        .repo
-        .get_repost_entry(entry_id)
-        .await
-        .map_err(|e| {
-            api_err(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("database error: {}", e),
-            )
-        })?
-        .ok_or_else(|| {
-            api_err(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "entry created but not found",
-            )
-        })?;
-
-    info!(
-        entry_id = entry_id,
-        source_site = source_site.name,
-        target_site = target_site.name,
-        torrent_id = req.source_torrent_id,
-        "created repost queue entry"
-    );
-
-    Ok((StatusCode::CREATED, Json(entry_to_response(&entry))))
-}
-
-/// GET /repost/queue -- list queue entries with optional status filter
-async fn list_queue(
-    State(state): State<AppState>,
-    Query(query): Query<QueueQuery>,
-) -> Result<Json<Vec<RepostEntryResponse>>, (StatusCode, Json<ApiError>)> {
-    let entries = review::list_entries(&state.inner.repo, query.status.as_deref())
-        .await
-        .map_err(|e| api_err(core_error_status(&e), format!("{}", e)))?;
-
-    let responses: Vec<RepostEntryResponse> = entries.iter().map(entry_to_response).collect();
-    Ok(Json(responses))
-}
-
-/// GET /repost/queue/:id -- get single entry details
-async fn get_queue_entry(
-    State(state): State<AppState>,
-    Path(id): Path<i64>,
-) -> Result<Json<RepostEntryResponse>, (StatusCode, Json<ApiError>)> {
-    let entry = review::get_entry(&state.inner.repo, id)
-        .await
-        .map_err(|e| api_err(core_error_status(&e), format!("{}", e)))?;
-
-    Ok(Json(entry_to_response(&entry)))
-}
 
 /// POST /repost/queue/:id/review -- approve or reject a pending entry
 async fn review_entry(
@@ -416,78 +278,20 @@ async fn submit_entry(
     Ok(Json(entry_to_response(&updated)))
 }
 
-/// POST /repost/submit -- submit approved entries in batch
-async fn submit_batch(
-    State(state): State<AppState>,
-    Json(req): Json<SubmitBatchRequest>,
-) -> Result<Json<SubmitBatchResult>, (StatusCode, Json<ApiError>)> {
-    let registry = state.site_registry_snapshot().await;
-    let result = submitter::submit_batch(
-        &state.inner.repo,
-        &registry,
-        SubmitBatchCriteria {
-            entry_ids: req.entry_ids,
-            target_site_ids: req.target_site_ids,
-            limit: req.limit,
-        },
-    )
-    .await
-    .map_err(|e| api_err(core_error_status(&e), format!("{}", e)))?;
 
-    Ok(Json(result))
-}
 
-/// POST /repost/queue/:id/retry -- move a failed entry back to approved
-async fn retry_entry(
-    State(state): State<AppState>,
-    Path(id): Path<i64>,
-    Json(req): Json<RetryRequest>,
-) -> Result<Json<RepostEntryResponse>, (StatusCode, Json<ApiError>)> {
-    let updated = review::retry_entry(&state.inner.repo, id, req.notes.as_deref())
-        .await
-        .map_err(|e| api_err(core_error_status(&e), format!("{}", e)))?;
-
-    Ok(Json(entry_to_response(&updated)))
-}
-
-/// DELETE /repost/queue/:id -- delete a queue entry
-async fn delete_entry(
-    State(state): State<AppState>,
-    Path(id): Path<i64>,
-) -> Result<StatusCode, (StatusCode, Json<ApiError>)> {
-    review::get_entry(&state.inner.repo, id)
-        .await
-        .map_err(|e| api_err(core_error_status(&e), format!("{}", e)))?;
-
-    state
-        .inner
-        .repo
-        .delete_repost_entry(id)
-        .await
-        .map_err(|e| {
-            api_err(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("failed to delete entry: {}", e),
-            )
-        })?;
-
-    info!(entry_id = id, "deleted repost queue entry");
-    Ok(StatusCode::NO_CONTENT)
-}
 
 // ---------------------------------------------------------------------------
 // Router
 // ---------------------------------------------------------------------------
 
 pub fn router() -> Router<AppState> {
+    // Only the three endpoints the hydrated page calls directly. Everything else
+    // in this domain is served by server functions (see server_fns/repost.rs);
+    // these three stay because `review_entry` also writes `adapted_info_json`,
+    // which `autofill_entry` requires and the server-fn path does not produce.
     Router::new()
-        .route("/repost/extract", post(extract_and_enqueue))
-        .route("/repost/queue", get(list_queue))
-        .route("/repost/queue/{id}", get(get_queue_entry))
         .route("/repost/queue/{id}/review", post(review_entry))
         .route("/repost/queue/{id}/autofill", post(autofill_entry))
         .route("/repost/queue/{id}/submit", post(submit_entry))
-        .route("/repost/queue/{id}/retry", post(retry_entry))
-        .route("/repost/submit", post(submit_batch))
-        .route("/repost/queue/{id}", delete(delete_entry))
 }

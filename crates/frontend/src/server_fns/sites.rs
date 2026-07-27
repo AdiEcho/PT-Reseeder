@@ -327,7 +327,6 @@ pub async fn validate_site(
     use pt_reseeder_core::site::adapters::unit3d::Unit3dAdapter;
     use pt_reseeder_core::site::adapters::zhuque::ZhuqueAdapter;
     use pt_reseeder_core::site::definitions::load_all_definitions;
-    use pt_reseeder_core::site::models::UserInfoSelectors;
     use pt_reseeder_core::site::probe::probe_site as run_site_probe;
     use pt_reseeder_core::site::traits::{ReseedCapable, UserInfoCapable};
     use std::sync::Arc;
@@ -349,19 +348,7 @@ pub async fn validate_site(
     let selectors = definitions
         .get(&name)
         .and_then(|def| def.user_info.clone())
-        .unwrap_or_else(|| UserInfoSelectors {
-            profile_url_template: None,
-            uid_selector: None,
-            uploaded_selector: None,
-            downloaded_selector: None,
-            ratio_selector: None,
-            bonus_selector: None,
-            user_class_selector: None,
-            seeding_count_selector: None,
-            leeching_count_selector: None,
-            seeding_size_selector: None,
-            upload_time_selector: None,
-        });
+        .unwrap_or_default();
 
     let fetch_seeding_size = context
         .fetch_seeding_size

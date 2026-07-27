@@ -22,6 +22,10 @@ impl RepostStatus {
         }
     }
 
+    // Returns Option, not Result — an unknown status string is simply "not a
+    // status", with no error to report. Implementing std::str::FromStr would
+    // force inventing an Err type and change every call site's handling.
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Option<Self> {
         match s {
             "pending" => Some(Self::Pending),

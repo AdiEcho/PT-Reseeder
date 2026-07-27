@@ -399,9 +399,9 @@ fn translate_bbcode(content: &str, target_site: &str) -> String {
 ///
 /// Ref: auto_feed.js `String.prototype.medium_sel`
 fn infer_medium(title: &str) -> String {
-    if RE_MEDIUM_WEBDL.is_match(title) && !RE_MEDIUM_WEBRIP.is_match(title) {
-        "WEB-DL".to_string()
-    } else if RE_MEDIUM_WEBRIP.is_match(title) {
+    // WEB-DL and WEBRip both map to "WEB-DL" here, so the two original branches
+    // `(WEBDL && !WEBRIP)` and `WEBRIP` collapse to a plain disjunction.
+    if RE_MEDIUM_WEBDL.is_match(title) || RE_MEDIUM_WEBRIP.is_match(title) {
         "WEB-DL".to_string()
     } else if RE_MEDIUM_REMUX.is_match(title) {
         "Remux".to_string()

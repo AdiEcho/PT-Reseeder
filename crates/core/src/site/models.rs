@@ -95,7 +95,7 @@ pub struct SiteDefinitionCore {
     pub batch_size: Option<usize>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct UserInfoSelectors {
     pub profile_url_template: Option<String>,
     pub uid_selector: Option<String>,

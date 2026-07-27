@@ -62,11 +62,11 @@ pub fn SiteDetailPage() -> impl IntoView {
     let (edit_cookie, set_edit_cookie) = signal(String::new());
     let (edit_passkey, set_edit_passkey) = signal(String::new());
 
-    // Load site detail
-    let detail = Resource::new(
-        move || site_id(),
-        |id| crate::server_fns::get_site_detail(id),
-    );
+    // Load site detail.
+    // The source closure must own `site_id` (a `&site_id` reference, as clippy
+    // suggests, does not live long enough for the Resource).
+    #[allow(clippy::redundant_closure)]
+    let detail = Resource::new(move || site_id(), crate::server_fns::get_site_detail);
 
     // Refresh stats action
     let refresh_action = Action::new(move |_: &()| {

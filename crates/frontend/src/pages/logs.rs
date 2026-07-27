@@ -386,6 +386,17 @@ pub fn LogsPage() -> impl IntoView {
     }
 }
 
+fn level_css_class(level: &str) -> &'static str {
+    match level.to_uppercase().as_str() {
+        "ERROR" => "log-level log-level--error",
+        "WARN" => "log-level log-level--warn",
+        "INFO" => "log-level log-level--info",
+        "DEBUG" => "log-level log-level--debug",
+        "TRACE" => "log-level log-level--trace",
+        _ => "log-level",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::parse_task_id;
@@ -402,16 +413,5 @@ mod tests {
         assert_eq!(parse_task_id(Some("0".into())), None);
         assert_eq!(parse_task_id(Some("-1".into())), None);
         assert_eq!(parse_task_id(Some("42x".into())), None);
-    }
-}
-
-fn level_css_class(level: &str) -> &'static str {
-    match level.to_uppercase().as_str() {
-        "ERROR" => "log-level log-level--error",
-        "WARN" => "log-level log-level--warn",
-        "INFO" => "log-level log-level--info",
-        "DEBUG" => "log-level log-level--debug",
-        "TRACE" => "log-level log-level--trace",
-        _ => "log-level",
     }
 }

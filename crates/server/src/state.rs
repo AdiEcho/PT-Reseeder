@@ -59,6 +59,9 @@ pub struct AppStateInner {
 }
 
 impl AppState {
+    // AppState 是进程级单例，9 个参数是它聚合的各子系统句柄，只在 main/desktop
+    // 各调用一次。为它引入 builder 只是把同样的字段换个地方写。
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         db_pool: SqlitePool,
         db_writer: DbWriterHandle,

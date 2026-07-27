@@ -1,19 +1,19 @@
+//! Three-layer filter logic for the reseed engine.
+//!
+//! Filter 1: Tracker pre-filter — if any cached variant of this pieces_hash
+//!   has an announce URL matching the target site, skip (already seeding there).
+//!
+//! Filter 2: History pre-filter — if reseed_history shows a successful entry
+//!   for this pieces_hash + target site, skip.
+//!
+//! Filter 3: Info-hash dedup at add time — if the destination downloader
+//!   already has this info_hash, skip and cache it.
+
 use std::collections::HashSet;
 
 use crate::db::repo::Repository;
 use crate::error::CoreError;
 use crate::site::models::SiteId;
-
-/// Three-layer filter logic for the reseed engine.
-///
-/// Filter 1: Tracker pre-filter — if any cached variant of this pieces_hash
-///   has an announce URL matching the target site, skip (already seeding there).
-///
-/// Filter 2: History pre-filter — if reseed_history shows a successful entry
-///   for this pieces_hash + target site, skip.
-///
-/// Filter 3: Info-hash dedup at add time — if the destination downloader
-///   already has this info_hash, skip and cache it.
 
 /// Filter 1: Check if any cached torrent with this pieces_hash already has
 /// an announce URL belonging to the target site.

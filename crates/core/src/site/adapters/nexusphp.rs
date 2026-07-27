@@ -153,6 +153,9 @@ fn normalize_pieces_hash_data(
 }
 
 impl NexusPhpAdapter {
+    // NexusPHP 站点的构造参数（站点标识、两个 URL、三种凭据、选择器、批量大小）
+    // 彼此独立且多为 Option，打包成 struct 不减少调用方的心智负担。
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         name: String,
         base_url: String,
@@ -292,12 +295,15 @@ fn extract_text(html: &Html, selector_str: &Option<String>) -> Option<String> {
         let prefix_sel_str = &sel_str[..contains_start];
         let after_contains = &sel_str[contains_start + ":contains(".len()..];
         // Extract the text inside quotes: 'text' or "text"
-        let (needle, rest) = if after_contains.starts_with('\'') {
-            let end = after_contains[1..].find('\'')?;
-            (&after_contains[1..1 + end], &after_contains[2 + end..])
-        } else if after_contains.starts_with('"') {
-            let end = after_contains[1..].find('"')?;
-            (&after_contains[1..1 + end], &after_contains[2 + end..])
+        let (needle, rest) = if let Some(tail) = after_contains
+            .strip_prefix('\'')
+            .or_else(|| after_contains.strip_prefix('"'))
+        {
+            // `tail` already skips the opening quote, so the closing quote is at
+            // `end` and the remainder starts one byte later.
+            let quote = after_contains.as_bytes()[0] as char;
+            let end = tail.find(quote)?;
+            (&tail[..end], &tail[end + 1..])
         } else {
             return None;
         };

@@ -202,6 +202,9 @@ impl ReseedEngine {
 ///
 /// Returns `Some(preview)` when `dry_run` is true (including empty would-add list).
 /// Returns `None` for real runs.
+// 三阶段流水线需要同时持有配置、注册表、仓储、写队列、目标下载器、统计、
+// 取消令牌与进度通道。拆分不在本次范围内。
+#[allow(clippy::too_many_arguments)]
 async fn run_pipeline(
     config: ReseedConfig,
     registry: &SiteRegistry,

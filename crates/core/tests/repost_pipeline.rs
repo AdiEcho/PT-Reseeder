@@ -436,12 +436,15 @@ async fn test_full_repost_pipeline_e2e() {
     assert_eq!(submitted_entry.status, "submitted");
     assert!(submitted_entry.submitted_at.is_some());
 
-    let calls = submitted_calls.lock().unwrap();
-    assert_eq!(calls.len(), 1);
-    assert_eq!(calls[0].name, adapted.name);
-    assert_eq!(calls[0].descr, adapted.descr);
-    assert_eq!(calls[0].category_id, adapted.category_id);
-    assert_eq!(calls[0].target_site, adapted.target_site);
+    // Scoped so the std Mutex guard is released before the next await.
+    {
+        let calls = submitted_calls.lock().unwrap();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].name, adapted.name);
+        assert_eq!(calls[0].descr, adapted.descr);
+        assert_eq!(calls[0].category_id, adapted.category_id);
+        assert_eq!(calls[0].target_site, adapted.target_site);
+    }
 
     // Verify the final state in the database
     let final_entry = repo.get_repost_entry(entry_id).await.unwrap().unwrap();

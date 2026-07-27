@@ -198,6 +198,9 @@ impl Repository {
         Ok(sites)
     }
 
+    // 8 个参数是 sites 表凭据列的直接映射（3 组 ciphertext+nonce）。抽 struct 会与
+    // 关联表泛型化的收敛方向冲突，且这些参数无业务耦合，逐个传更直白。
+    #[allow(clippy::too_many_arguments)]
     pub async fn update_site_credentials(
         &self,
         id: i64,
@@ -956,6 +959,8 @@ impl Repository {
     }
 
     /// Update a task's core fields in-place (preserves task ID).
+    // 参数即 tasks 表的可更新列，一对一映射 SQL 占位符。
+    #[allow(clippy::too_many_arguments)]
     pub async fn update_task(
         &self,
         id: i64,
@@ -998,6 +1003,8 @@ impl Repository {
 
     // --- Task Logs ---
 
+    // 参数即 task_logs 表的列。与 WriteOp::InsertTaskLog 的字段一一对应。
+    #[allow(clippy::too_many_arguments)]
     pub async fn insert_task_log(
         &self,
         task_id: i64,

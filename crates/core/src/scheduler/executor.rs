@@ -502,6 +502,8 @@ impl TaskExecutor {
     }
 
     /// Write a task log entry via the DbWriter channel.
+    // 参数即 task_logs 表的列，与 Repository::insert_task_log 保持同构。
+    #[allow(clippy::too_many_arguments)]
     async fn write_log(
         &self,
         task_id: i64,

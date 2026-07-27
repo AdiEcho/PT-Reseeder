@@ -1,12 +1,12 @@
+//! Jackett search integration for pack detection and Jackett-mode matching.
+//!
+//! Jackett provides a unified API across many indexers, used as a fallback
+//! or supplement to direct site API queries.
+
 use serde::{Deserialize, Serialize};
 use tracing;
 
 use crate::error::{CoreError, EngineError};
-
-/// Jackett search integration for pack detection and Jackett-mode matching.
-///
-/// Jackett provides a unified API across many indexers, used as a fallback
-/// or supplement to direct site API queries.
 
 /// Jackett API configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]

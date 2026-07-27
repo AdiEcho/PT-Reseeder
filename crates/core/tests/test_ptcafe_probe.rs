@@ -564,12 +564,13 @@ fn extract_text_impl(html: &scraper::Html, sel_str: &str) -> Option<String> {
         let prefix_sel_str = &sel_str[..contains_start];
         let after_contains = &sel_str[contains_start + ":contains(".len()..];
 
-        let (needle, rest) = if after_contains.starts_with('\'') {
-            let end = after_contains[1..].find('\'')?;
-            (&after_contains[1..1 + end], &after_contains[2 + end..])
-        } else if after_contains.starts_with('"') {
-            let end = after_contains[1..].find('"')?;
-            (&after_contains[1..1 + end], &after_contains[2 + end..])
+        let (needle, rest) = if let Some(tail) = after_contains
+            .strip_prefix('\'')
+            .or_else(|| after_contains.strip_prefix('"'))
+        {
+            let quote = after_contains.as_bytes()[0] as char;
+            let end = tail.find(quote)?;
+            (&tail[..end], &tail[end + 1..])
         } else {
             return None;
         };

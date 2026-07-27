@@ -50,6 +50,9 @@ pub type SiteMatches = Vec<(String, i64)>;
 /// applying three-layer filtering before and after.
 ///
 /// Returns a flat list of `MatchedTorrent` ready for the adder.
+// 参数多但各自独立（数据源、注册表、目标、仓储、四个行为开关）。拆分超长函数
+// 与参数打包不在本次重构范围内（见 .omc/specs 的 Non-Goals）。
+#[allow(clippy::too_many_arguments)]
 pub async fn match_all_sites(
     scan: &ScanResult,
     registry: &SiteRegistry,
@@ -229,6 +232,9 @@ pub async fn match_all_sites(
 }
 
 /// Query a single site with batched pieces_hash requests, respecting rate limits.
+// 单站点匹配的入参由 match_all_sites 逐项透传，打包成 struct 只会把复杂度
+// 搬到调用方。
+#[allow(clippy::too_many_arguments)]
 async fn match_single_site(
     site_id: SiteId,
     reseed: Arc<dyn crate::site::traits::ReseedCapable>,

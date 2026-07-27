@@ -12,7 +12,7 @@ pub fn DashboardPage() -> impl IntoView {
     let (days, set_days) = signal(7i64);
 
     // Initial data via server function (works for SSR first paint).
-    let dashboard_data = Resource::new(move || days.get(), |d| get_dashboard_data(d));
+    let dashboard_data = Resource::new(move || days.get(), get_dashboard_data);
 
     // Real-time updates via WebSocket (only active after hydration on the client).
     let ws_update = use_dashboard_ws();

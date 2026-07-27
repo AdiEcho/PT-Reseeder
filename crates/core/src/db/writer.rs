@@ -326,28 +326,42 @@ impl DbWriter {
                     .map_err(DbError::Sqlx)?;
                 }
                 WriteOp::BulkUpsertPiecesCache(items) => {
-                    for item in items {
-                        sqlx::query(
+                    // Multi-row INSERT, chunked to stay under SQLite's 999
+                    // bound-variable limit (6 columns per row → 166 rows max).
+                    //
+                    // Duplicate info_hash within one chunk is safe here *only*
+                    // because every non-key column appears in DO UPDATE SET:
+                    // SQLite applies the rows in order, so the last one wins —
+                    // matching the previous row-at-a-time behaviour. If a column
+                    // is ever added to the INSERT list, it must be added to
+                    // DO UPDATE SET too, or duplicates would silently produce a
+                    // row mixing values from different items.
+                    for chunk in items.chunks(150) {
+                        let mut qb = sqlx::QueryBuilder::new(
                             "INSERT INTO pieces_cache \
-                             (pieces_hash, info_hash, torrent_name, file_path, total_size, announce_url) \
-                             VALUES (?, ?, ?, ?, ?, ?) \
-                             ON CONFLICT(info_hash) DO UPDATE SET \
+                             (pieces_hash, info_hash, torrent_name, file_path, total_size, announce_url) ",
+                        );
+                        qb.push_values(chunk, |mut b, item| {
+                            b.push_bind(&item.pieces_hash)
+                                .push_bind(&item.info_hash)
+                                .push_bind(&item.torrent_name)
+                                .push_bind(&item.file_path)
+                                .push_bind(item.total_size)
+                                .push_bind(&item.announce_url);
+                        });
+                        qb.push(
+                            " ON CONFLICT(info_hash) DO UPDATE SET \
                              pieces_hash = excluded.pieces_hash, \
                              torrent_name = excluded.torrent_name, \
                              file_path = excluded.file_path, \
                              total_size = excluded.total_size, \
                              announce_url = excluded.announce_url, \
                              cached_at = datetime('now')",
-                        )
-                        .bind(&item.pieces_hash)
-                        .bind(&item.info_hash)
-                        .bind(&item.torrent_name)
-                        .bind(&item.file_path)
-                        .bind(item.total_size)
-                        .bind(&item.announce_url)
-                        .execute(&mut *tx)
-                        .await
-                        .map_err(DbError::Sqlx)?;
+                        );
+                        qb.build()
+                            .execute(&mut *tx)
+                            .await
+                            .map_err(DbError::Sqlx)?;
                     }
                 }
                 WriteOp::Flush(_) => {

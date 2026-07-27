@@ -174,26 +174,20 @@ pub fn build_router(state: AppState) -> Router {
     let routes = generate_route_list(pt_reseeder_frontend::app::App);
     let leptos_options = state.leptos_options();
 
-    // Routes that require authentication
+    // The only REST routes left that need a session: repost review / submit /
+    // autofill, called by the hydrated page (see pages/repost.rs).
     let authed_routes = Router::new()
-        .merge(api::sites::router())
-        .merge(api::downloaders::router())
-        .merge(api::tasks::router())
-        .merge(api::folders::router())
         .merge(api::repost::router())
-        .merge(api::stats::router())
         .route_layer(axum::middleware::from_fn_with_state(
             state.clone(),
             require_auth,
         ));
 
-    // Public routes (auth endpoints + health check)
-    let public_routes = Router::new()
-        .merge(api::auth::router())
-        .merge(api::health::router());
-
+    // Health check stays outside require_auth so probes need no cookie.
+    // `csrf_check` must wrap the whole /api subtree: the hydrated page sends
+    // `X-PT-Reseeder: 1` and this layer is what validates it.
     let api_routes = Router::new()
-        .merge(public_routes)
+        .merge(api::health::router())
         .merge(authed_routes)
         .layer(axum::middleware::from_fn(csrf_check));
 

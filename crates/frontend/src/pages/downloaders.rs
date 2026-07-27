@@ -3,10 +3,18 @@ use crate::components::confirm_modal::ConfirmModal;
 use crate::components::empty_state::EmptyState;
 use crate::components::toast::{show_toast, ToastType};
 use crate::server_fns::{
-    create_downloader, delete_downloader, get_downloaders, test_downloader, test_downloader_connection,
-    DownloaderInfo,
+    create_downloader, delete_downloader, get_downloaders, test_downloader,
+    test_downloader_connection, DownloaderInfo,
 };
 use leptos::prelude::*;
+
+/// The create-downloader action: its 7-tuple argument mirrors the
+/// `create_downloader` server fn parameters (name, dl_type, host, port, username,
+/// password, category).
+type CreateDownloaderAction = Action<
+    (String, String, String, i64, String, String, String),
+    Result<DownloaderInfo, ServerFnError>,
+>;
 
 #[component]
 pub fn DownloadersPage() -> impl IntoView {
@@ -133,10 +141,7 @@ fn validate_form_fields(
 #[component]
 fn DownloadersSection<F>(
     downloaders: Resource<Result<Vec<DownloaderInfo>, ServerFnError>>,
-    create_dl_action: Action<
-        (String, String, String, i64, String, String, String),
-        Result<DownloaderInfo, ServerFnError>,
-    >,
+    create_dl_action: CreateDownloaderAction,
     test_dl_action: Action<i64, Result<String, ServerFnError>>,
     on_request_delete: F,
 ) -> impl IntoView

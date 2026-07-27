@@ -332,6 +332,13 @@ pub async fn validate_site(
     use pt_reseeder_core::site::traits::{ReseedCapable, UserInfoCapable};
     use std::sync::Arc;
 
+    /// Reseed + user-info adapters built for one probe; either may be absent
+    /// depending on the site type and which credentials were supplied.
+    type ProbeCapabilities = (
+        Option<Arc<dyn ReseedCapable>>,
+        Option<Arc<dyn UserInfoCapable>>,
+    );
+
     let context = server_context()?;
     let adapter = adapter_type.to_ascii_lowercase();
     let api_url_opt = (!api_url.trim().is_empty()).then_some(api_url);
@@ -361,10 +368,7 @@ pub async fn validate_site(
         .load(std::sync::atomic::Ordering::Relaxed);
 
     // 同时持有 reseed + user_info，有 api_url/passkey 时连通测试会真正打辅种 API。
-    let (reseed, user_info): (
-        Option<Arc<dyn ReseedCapable>>,
-        Option<Arc<dyn UserInfoCapable>>,
-    ) = match adapter.as_str() {
+    let (reseed, user_info): ProbeCapabilities = match adapter.as_str() {
         "nexusphp" => {
             let adapter = Arc::new(
                 NexusPhpAdapter::new(

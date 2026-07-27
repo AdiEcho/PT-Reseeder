@@ -128,6 +128,9 @@ fn api_err(status: StatusCode, msg: impl Into<String>) -> (StatusCode, Json<ApiE
 }
 
 /// Encrypt a plaintext credential with the vault, returning (ciphertext, nonce).
+// This whole file is removed in the REST-convergence batch; silence the lint
+// rather than introducing an alias that would be deleted along with it.
+#[allow(clippy::type_complexity)]
 fn encrypt_credential(
     vault: &Vault,
     plaintext: &str,

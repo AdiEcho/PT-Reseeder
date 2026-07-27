@@ -4,6 +4,35 @@
 // helpers below cover session cookies, credential encryption, pool access and
 // site-registry refresh, and are used by every other domain file.
 
+/// Boxed async callback returning `Result<(), String>`.
+///
+/// The registry-refresh and task-runtime hooks are injected by the server crate
+/// as async closures; this alias names the shared `Arc<dyn Fn -> Pin<Box<Future>>>`
+/// shape so the field declarations stay readable.
+#[cfg(feature = "ssr")]
+pub type AsyncHook = std::sync::Arc<
+    dyn Fn() -> std::pin::Pin<
+            Box<dyn std::future::Future<Output = Result<(), String>> + Send + 'static>,
+        > + Send
+        + Sync,
+>;
+
+/// Same as [`AsyncHook`] but taking a task id.
+#[cfg(feature = "ssr")]
+pub type AsyncTaskHook = std::sync::Arc<
+    dyn Fn(
+            i64,
+        ) -> std::pin::Pin<
+            Box<dyn std::future::Future<Output = Result<(), String>> + Send + 'static>,
+        > + Send
+        + Sync,
+>;
+
+/// Encrypted credential pair: `(ciphertext, nonce)`, both `None` when the
+/// plaintext was blank.
+#[cfg(feature = "ssr")]
+pub type EncryptedField = (Option<Vec<u8>>, Option<Vec<u8>>);
+
 #[cfg(feature = "ssr")]
 #[derive(Clone)]
 pub struct ServerFnContext {
@@ -17,30 +46,11 @@ pub struct ServerFnContext {
     pub site_registry: std::sync::Arc<
         tokio::sync::RwLock<std::sync::Arc<pt_reseeder_core::site::registry::SiteRegistry>>,
     >,
-    pub refresh_site_registry: std::sync::Arc<
-        dyn Fn() -> std::pin::Pin<
-                Box<dyn std::future::Future<Output = Result<(), String>> + Send + 'static>,
-            > + Send
-            + Sync,
-    >,
+    pub refresh_site_registry: AsyncHook,
     pub fetch_seeding_size: std::sync::Arc<std::sync::atomic::AtomicBool>,
     pub trigger_task_execution: std::sync::Arc<dyn Fn(i64, bool) + Send + Sync>,
-    pub reconfigure_task_runtime: std::sync::Arc<
-        dyn Fn(
-                i64,
-            ) -> std::pin::Pin<
-                Box<dyn std::future::Future<Output = Result<(), String>> + Send + 'static>,
-            > + Send
-            + Sync,
-    >,
-    pub remove_task_runtime: std::sync::Arc<
-        dyn Fn(
-                i64,
-            ) -> std::pin::Pin<
-                Box<dyn std::future::Future<Output = Result<(), String>> + Send + 'static>,
-            > + Send
-            + Sync,
-    >,
+    pub reconfigure_task_runtime: AsyncTaskHook,
+    pub remove_task_runtime: AsyncTaskHook,
     pub authenticated_user_id: Option<i64>,
 }
 
@@ -191,7 +201,7 @@ async fn auth_login(username: String, password: String) -> Result<(), ServerFnEr
 fn encrypt_optional(
     vault: &pt_reseeder_core::crypto::Vault,
     value: &str,
-) -> Result<(Option<Vec<u8>>, Option<Vec<u8>>), ServerFnError> {
+) -> Result<EncryptedField, ServerFnError> {
     if value.trim().is_empty() {
         return Ok((None, None));
     }

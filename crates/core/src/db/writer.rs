@@ -193,12 +193,16 @@ impl DbWriter {
                     }
                 }
                 if let Some(err) = first_err {
-                    return Err(CoreError::Internal(format!(
-                        "db write fallback failed for {}/{} ops: {}",
+                    // Return the original error rather than folding it into a
+                    // string, so callers can match on it programmatically (e.g.
+                    // detecting a UNIQUE constraint violation). The batch shape
+                    // goes to the log instead of into the message.
+                    tracing::error!(
                         failed,
-                        ops.len(),
-                        err
-                    )));
+                        total = ops.len(),
+                        "db write fallback failed; returning first error"
+                    );
+                    return Err(err);
                 }
                 Ok(())
             }

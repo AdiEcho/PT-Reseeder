@@ -22,15 +22,13 @@ pub async fn get_repost_queue(
     let repo = Repository::new(server_pool()?);
     let sites: std::collections::HashMap<i64, String> = repo
         .list_sites()
-        .await
-        .map_err(|e| ServerFnError::new(format!("{e}")))?
+        .await?
         .into_iter()
         .map(|s| (s.id, s.name))
         .collect();
     let entries = repo
         .list_repost_entries(status_filter.as_deref())
-        .await
-        .map_err(|e| ServerFnError::new(format!("{e}")))?;
+        .await?;
     Ok(entries
         .into_iter()
         .map(|e| RepostEntry {
@@ -75,7 +73,7 @@ pub async fn review_repost(
     review::review_entry(&repo, id, &action, notes.as_deref())
         .await
         .map(|_| ())
-        .map_err(|e| ServerFnError::new(format!("{e}")))
+        .map_err(Into::into)
 }
 
 #[server]
@@ -89,7 +87,7 @@ pub async fn submit_repost(id: i64) -> Result<(), ServerFnError> {
     submitter::submit_entry(&repo, registry.as_ref(), id)
         .await
         .map(|_| ())
-        .map_err(|e| ServerFnError::new(format!("{e}")))
+        .map_err(Into::into)
 }
 
 #[server]
@@ -99,5 +97,5 @@ pub async fn delete_repost(id: i64) -> Result<(), ServerFnError> {
     Repository::new(server_pool()?)
         .delete_repost_entry(id)
         .await
-        .map_err(|e| ServerFnError::new(format!("{e}")))
+        .map_err(Into::into)
 }

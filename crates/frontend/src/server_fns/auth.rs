@@ -10,8 +10,7 @@ pub async fn has_user() -> Result<bool, ServerFnError> {
     let pool = server_pool()?;
     let count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM users")
         .fetch_one(&pool)
-        .await
-        .map_err(|e| ServerFnError::new(format!("{e}")))?;
+        .await?;
     Ok(count.0 > 0)
 }
 
@@ -32,15 +31,13 @@ pub async fn logout() -> Result<(), ServerFnError> {
 
     let context = server_context()?;
     let jar: CookieJar = leptos_axum::extract()
-        .await
-        .map_err(|e| ServerFnError::new(format!("{e}")))?;
+        .await?;
     if let Some(cookie) = jar.get(SESSION_COOKIE_NAME) {
         if let Some(token_hash) = hash_token(cookie.value()) {
             let repo = Repository::new(context.pool.clone());
             if let Some(session) = repo
                 .find_session_by_hash(&token_hash)
-                .await
-                .map_err(|e| ServerFnError::new(format!("{e}")))?
+                .await?
             {
                 let _ = repo.delete_session(session.id).await;
             }
@@ -62,8 +59,7 @@ pub async fn get_current_user() -> Result<Option<UserInfo>, ServerFnError> {
     }
 
     let jar: CookieJar = leptos_axum::extract()
-        .await
-        .map_err(|e| ServerFnError::new(format!("{e}")))?;
+        .await?;
     let Some(cookie) = jar.get(SESSION_COOKIE_NAME) else {
         return Ok(None);
     };
@@ -75,8 +71,7 @@ pub async fn get_current_user() -> Result<Option<UserInfo>, ServerFnError> {
     let repo = Repository::new(pool.clone());
     let Some(session) = repo
         .find_session_by_hash(&token_hash)
-        .await
-        .map_err(|e| ServerFnError::new(format!("{e}")))?
+        .await?
     else {
         return Ok(None);
     };
@@ -88,8 +83,7 @@ pub async fn get_current_user() -> Result<Option<UserInfo>, ServerFnError> {
     let user = sqlx::query_as::<_, User>("SELECT * FROM users WHERE id = ?")
         .bind(session.user_id)
         .fetch_optional(&pool)
-        .await
-        .map_err(|e| ServerFnError::new(format!("{e}")))?;
+        .await?;
     Ok(user.map(|user| UserInfo {
         username: user.username,
     }))

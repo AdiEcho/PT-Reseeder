@@ -16,8 +16,7 @@ pub async fn get_folders() -> Result<Vec<FolderInfo>, ServerFnError> {
 
     let rows = Repository::new(server_pool()?)
         .list_folders()
-        .await
-        .map_err(|e| ServerFnError::new(format!("{e}")))?;
+        .await?;
     Ok(rows
         .into_iter()
         .map(|f| FolderInfo {
@@ -42,8 +41,7 @@ pub async fn create_folder(
     let repo = Repository::new(server_pool()?);
     let id = repo
         .create_folder(&path, &scan_mode, downloader_id)
-        .await
-        .map_err(|e| ServerFnError::new(format!("{e}")))?;
+        .await?;
     get_folders()
         .await?
         .into_iter()
@@ -58,5 +56,5 @@ pub async fn delete_folder(id: i64) -> Result<(), ServerFnError> {
     Repository::new(server_pool()?)
         .delete_folder(id)
         .await
-        .map_err(|e| ServerFnError::new(format!("{e}")))
+        .map_err(Into::into)
 }

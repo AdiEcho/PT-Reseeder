@@ -61,20 +61,16 @@ pub async fn get_dashboard_data(days: i64) -> Result<DashboardData, ServerFnErro
 
     let overview = reseed_svc
         .get_overview()
-        .await
-        .map_err(|e| ServerFnError::new(format!("{e}")))?;
+        .await?;
     let site_stats = reseed_svc
         .get_site_reseed_stats()
-        .await
-        .map_err(|e| ServerFnError::new(format!("{e}")))?;
+        .await?;
     let trend = reseed_svc
         .get_trend(days)
-        .await
-        .map_err(|e| ServerFnError::new(format!("{e}")))?;
+        .await?;
     let user_info = user_svc
         .get_aggregated_user_info()
-        .await
-        .map_err(|e| ServerFnError::new(format!("{e}")))?;
+        .await?;
 
     Ok(DashboardData {
         overview: DashboardOverview {

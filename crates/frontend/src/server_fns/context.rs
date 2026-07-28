@@ -134,8 +134,7 @@ async fn auth_register(username: String, password: String) -> Result<(), ServerF
     let repo = Repository::new(context.pool.clone());
     let existing_count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM users")
         .fetch_one(&context.pool)
-        .await
-        .map_err(|e| ServerFnError::new(format!("{e}")))?;
+        .await?;
     if existing_count.0 > 0 {
         return Err(ServerFnError::new("A user already exists"));
     }
@@ -150,8 +149,7 @@ async fn auth_register(username: String, password: String) -> Result<(), ServerF
             &reg.wrapped_dek,
             &reg.dek_nonce,
         )
-        .await
-        .map_err(|e| ServerFnError::new(format!("{e}")))?;
+        .await?;
     *context.vault.write().await = Some(vault);
     create_session_cookie(
         &repo,
@@ -173,8 +171,7 @@ async fn auth_login(username: String, password: String) -> Result<(), ServerFnEr
     let repo = Repository::new(context.pool.clone());
     let user = repo
         .find_user_by_username(&username)
-        .await
-        .map_err(|e| ServerFnError::new(format!("{e}")))?
+        .await?
         .ok_or_else(|| ServerFnError::new("Invalid username or password"))?;
     let vault = Vault::unlock(
         &password,
@@ -221,8 +218,7 @@ async fn create_session_cookie(
     let (raw_token, token_hash) = generate_session_token();
     let expires_at = pt_reseeder_core::session::session_expiry_from_now(ttl_hours);
     repo.create_session(user_id, &token_hash, &expires_at)
-        .await
-        .map_err(|e| ServerFnError::new(format!("{e}")))?;
+        .await?;
     let _ = repo.update_last_login(user_id).await;
     append_set_cookie(&build_session_cookie(raw_token, cookie_secure))
 }

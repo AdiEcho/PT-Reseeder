@@ -16,8 +16,7 @@ pub async fn get_app_config() -> Result<Vec<ConfigEntry>, ServerFnError> {
         "SELECT key, value, updated_at FROM app_config ORDER BY key",
     )
     .fetch_all(&pool)
-    .await
-    .map_err(|e| ServerFnError::new(format!("{e}")))?;
+    .await?;
     Ok(rows
         .into_iter()
         .map(|(key, value, updated_at)| ConfigEntry {
@@ -45,8 +44,7 @@ pub async fn update_app_config(key: String, value: String) -> Result<(), ServerF
 
     Repository::new(context.pool.clone())
         .set_config(&key, &normalized_value)
-        .await
-        .map_err(|e| ServerFnError::new(format!("{e}")))?;
+        .await?;
 
     if key == FETCH_SEEDING_SIZE_CONFIG_KEY {
         context.fetch_seeding_size.store(

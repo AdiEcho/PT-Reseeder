@@ -17,8 +17,7 @@ pub async fn get_downloaders() -> Result<Vec<DownloaderInfo>, ServerFnError> {
 
     let rows = Repository::new(server_pool()?)
         .list_downloaders()
-        .await
-        .map_err(|e| ServerFnError::new(format!("{e}")))?;
+        .await?;
     Ok(rows
         .into_iter()
         .map(|d| DownloaderInfo {
@@ -98,8 +97,7 @@ pub async fn create_downloader(
     };
     let id = repo
         .create_downloader(&row)
-        .await
-        .map_err(|e| ServerFnError::new(format!("{e}")))?;
+        .await?;
     get_downloaders()
         .await?
         .into_iter()
@@ -176,7 +174,7 @@ pub async fn delete_downloader(id: i64) -> Result<(), ServerFnError> {
     Repository::new(server_pool()?)
         .delete_downloader(id)
         .await
-        .map_err(|e| ServerFnError::new(format!("{e}")))
+        .map_err(Into::into)
 }
 
 #[cfg(feature = "ssr")]
@@ -211,8 +209,7 @@ pub async fn test_downloader(id: i64) -> Result<String, ServerFnError> {
     let repo = Repository::new(context.pool.clone());
     let row = repo
         .get_downloader(id)
-        .await
-        .map_err(|e| ServerFnError::new(format!("{e}")))?
+        .await?
         .ok_or_else(|| ServerFnError::new("downloader not found"))?;
     let vault_guard = context.vault.read().await;
     let vault = vault_guard
@@ -231,8 +228,7 @@ pub async fn test_downloader(id: i64) -> Result<String, ServerFnError> {
             );
             client
                 .connect()
-                .await
-                .map_err(|e| ServerFnError::new(format!("{e}")))?;
+                .await?;
             let version = client.get_version().await.ok();
             let torrent_count = client.get_torrent_count().await.ok();
             Ok(format!(
@@ -254,8 +250,7 @@ pub async fn test_downloader(id: i64) -> Result<String, ServerFnError> {
             );
             client
                 .connect()
-                .await
-                .map_err(|e| ServerFnError::new(format!("{e}")))?;
+                .await?;
             let version = client.get_version().await.ok();
             let torrent_count = client.get_all_info_hashes().await.ok().map(|h| h.len());
             Ok(format!(

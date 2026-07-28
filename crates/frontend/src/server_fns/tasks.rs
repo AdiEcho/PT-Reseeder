@@ -54,23 +54,19 @@ pub async fn get_tasks() -> Result<Vec<TaskInfo>, ServerFnError> {
     let repo = Repository::new(server_pool()?);
     let rows = repo
         .list_tasks()
-        .await
-        .map_err(|e| ServerFnError::new(format!("{e}")))?;
+        .await?;
 
     let mut tasks = Vec::with_capacity(rows.len());
     for t in rows {
         let site_ids = repo
             .get_task_sites(t.id)
-            .await
-            .map_err(|e| ServerFnError::new(format!("{e}")))?;
+            .await?;
         let folder_ids = repo
             .get_task_folders(t.id)
-            .await
-            .map_err(|e| ServerFnError::new(format!("{e}")))?;
+            .await?;
         let source_downloader_ids = repo
             .get_task_source_downloaders(t.id)
-            .await
-            .map_err(|e| ServerFnError::new(format!("{e}")))?;
+            .await?;
         tasks.push(TaskInfo {
             id: t.id,
             name: t.name,
@@ -179,7 +175,7 @@ pub async fn delete_task(id: i64) -> Result<(), ServerFnError> {
     Repository::new(context.pool.clone())
         .delete_task(id)
         .await
-        .map_err(|e| ServerFnError::new(format!("{e}")))
+        .map_err(Into::into)
 }
 
 #[server]
@@ -189,8 +185,7 @@ pub async fn trigger_task(id: i64, dry_run: bool) -> Result<(), ServerFnError> {
         use pt_reseeder_core::db::repo::Repository;
         let task = Repository::new(context.pool.clone())
             .get_task(id)
-            .await
-            .map_err(|e| ServerFnError::new(format!("{e}")))?
+            .await?
             .ok_or_else(|| ServerFnError::new(format!("task not found: {id}")))?;
         if task.task_type != "reseed" {
             return Err(ServerFnError::new(
@@ -208,8 +203,7 @@ pub async fn get_task_logs(id: i64) -> Result<Vec<TaskLogInfo>, ServerFnError> {
 
     let rows = Repository::new(server_pool()?)
         .get_task_logs(id, 50)
-        .await
-        .map_err(|e| ServerFnError::new(format!("{e}")))?;
+        .await?;
     Ok(rows
         .into_iter()
         .map(|l| TaskLogInfo {
@@ -234,8 +228,7 @@ pub async fn get_latest_dry_run_preview(
 
     let rows = Repository::new(server_pool()?)
         .get_task_logs(task_id, 20)
-        .await
-        .map_err(|e| ServerFnError::new(format!("{e}")))?;
+        .await?;
 
     for log in rows {
         if log.status != "dry_run" {

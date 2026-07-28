@@ -59,8 +59,7 @@ pub async fn get_sites() -> Result<Vec<SiteInfo>, ServerFnError> {
     let repo = Repository::new(server_pool()?);
     let sites = repo
         .list_sites()
-        .await
-        .map_err(|e| ServerFnError::new(format!("{e}")))?;
+        .await?;
     Ok(sites
         .into_iter()
         .map(|s| SiteInfo {
@@ -117,8 +116,7 @@ pub async fn update_site_url(
         Some(api_url.trim().to_string())
     };
     repo.update_site_url(id, &url, api_url_opt.as_deref())
-        .await
-        .map_err(|e| ServerFnError::new(format!("{e}")))?;
+        .await?;
     refresh_site_registry_best_effort(&server_context()?).await;
     get_site_info(id).await
 }
@@ -154,8 +152,7 @@ pub async fn update_site(
         Some(api_url.trim().to_string())
     };
     repo.update_site_url(id, &url, api_url_opt.as_deref())
-        .await
-        .map_err(|e| ServerFnError::new(format!("{e}")))?;
+        .await?;
 
     // Update credentials (only if user provided new values; empty means keep existing)
     let cookie_trimmed = cookie.trim().to_string();
@@ -164,8 +161,7 @@ pub async fn update_site(
         // Load existing credentials to preserve unchanged fields
         let site_row = repo
             .get_site(id)
-            .await
-            .map_err(|e| ServerFnError::new(format!("{e}")))?
+            .await?
             .ok_or_else(|| ServerFnError::new("站点不存在"))?;
 
         let (encrypted_cookie, cookie_nonce) = if !cookie_trimmed.is_empty() {
@@ -194,8 +190,7 @@ pub async fn update_site(
             site_row.encrypted_token.as_deref(),
             site_row.token_nonce.as_deref(),
         )
-        .await
-        .map_err(|e| ServerFnError::new(format!("{e}")))?;
+        .await?;
     }
 
     refresh_site_registry_best_effort(&context).await;
@@ -257,7 +252,7 @@ pub async fn create_site(
             None,
         )
         .await
-        .map_err(|e| ServerFnError::new(format!("{e}")))
+        .map_err(Into::into)
     }
     .await;
     if let Err(error) = credential_result {
@@ -428,8 +423,7 @@ pub async fn delete_site(id: i64) -> Result<(), ServerFnError> {
     let context = server_context()?;
     Repository::new(context.pool.clone())
         .delete_site(id)
-        .await
-        .map_err(|e| ServerFnError::new(format!("{e}")))?;
+        .await?;
     refresh_site_registry_best_effort(&context).await;
     Ok(())
 }
@@ -443,8 +437,7 @@ pub async fn probe_site(id: i64) -> Result<ValidateSiteResult, ServerFnError> {
     let repo = Repository::new(context.pool.clone());
     let site = repo
         .get_site(id)
-        .await
-        .map_err(|e| ServerFnError::new(format!("{e}")))?
+        .await?
         .ok_or_else(|| ServerFnError::new("site not found"))?;
 
     let registry = context.site_registry.read().await.clone();
@@ -456,8 +449,7 @@ pub async fn probe_site(id: i64) -> Result<ValidateSiteResult, ServerFnError> {
     let status = probe.status_str().to_string();
     let detail = probe.to_json();
     repo.update_probe_status(id, &status, Some(&detail))
-        .await
-        .map_err(|e| ServerFnError::new(format!("{e}")))?;
+        .await?;
 
     let message = match status.as_str() {
         "ok" => "校验通过，站点连通正常".to_string(),
@@ -480,13 +472,11 @@ pub async fn get_site_detail(id: i64) -> Result<SiteDetailData, ServerFnError> {
     let repo = Repository::new(server_pool()?);
     let site = repo
         .get_site(id)
-        .await
-        .map_err(|e| ServerFnError::new(format!("{e}")))?
+        .await?
         .ok_or_else(|| ServerFnError::new("site not found"))?;
     let user_stats = repo
         .get_latest_stats_by_site(id)
-        .await
-        .map_err(|e| ServerFnError::new(format!("{e}")))?
+        .await?
         .map(|s| SiteUserInfo {
             site_id: s.site_id,
             site_name: site.name.clone(),

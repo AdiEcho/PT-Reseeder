@@ -76,6 +76,13 @@ pub enum SiteError {
     AuthFailed(String),
     #[error("not found: {0}")]
     NotFound(String),
+    /// HTTP transport failure with the original `reqwest::Error` preserved, so
+    /// callers can inspect `is_timeout()` / `status()` instead of parsing text.
+    ///
+    /// Used for bare `?` conversions. Call sites that add their own context
+    /// (path, status, torrent id) keep using `HttpError(String)`.
+    #[error("HTTP transport error: {0}")]
+    Http(#[from] reqwest::Error),
 }
 
 #[derive(Debug, Error)]
@@ -86,6 +93,10 @@ pub enum DownloaderError {
     AuthFailed(String),
     #[error("add torrent failed: {0}")]
     AddFailed(String),
+    /// Transport failure with the original `reqwest::Error` preserved.
+    /// See [`SiteError::Http`] for why this sits alongside the `String` variants.
+    #[error("downloader transport error: {0}")]
+    Transport(#[from] reqwest::Error),
 }
 
 #[derive(Debug, Error)]

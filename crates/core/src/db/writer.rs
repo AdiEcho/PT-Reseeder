@@ -105,14 +105,13 @@ impl DbWriter {
         batch_size: usize,
     ) -> Result<(), CoreError> {
         let options = SqliteConnectOptions::from_str(database_url)
-            .map_err(DbError::Sqlx)?
+            ?
             .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal)
             .busy_timeout(std::time::Duration::from_millis(5000))
             .foreign_keys(true);
 
         let mut conn = SqliteConnection::connect_with(&options)
-            .await
-            .map_err(DbError::Sqlx)?;
+            .await?;
 
         let mut buffer: Vec<WriteOp> = Vec::with_capacity(batch_size);
 
@@ -210,7 +209,7 @@ impl DbWriter {
         conn: &mut SqliteConnection,
         ops: &[WriteOp],
     ) -> Result<(), CoreError> {
-        let mut tx = conn.begin().await.map_err(DbError::Sqlx)?;
+        let mut tx = conn.begin().await?;
 
         for op in ops {
             match op {
@@ -234,8 +233,7 @@ impl DbWriter {
                     .bind(status)
                     .bind(error_reason)
                     .execute(&mut *tx)
-                    .await
-                    .map_err(DbError::Sqlx)?;
+                    .await?;
                 }
                 WriteOp::UpsertPiecesCache {
                     pieces_hash,
@@ -264,8 +262,7 @@ impl DbWriter {
                     .bind(total_size)
                     .bind(announce_url)
                     .execute(&mut *tx)
-                    .await
-                    .map_err(DbError::Sqlx)?;
+                    .await?;
                 }
                 WriteOp::InsertTaskLog {
                     task_id,
@@ -290,8 +287,7 @@ impl DbWriter {
                     .bind(duration_ms)
                     .bind(log_text)
                     .execute(&mut *tx)
-                    .await
-                    .map_err(DbError::Sqlx)?;
+                    .await?;
                 }
                 WriteOp::InsertUserStats {
                     site_id,
@@ -322,8 +318,7 @@ impl DbWriter {
                     .bind(seeding_size)
                     .bind(upload_time_seconds)
                     .execute(&mut *tx)
-                    .await
-                    .map_err(DbError::Sqlx)?;
+                    .await?;
                 }
                 WriteOp::BulkUpsertPiecesCache(items) => {
                     // Multi-row INSERT, chunked to stay under SQLite's 999
@@ -360,8 +355,7 @@ impl DbWriter {
                         );
                         qb.build()
                             .execute(&mut *tx)
-                            .await
-                            .map_err(DbError::Sqlx)?;
+                            .await?;
                     }
                 }
                 WriteOp::Flush(_) => {
@@ -370,7 +364,7 @@ impl DbWriter {
             }
         }
 
-        tx.commit().await.map_err(DbError::Sqlx)?;
+        tx.commit().await?;
         Ok(())
     }
 }

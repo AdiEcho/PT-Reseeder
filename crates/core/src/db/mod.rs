@@ -10,7 +10,7 @@ use crate::error::{CoreError, DbError};
 
 pub async fn init_db(database_url: &str) -> Result<SqlitePool, CoreError> {
     let options = SqliteConnectOptions::from_str(database_url)
-        .map_err(DbError::Sqlx)?
+        ?
         .create_if_missing(true)
         .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal)
         .busy_timeout(std::time::Duration::from_millis(5000))
@@ -23,8 +23,7 @@ pub async fn init_db(database_url: &str) -> Result<SqlitePool, CoreError> {
     let pool = SqlitePoolOptions::new()
         .max_connections(max_conns)
         .connect_with(options)
-        .await
-        .map_err(DbError::Sqlx)?;
+        .await?;
 
     // Run migrations
     sqlx::migrate!("../../migrations")

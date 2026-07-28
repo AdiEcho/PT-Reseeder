@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 
-use crate::error::{CoreError, DbError};
+use crate::error::CoreError;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SiteUserInfo {
@@ -61,8 +61,7 @@ impl UserInfoService {
              ORDER BY s.name",
         )
         .fetch_all(&self.pool)
-        .await
-        .map_err(DbError::Sqlx)?;
+        .await?;
 
         let mut total_uploaded: i64 = 0;
         let mut total_downloaded: i64 = 0;
@@ -117,8 +116,7 @@ impl UserInfoService {
         .bind(site_id)
         .bind(limit)
         .fetch_all(&self.pool)
-        .await
-        .map_err(DbError::Sqlx)?;
+        .await?;
 
         Ok(rows
             .into_iter()

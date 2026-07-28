@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 
-use crate::error::{CoreError, DbError};
+use crate::error::CoreError;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DashboardOverview {
@@ -45,35 +45,30 @@ impl ReseedStatsService {
         let running_tasks: (i64,) =
             sqlx::query_as("SELECT COUNT(*) FROM tasks WHERE status = 'running'")
                 .fetch_one(&self.pool)
-                .await
-                .map_err(DbError::Sqlx)?;
+                .await?;
 
         let today_success: (i64,) = sqlx::query_as(
             "SELECT COUNT(*) FROM reseed_history \
              WHERE status = 'success' AND created_at >= date('now')",
         )
         .fetch_one(&self.pool)
-        .await
-        .map_err(DbError::Sqlx)?;
+        .await?;
 
         let today_failed: (i64,) = sqlx::query_as(
             "SELECT COUNT(*) FROM reseed_history \
              WHERE status = 'failed' AND created_at >= date('now')",
         )
         .fetch_one(&self.pool)
-        .await
-        .map_err(DbError::Sqlx)?;
+        .await?;
 
         let total_sites: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM sites WHERE enabled = 1")
             .fetch_one(&self.pool)
-            .await
-            .map_err(DbError::Sqlx)?;
+            .await?;
 
         let tracked_torrents: (i64,) =
             sqlx::query_as("SELECT COUNT(DISTINCT pieces_hash) FROM pieces_cache")
                 .fetch_one(&self.pool)
-                .await
-                .map_err(DbError::Sqlx)?;
+                .await?;
 
         Ok(DashboardOverview {
             running_tasks: running_tasks.0,
@@ -98,8 +93,7 @@ impl ReseedStatsService {
              ORDER BY matched DESC",
         )
         .fetch_all(&self.pool)
-        .await
-        .map_err(DbError::Sqlx)?;
+        .await?;
 
         Ok(rows
             .into_iter()
@@ -135,7 +129,7 @@ impl ReseedStatsService {
             )
             .fetch_all(&self.pool)
             .await
-            .map_err(DbError::Sqlx)?
+            ?
         } else {
             sqlx::query_as(
                 "SELECT date(created_at) AS date, \
@@ -149,7 +143,7 @@ impl ReseedStatsService {
             .bind(days)
             .fetch_all(&self.pool)
             .await
-            .map_err(DbError::Sqlx)?
+            ?
         };
 
         Ok(rows

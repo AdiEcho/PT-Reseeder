@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use sqlx::SqlitePool;
 
 use super::models::*;
-use crate::error::{CoreError, DbError};
+use crate::error::CoreError;
 
 /// Keep well under SQLite's ~999 bind-variable limit for `IN (...)` queries.
 const SQLITE_IN_CHUNK: usize = 400;
@@ -33,8 +33,7 @@ impl Repository {
         sqlx::query(&format!("DELETE FROM {table} WHERE id = ?"))
             .bind(id)
             .execute(&self.pool)
-            .await
-            .map_err(DbError::Sqlx)?;
+            .await?;
         Ok(())
     }
 
@@ -46,8 +45,7 @@ impl Repository {
         let row = sqlx::query_as::<_, T>(&format!("SELECT * FROM {table} WHERE id = ?"))
             .bind(id)
             .fetch_optional(&self.pool)
-            .await
-            .map_err(DbError::Sqlx)?;
+            .await?;
         Ok(row)
     }
 
@@ -58,8 +56,7 @@ impl Repository {
     {
         let rows = sqlx::query_as::<_, T>(&format!("SELECT * FROM {table} ORDER BY id"))
             .fetch_all(&self.pool)
-            .await
-            .map_err(DbError::Sqlx)?;
+            .await?;
         Ok(rows)
     }
 
@@ -83,8 +80,7 @@ impl Repository {
         .bind(wrapped_dek)
         .bind(dek_nonce)
         .execute(&self.pool)
-        .await
-        .map_err(DbError::Sqlx)?;
+        .await?;
         Ok(result.last_insert_rowid())
     }
 
@@ -92,8 +88,7 @@ impl Repository {
         let user = sqlx::query_as::<_, User>("SELECT * FROM users WHERE username = ?")
             .bind(username)
             .fetch_optional(&self.pool)
-            .await
-            .map_err(DbError::Sqlx)?;
+            .await?;
         Ok(user)
     }
 
@@ -101,8 +96,7 @@ impl Repository {
         sqlx::query("UPDATE users SET last_login_at = datetime('now') WHERE id = ?")
             .bind(user_id)
             .execute(&self.pool)
-            .await
-            .map_err(DbError::Sqlx)?;
+            .await?;
         Ok(())
     }
 
@@ -124,8 +118,7 @@ impl Repository {
         .bind(dek_nonce)
         .bind(user_id)
         .execute(&self.pool)
-        .await
-        .map_err(DbError::Sqlx)?;
+        .await?;
         Ok(())
     }
 
@@ -143,8 +136,7 @@ impl Repository {
                 .bind(token_hash)
                 .bind(expires_at)
                 .execute(&self.pool)
-                .await
-                .map_err(DbError::Sqlx)?;
+                .await?;
         Ok(result.last_insert_rowid())
     }
 
@@ -155,8 +147,7 @@ impl Repository {
         let session = sqlx::query_as::<_, Session>("SELECT * FROM sessions WHERE token_hash = ?")
             .bind(token_hash)
             .fetch_optional(&self.pool)
-            .await
-            .map_err(DbError::Sqlx)?;
+            .await?;
         Ok(session)
     }
 
@@ -167,8 +158,7 @@ impl Repository {
     pub async fn cleanup_expired_sessions(&self) -> Result<u64, CoreError> {
         let result = sqlx::query("DELETE FROM sessions WHERE expires_at < datetime('now')")
             .execute(&self.pool)
-            .await
-            .map_err(DbError::Sqlx)?;
+            .await?;
         Ok(result.rows_affected())
     }
 
@@ -178,8 +168,7 @@ impl Repository {
         let row = sqlx::query_as::<_, AppConfigEntry>("SELECT * FROM app_config WHERE key = ?")
             .bind(key)
             .fetch_optional(&self.pool)
-            .await
-            .map_err(DbError::Sqlx)?;
+            .await?;
         Ok(row.map(|r| r.value))
     }
 
@@ -191,8 +180,7 @@ impl Repository {
         .bind(key)
         .bind(value)
         .execute(&self.pool)
-        .await
-        .map_err(DbError::Sqlx)?;
+        .await?;
         Ok(())
     }
 
@@ -216,8 +204,7 @@ impl Repository {
         .bind(adapter_type)
         .bind(auth_type)
         .execute(&self.pool)
-        .await
-        .map_err(DbError::Sqlx)?;
+        .await?;
         Ok(result.last_insert_rowid())
     }
 
@@ -258,8 +245,7 @@ impl Repository {
         .bind(token_nonce)
         .bind(id)
         .execute(&self.pool)
-        .await
-        .map_err(DbError::Sqlx)?;
+        .await?;
         Ok(())
     }
 
@@ -278,8 +264,7 @@ impl Repository {
         .bind(detail_json)
         .bind(id)
         .execute(&self.pool)
-        .await
-        .map_err(DbError::Sqlx)?;
+        .await?;
         Ok(())
     }
 
@@ -298,8 +283,7 @@ impl Repository {
         .bind(api_url)
         .bind(id)
         .execute(&self.pool)
-        .await
-        .map_err(DbError::Sqlx)?;
+        .await?;
         Ok(())
     }
 
@@ -334,8 +318,7 @@ impl Repository {
         .bind(stats.seeding_size)
         .bind(stats.upload_time_seconds)
         .execute(&self.pool)
-        .await
-        .map_err(DbError::Sqlx)?;
+        .await?;
         Ok(result.last_insert_rowid())
     }
 
@@ -348,8 +331,7 @@ impl Repository {
         )
         .bind(site_id)
         .fetch_optional(&self.pool)
-        .await
-        .map_err(DbError::Sqlx)?;
+        .await?;
         Ok(record)
     }
 
@@ -364,8 +346,7 @@ impl Repository {
         .bind(site_id)
         .bind(limit)
         .fetch_all(&self.pool)
-        .await
-        .map_err(DbError::Sqlx)?;
+        .await?;
         Ok(records)
     }
 
@@ -395,8 +376,7 @@ impl Repository {
         .bind(&row.tag)
         .bind(row.enabled)
         .execute(&self.pool)
-        .await
-        .map_err(DbError::Sqlx)?;
+        .await?;
         Ok(result.last_insert_rowid())
     }
 
@@ -435,8 +415,7 @@ impl Repository {
         .bind(row.enabled)
         .bind(row.id)
         .execute(&self.pool)
-        .await
-        .map_err(DbError::Sqlx)?;
+        .await?;
         Ok(())
     }
 
@@ -469,8 +448,7 @@ impl Repository {
         .bind(entry.total_size)
         .bind(&entry.announce_url)
         .execute(&self.pool)
-        .await
-        .map_err(DbError::Sqlx)?;
+        .await?;
         Ok(())
     }
 
@@ -483,8 +461,7 @@ impl Repository {
         )
         .bind(pieces_hash)
         .fetch_all(&self.pool)
-        .await
-        .map_err(DbError::Sqlx)?;
+        .await?;
         Ok(rows)
     }
 
@@ -496,8 +473,7 @@ impl Repository {
             sqlx::query_as::<_, PiecesCacheEntry>("SELECT * FROM pieces_cache WHERE info_hash = ?")
                 .bind(info_hash)
                 .fetch_optional(&self.pool)
-                .await
-                .map_err(DbError::Sqlx)?;
+                .await?;
         Ok(row)
     }
 
@@ -525,8 +501,7 @@ impl Repository {
             let rows: Vec<(String,)> = qb
                 .build_query_as()
                 .fetch_all(&self.pool)
-                .await
-                .map_err(DbError::Sqlx)?;
+                .await?;
             existing.extend(rows.into_iter().map(|r| r.0));
         }
 
@@ -558,8 +533,7 @@ impl Repository {
             let rows: Vec<(String, Option<String>)> = qb
                 .build_query_as()
                 .fetch_all(&self.pool)
-                .await
-                .map_err(DbError::Sqlx)?;
+                .await?;
 
             for (pieces_hash, announce_url) in rows {
                 if let Some(url) = announce_url {
@@ -603,8 +577,7 @@ impl Repository {
         .bind(status)
         .bind(error_reason)
         .execute(&self.pool)
-        .await
-        .map_err(DbError::Sqlx)?;
+        .await?;
         Ok(result.last_insert_rowid())
     }
 
@@ -620,8 +593,7 @@ impl Repository {
         .bind(pieces_hash)
         .bind(site_id)
         .fetch_all(&self.pool)
-        .await
-        .map_err(DbError::Sqlx)?;
+        .await?;
         Ok(rows)
     }
 
@@ -654,8 +626,7 @@ impl Repository {
             let rows: Vec<(String, Option<String>)> = qb
                 .build_query_as()
                 .fetch_all(&self.pool)
-                .await
-                .map_err(DbError::Sqlx)?;
+                .await?;
 
             for (pieces_hash, info_hash) in rows {
                 if let Some(ih) = info_hash {
@@ -681,8 +652,7 @@ impl Repository {
                 .bind(scan_mode)
                 .bind(downloader_id)
                 .execute(&self.pool)
-                .await
-                .map_err(DbError::Sqlx)?;
+                .await?;
         Ok(result.last_insert_rowid())
     }
 
@@ -712,8 +682,7 @@ impl Repository {
         .bind(enabled)
         .bind(id)
         .execute(&self.pool)
-        .await
-        .map_err(DbError::Sqlx)?;
+        .await?;
         Ok(())
     }
 
@@ -721,8 +690,7 @@ impl Repository {
         sqlx::query("UPDATE folders SET last_scanned_at = datetime('now') WHERE id = ?")
             .bind(id)
             .execute(&self.pool)
-            .await
-            .map_err(DbError::Sqlx)?;
+            .await?;
         Ok(())
     }
 
@@ -749,12 +717,11 @@ impl Repository {
         task_id: i64,
         child_ids: &[i64],
     ) -> Result<(), CoreError> {
-        let mut tx = self.pool.begin().await.map_err(DbError::Sqlx)?;
+        let mut tx = self.pool.begin().await?;
         sqlx::query(&format!("DELETE FROM {table} WHERE task_id = ?"))
             .bind(task_id)
             .execute(&mut *tx)
-            .await
-            .map_err(DbError::Sqlx)?;
+            .await?;
 
         if !child_ids.is_empty() {
             // Chunked to stay under SQLite's bound-variable limit (999); each
@@ -769,12 +736,11 @@ impl Repository {
                 });
                 qb.build()
                     .execute(&mut *tx)
-                    .await
-                    .map_err(DbError::Sqlx)?;
+                    .await?;
             }
         }
 
-        tx.commit().await.map_err(DbError::Sqlx)?;
+        tx.commit().await?;
         Ok(())
     }
 
@@ -790,8 +756,7 @@ impl Repository {
         ))
         .bind(task_id)
         .fetch_all(&self.pool)
-        .await
-        .map_err(DbError::Sqlx)?;
+        .await?;
         Ok(rows.into_iter().map(|r| r.0).collect())
     }
 
@@ -861,8 +826,7 @@ impl Repository {
         .bind(destination_downloader_id)
         .bind(config_json)
         .execute(&self.pool)
-        .await
-        .map_err(DbError::Sqlx)?;
+        .await?;
         Ok(result.last_insert_rowid())
     }
 
@@ -879,8 +843,7 @@ impl Repository {
             .bind(status)
             .bind(id)
             .execute(&self.pool)
-            .await
-            .map_err(DbError::Sqlx)?;
+            .await?;
         Ok(())
     }
 
@@ -889,8 +852,7 @@ impl Repository {
             "UPDATE tasks SET status = 'error', updated_at = datetime('now') WHERE status = 'running'",
         )
         .execute(&self.pool)
-        .await
-        .map_err(DbError::Sqlx)?;
+        .await?;
         Ok(result.rows_affected())
     }
 
@@ -901,8 +863,7 @@ impl Repository {
         )
         .bind(id)
         .execute(&self.pool)
-        .await
-        .map_err(DbError::Sqlx)?;
+        .await?;
         Ok(result.rows_affected() > 0)
     }
 
@@ -915,8 +876,7 @@ impl Repository {
             .bind(next_run_at)
             .bind(id)
             .execute(&self.pool)
-            .await
-            .map_err(DbError::Sqlx)?;
+            .await?;
         Ok(())
     }
 
@@ -935,8 +895,7 @@ impl Repository {
         .bind(next_run_at)
         .bind(id)
         .execute(&self.pool)
-        .await
-        .map_err(DbError::Sqlx)?;
+        .await?;
         Ok(())
     }
 
@@ -969,8 +928,7 @@ impl Repository {
         .bind(config_json)
         .bind(id)
         .execute(&self.pool)
-        .await
-        .map_err(|e| CoreError::Db(DbError::Sqlx(e)))?;
+        .await?;
         Ok(())
     }
 
@@ -1008,8 +966,7 @@ impl Repository {
         .bind(duration_ms)
         .bind(log_text)
         .execute(&self.pool)
-        .await
-        .map_err(DbError::Sqlx)?;
+        .await?;
         Ok(result.last_insert_rowid())
     }
 
@@ -1020,8 +977,7 @@ impl Repository {
         .bind(task_id)
         .bind(limit)
         .fetch_all(&self.pool)
-        .await
-        .map_err(DbError::Sqlx)?;
+        .await?;
         Ok(rows)
     }
 
@@ -1044,8 +1000,7 @@ impl Repository {
         .bind(target_site_id)
         .bind(raw_info_json)
         .execute(&self.pool)
-        .await
-        .map_err(DbError::Sqlx)?;
+        .await?;
         Ok(result.last_insert_rowid())
     }
 
@@ -1064,14 +1019,14 @@ impl Repository {
             .bind(status)
             .fetch_all(&self.pool)
             .await
-            .map_err(DbError::Sqlx)?
+            ?
         } else {
             sqlx::query_as::<_, RepostQueueEntry>(
                 "SELECT * FROM repost_queue ORDER BY created_at DESC",
             )
             .fetch_all(&self.pool)
             .await
-            .map_err(DbError::Sqlx)?
+            ?
         };
         Ok(rows)
     }
@@ -1095,8 +1050,7 @@ impl Repository {
         .bind(submitted_at)
         .bind(id)
         .execute(&self.pool)
-        .await
-        .map_err(DbError::Sqlx)?;
+        .await?;
         Ok(())
     }
 

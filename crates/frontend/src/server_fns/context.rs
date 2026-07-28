@@ -60,12 +60,16 @@ pub struct ServerFnContext {
 #[cfg(feature = "ssr")]
 use pt_reseeder_core::session::{generate_session_token, SESSION_COOKIE_NAME};
 
-/// Borrow the raw `Cookie:` header value, as `resolve_session` expects it.
+/// Borrow every `Cookie:` header value, as `resolve_session` expects them.
+///
+/// `get_all`, not `get`: a request can carry several `Cookie` headers and the
+/// session token may be in any of them.
 #[cfg(feature = "ssr")]
-fn cookie_header(headers: &axum::http::HeaderMap) -> Option<&str> {
+fn cookie_headers(headers: &axum::http::HeaderMap) -> impl Iterator<Item = &str> {
     headers
-        .get(axum::http::header::COOKIE)
-        .and_then(|v| v.to_str().ok())
+        .get_all(axum::http::header::COOKIE)
+        .into_iter()
+        .filter_map(|v| v.to_str().ok())
 }
 
 #[cfg(feature = "ssr")]

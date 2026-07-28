@@ -33,12 +33,16 @@ pub async fn logout() -> Result<(), ServerFnError> {
     let context = server_context()?;
     let headers: HeaderMap = leptos_axum::extract().await?;
     let repo = Repository::new(context.pool.clone());
-    // Only the session id is needed here. Every other outcome is a no-op: the
-    // removal cookie goes out unconditionally, so a caller with no (or a broken)
-    // session still ends up logged out client-side.
-    if let SessionOutcome::Valid(session) =
-        resolve_session(&repo, cookie_header(&headers)).await
-    {
+    // Only the session id is needed here; every other outcome is a no-op, and the
+    // removal cookie below is sent regardless of what was found.
+    //
+    // Note this is not reachable without a live session: `logout` is absent from
+    // `PUBLIC_SERVER_FNS`, so `guard_server_fns` answers 401 before this body runs.
+    // A user whose session already expired server-side therefore keeps the stale
+    // cookie until the next successful login overwrites it — pre-existing
+    // behaviour, not something this refactor changed. `nav.rs` ignores the result
+    // and navigates to /login either way, so the UI still recovers.
+    if let SessionOutcome::Valid(session) = resolve_session(&repo, cookie_headers(&headers)).await {
         let _ = repo.delete_session(session.id).await;
     }
     append_set_cookie(&build_removal_cookie(context.cookie_secure))?;
@@ -60,7 +64,7 @@ pub async fn get_current_user() -> Result<Option<UserInfo>, ServerFnError> {
     let headers: HeaderMap = leptos_axum::extract().await?;
     let pool = server_pool()?;
     let repo = Repository::new(pool.clone());
-    let session = match resolve_session(&repo, cookie_header(&headers)).await {
+    let session = match resolve_session(&repo, cookie_headers(&headers)).await {
         SessionOutcome::Valid(session) => session,
         // Not an error: this endpoint is public and answers "who am I" with None
         // when there is no live session. Returning Err would pop an error toast

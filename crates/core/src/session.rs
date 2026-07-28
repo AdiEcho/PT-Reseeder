@@ -60,12 +60,52 @@ pub fn hash_token(raw_hex: &str) -> Option<Vec<u8>> {
     Some(hash.to_vec())
 }
 
-/// Extract the session token value out of a raw `Cookie:` header.
-pub fn token_from_cookie_header(cookie_header: &str) -> Option<&str> {
-    cookie_header
-        .split(';')
+/// Extract the session token out of `Cookie:` header values.
+///
+/// Takes an iterator because a request may legitimately carry more than one
+/// `Cookie` header — RFC 6265 has browsers send one, but reverse proxies and
+/// non-browser clients do append their own, and the token can be in any of them.
+///
+/// Values are unquoted and percent-decoded, matching what `CookieJar` did before
+/// this logic moved into core: a proxy that normalises the cookie to
+/// `name="value"` form must still authenticate.
+pub fn token_from_cookie_headers<'a>(
+    headers: impl IntoIterator<Item = &'a str>,
+) -> Option<String> {
+    headers
+        .into_iter()
+        .flat_map(|header| header.split(';'))
         .filter_map(|part| part.trim().split_once('='))
-        .find_map(|(name, value)| (name == SESSION_COOKIE_NAME).then_some(value))
+        .find(|(name, _)| *name == SESSION_COOKIE_NAME)
+        .map(|(_, value)| decode_cookie_value(value))
+}
+
+/// Strip surrounding double quotes and percent-decode a cookie value.
+fn decode_cookie_value(value: &str) -> String {
+    let unquoted = value
+        .strip_prefix('"')
+        .and_then(|v| v.strip_suffix('"'))
+        .unwrap_or(value);
+
+    let bytes = unquoted.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            let hi = (bytes[i + 1] as char).to_digit(16);
+            let lo = (bytes[i + 2] as char).to_digit(16);
+            if let (Some(hi), Some(lo)) = (hi, lo) {
+                out.push((hi * 16 + lo) as u8);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    // A session token is hex, so any non-UTF-8 result cannot be a real token;
+    // falling back to the raw text lets `hash_token` reject it as malformed.
+    String::from_utf8(out).unwrap_or_else(|_| unquoted.to_string())
 }
 
 /// Outcome of resolving a session cookie against the database.
@@ -85,19 +125,19 @@ pub enum SessionOutcome {
     Failed(CoreError),
 }
 
-/// Resolve a raw `Cookie:` header into a session.
+/// Resolve the `Cookie:` headers of a request into a session.
 ///
 /// Expired sessions are always deleted before returning `Unauthenticated`. That
 /// used to differ per call site — the WebSocket path left stale rows behind
-/// while the other three cleaned up (AC-2.3).
-pub async fn resolve_session(repo: &Repository, cookie_header: Option<&str>) -> SessionOutcome {
-    let Some(header) = cookie_header else {
+/// while the other four cleaned up (AC-2.3).
+pub async fn resolve_session<'a>(
+    repo: &Repository,
+    cookie_headers: impl IntoIterator<Item = &'a str>,
+) -> SessionOutcome {
+    let Some(raw_token) = token_from_cookie_headers(cookie_headers) else {
         return SessionOutcome::Unauthenticated;
     };
-    let Some(raw_token) = token_from_cookie_header(header) else {
-        return SessionOutcome::Unauthenticated;
-    };
-    let Some(token_hash) = hash_token(raw_token) else {
+    let Some(token_hash) = hash_token(&raw_token) else {
         return SessionOutcome::Unauthenticated;
     };
     let session = match repo.find_session_by_hash(&token_hash).await {

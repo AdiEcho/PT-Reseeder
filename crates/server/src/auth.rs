@@ -25,10 +25,13 @@ pub async fn resolve_session_from_headers(
     state: &AppState,
     headers: &axum::http::HeaderMap,
 ) -> Result<Session, StatusCode> {
-    let cookie_header = headers
-        .get(axum::http::header::COOKIE)
-        .and_then(|v| v.to_str().ok());
-    match resolve_session(&state.inner.repo, cookie_header).await {
+    // `get_all`, not `get`: a request can carry several `Cookie` headers (proxies
+    // append their own) and the session token may be in any of them.
+    let cookie_headers = headers
+        .get_all(axum::http::header::COOKIE)
+        .into_iter()
+        .filter_map(|v| v.to_str().ok());
+    match resolve_session(&state.inner.repo, cookie_headers).await {
         SessionOutcome::Valid(session) => Ok(session),
         SessionOutcome::Unauthenticated => Err(StatusCode::UNAUTHORIZED),
         SessionOutcome::Failed(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),

@@ -187,7 +187,7 @@ impl GazelleAdapter {
             .get(&url)
             .send()
             .await
-            .map_err(|e| SiteError::HttpError(e.to_string()))?;
+            .map_err(SiteError::from)?;
 
         let status = resp.status();
         if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
@@ -203,7 +203,7 @@ impl GazelleAdapter {
         let body = resp
             .text()
             .await
-            .map_err(|e| SiteError::HttpError(e.to_string()))?;
+            .map_err(SiteError::from)?;
 
         let api_resp: GazelleApiResponse<T> = serde_json::from_str(&body)
             .map_err(|e| SiteError::ParseError(format!("failed to parse gazelle response: {e}")))?;
@@ -379,7 +379,7 @@ impl UserInfoCapable for GazelleAdapter {
             .get(&url)
             .send()
             .await
-            .map_err(|e| SiteError::HttpError(e.to_string()))?;
+            .map_err(SiteError::from)?;
 
         if !resp.status().is_success() {
             return Err(
@@ -390,7 +390,7 @@ impl UserInfoCapable for GazelleAdapter {
         let body = resp
             .text()
             .await
-            .map_err(|e| SiteError::HttpError(e.to_string()))?;
+            .map_err(SiteError::from)?;
 
         // Look for passkey/torrent_pass in the page
         let re = regex_lite::Regex::new(r"torrent_pass=([a-f0-9]{32,64})").ok();
@@ -517,7 +517,7 @@ impl RepostCapable for GazelleAdapter {
             let part = reqwest::multipart::Part::bytes(data.clone())
                 .file_name("torrent.torrent")
                 .mime_str("application/x-bittorrent")
-                .map_err(|e| SiteError::HttpError(e.to_string()))?;
+                .map_err(SiteError::from)?;
             form = form.part("file_input", part);
         }
 
@@ -527,14 +527,14 @@ impl RepostCapable for GazelleAdapter {
             .multipart(form)
             .send()
             .await
-            .map_err(|e| SiteError::HttpError(e.to_string()))?;
+            .map_err(SiteError::from)?;
 
         let final_url = resp.url().to_string();
         let status = resp.status();
         let _body = resp
             .text()
             .await
-            .map_err(|e| SiteError::HttpError(e.to_string()))?;
+            .map_err(SiteError::from)?;
 
         // Gazelle redirects to the torrent page on success
         if final_url.contains("torrents.php") && final_url.contains("torrentid=") {

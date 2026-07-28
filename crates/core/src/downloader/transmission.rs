@@ -196,7 +196,7 @@ impl TransmissionClient {
 
         req.send().await.map_err(|e| {
             error!(host = %self.host, port = %self.port, "failed to send RPC request to Transmission: {}", e);
-            CoreError::Downloader(DownloaderError::ConnectionFailed(e.to_string()))
+            CoreError::Downloader(DownloaderError::Transport(e))
         })
     }
 
@@ -220,7 +220,7 @@ impl TransmissionClient {
         let rpc_resp: RpcResponse = resp
             .json()
             .await
-            .map_err(|e| CoreError::Downloader(DownloaderError::ConnectionFailed(e.to_string())))?;
+            .map_err(DownloaderError::from)?;
 
         if rpc_resp.result != "success" {
             return Err(CoreError::Downloader(DownloaderError::ConnectionFailed(

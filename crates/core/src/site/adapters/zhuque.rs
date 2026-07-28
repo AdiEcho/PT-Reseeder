@@ -189,7 +189,7 @@ impl ZhuqueAdapter {
             .get(&url)
             .send()
             .await
-            .map_err(|e| SiteError::HttpError(e.to_string()))?;
+            .map_err(SiteError::from)?;
 
         let status = resp.status();
         if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
@@ -208,7 +208,7 @@ impl ZhuqueAdapter {
         let body = resp
             .text()
             .await
-            .map_err(|e| SiteError::HttpError(e.to_string()))?;
+            .map_err(SiteError::from)?;
 
         let api_resp: ZhuqueApiResponse<T> = serde_json::from_str(&body)
             .map_err(|e| SiteError::ParseError(format!("failed to parse zhuque response: {e}")))?;
@@ -242,7 +242,7 @@ impl ZhuqueAdapter {
             .json(body)
             .send()
             .await
-            .map_err(|e| SiteError::HttpError(e.to_string()))?;
+            .map_err(SiteError::from)?;
 
         let status = resp.status();
         if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
@@ -258,7 +258,7 @@ impl ZhuqueAdapter {
         let body_text = resp
             .text()
             .await
-            .map_err(|e| SiteError::HttpError(e.to_string()))?;
+            .map_err(SiteError::from)?;
 
         let api_resp: ZhuqueApiResponse<T> = serde_json::from_str(&body_text)
             .map_err(|e| SiteError::ParseError(format!("failed to parse zhuque response: {e}")))?;
@@ -541,7 +541,7 @@ impl RepostCapable for ZhuqueAdapter {
             let part = reqwest::multipart::Part::bytes(data.clone())
                 .file_name("torrent.torrent")
                 .mime_str("application/x-bittorrent")
-                .map_err(|e| SiteError::HttpError(e.to_string()))?;
+                .map_err(SiteError::from)?;
             form = form.part("torrent_file", part);
         }
 
@@ -551,13 +551,13 @@ impl RepostCapable for ZhuqueAdapter {
             .multipart(form)
             .send()
             .await
-            .map_err(|e| SiteError::HttpError(e.to_string()))?;
+            .map_err(SiteError::from)?;
 
         let status = resp.status();
         let body = resp
             .text()
             .await
-            .map_err(|e| SiteError::HttpError(e.to_string()))?;
+            .map_err(SiteError::from)?;
 
         // Try to parse response for torrent id
         if let Ok(api_resp) = serde_json::from_str::<ZhuqueApiResponse<serde_json::Value>>(&body) {

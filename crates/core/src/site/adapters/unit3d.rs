@@ -164,7 +164,7 @@ impl Unit3dAdapter {
             .get(&url)
             .send()
             .await
-            .map_err(|e| SiteError::HttpError(e.to_string()))?;
+            .map_err(SiteError::from)?;
 
         let status = resp.status();
         if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
@@ -180,9 +180,7 @@ impl Unit3dAdapter {
             return Err(SiteError::HttpError(format!("HTTP {status}")).into());
         }
 
-        resp.text()
-            .await
-            .map_err(|e| SiteError::HttpError(e.to_string()).into())
+        resp.text().await.map_err(|e| SiteError::from(e).into())
     }
 }
 
@@ -442,7 +440,7 @@ impl RepostCapable for Unit3dAdapter {
             let part = reqwest::multipart::Part::bytes(data.clone())
                 .file_name("torrent.torrent")
                 .mime_str("application/x-bittorrent")
-                .map_err(|e| SiteError::HttpError(e.to_string()))?;
+                .map_err(SiteError::from)?;
             form = form.part("torrent", part);
         }
 
@@ -452,7 +450,7 @@ impl RepostCapable for Unit3dAdapter {
             .multipart(form)
             .send()
             .await
-            .map_err(|e| SiteError::HttpError(e.to_string()))?;
+            .map_err(SiteError::from)?;
 
         let status = resp.status();
         if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
@@ -465,7 +463,7 @@ impl RepostCapable for Unit3dAdapter {
         let body = resp
             .text()
             .await
-            .map_err(|e| SiteError::HttpError(e.to_string()))?;
+            .map_err(SiteError::from)?;
 
         // Unit3D returns the created torrent resource on success (HTTP 200/201).
         if status.is_success() {

@@ -220,7 +220,7 @@ impl NexusPhpAdapter {
             .get(&self.base_url)
             .send()
             .await
-            .map_err(|e| SiteError::HttpError(e.to_string()))?;
+            .map_err(SiteError::from)?;
         if !resp.status().is_success() {
             return Err(
                 SiteError::HttpError(format!("HTTP {} resolving user id", resp.status())).into(),
@@ -229,7 +229,7 @@ impl NexusPhpAdapter {
         let body = resp
             .text()
             .await
-            .map_err(|e| SiteError::HttpError(e.to_string()))?;
+            .map_err(SiteError::from)?;
         let html = Html::parse_document(&body);
         let uid = extract_user_id(&html, &self.selectors).ok_or_else(|| -> CoreError {
             SiteError::AuthFailed("failed to resolve user_id from cookie session".into()).into()
@@ -261,7 +261,7 @@ impl NexusPhpAdapter {
             .header(REFERER, referer)
             .send()
             .await
-            .map_err(|e| SiteError::HttpError(e.to_string()))?;
+            .map_err(SiteError::from)?;
 
         if !response.status().is_success() {
             return Err(SiteError::HttpError(format!(
@@ -274,7 +274,7 @@ impl NexusPhpAdapter {
         let body = response
             .text()
             .await
-            .map_err(|e| SiteError::HttpError(e.to_string()))?;
+            .map_err(SiteError::from)?;
         Ok(parse_seeding_size_summary(&body))
     }
 }
@@ -761,7 +761,7 @@ impl ReseedCapable for NexusPhpAdapter {
             .json(&body)
             .send()
             .await
-            .map_err(|e| SiteError::HttpError(e.to_string()))?;
+            .map_err(SiteError::from)?;
 
         let status = resp.status();
         let body = resp.text().await.map_err(|e| {
@@ -852,11 +852,11 @@ impl UserInfoCapable for NexusPhpAdapter {
                         .get(&self.base_url)
                         .send()
                         .await
-                        .map_err(|e| SiteError::HttpError(e.to_string()))?;
+                        .map_err(SiteError::from)?;
                     let body = resp
                         .text()
                         .await
-                        .map_err(|e| SiteError::HttpError(e.to_string()))?;
+                        .map_err(SiteError::from)?;
                     (uid.clone(), Html::parse_document(&body))
                 } else {
                     self.resolve_user_id_with_index().await?
@@ -891,7 +891,7 @@ impl UserInfoCapable for NexusPhpAdapter {
             .get(&url)
             .send()
             .await
-            .map_err(|e| SiteError::HttpError(e.to_string()))?;
+            .map_err(SiteError::from)?;
 
         if !resp.status().is_success() {
             return Err(
@@ -902,7 +902,7 @@ impl UserInfoCapable for NexusPhpAdapter {
         let body = resp
             .text()
             .await
-            .map_err(|e| SiteError::HttpError(e.to_string()))?;
+            .map_err(SiteError::from)?;
         let ajax_user_id = extract_seeding_ajax_user_id(&body);
         let (
             uploaded,
@@ -993,7 +993,7 @@ impl UserInfoCapable for NexusPhpAdapter {
             .get(&url)
             .send()
             .await
-            .map_err(|e| SiteError::HttpError(e.to_string()))?;
+            .map_err(SiteError::from)?;
 
         if !resp.status().is_success() {
             return Err(
@@ -1004,7 +1004,7 @@ impl UserInfoCapable for NexusPhpAdapter {
         let body = resp
             .text()
             .await
-            .map_err(|e| SiteError::HttpError(e.to_string()))?;
+            .map_err(SiteError::from)?;
         let html = Html::parse_document(&body);
 
         // Try input[name='passkey'] first
@@ -1055,7 +1055,7 @@ impl RepostCapable for NexusPhpAdapter {
             .get(&url)
             .send()
             .await
-            .map_err(|e| SiteError::HttpError(e.to_string()))?;
+            .map_err(SiteError::from)?;
 
         if !resp.status().is_success() {
             return Err(SiteError::HttpError(format!(
@@ -1068,7 +1068,7 @@ impl RepostCapable for NexusPhpAdapter {
         let body = resp
             .text()
             .await
-            .map_err(|e| SiteError::HttpError(e.to_string()))?;
+            .map_err(SiteError::from)?;
 
         let (
             name,
@@ -1243,7 +1243,7 @@ impl RepostCapable for NexusPhpAdapter {
             let part = reqwest::multipart::Part::bytes(data.clone())
                 .file_name("torrent.torrent")
                 .mime_str("application/x-bittorrent")
-                .map_err(|e| SiteError::HttpError(e.to_string()))?;
+                .map_err(SiteError::from)?;
             form = form.part("file", part);
         }
 
@@ -1253,14 +1253,14 @@ impl RepostCapable for NexusPhpAdapter {
             .multipart(form)
             .send()
             .await
-            .map_err(|e| SiteError::HttpError(e.to_string()))?;
+            .map_err(SiteError::from)?;
 
         let final_url = resp.url().to_string();
         let status = resp.status();
         let body = resp
             .text()
             .await
-            .map_err(|e| SiteError::HttpError(e.to_string()))?;
+            .map_err(SiteError::from)?;
 
         // Success: redirected to details page or body contains success message
         if final_url.contains("details.php") {
@@ -1307,7 +1307,7 @@ impl SearchCapable for NexusPhpAdapter {
             .get(&url)
             .send()
             .await
-            .map_err(|e| SiteError::HttpError(e.to_string()))?;
+            .map_err(SiteError::from)?;
 
         if !resp.status().is_success() {
             return Err(
@@ -1318,7 +1318,7 @@ impl SearchCapable for NexusPhpAdapter {
         let body = resp
             .text()
             .await
-            .map_err(|e| SiteError::HttpError(e.to_string()))?;
+            .map_err(SiteError::from)?;
         let html = Html::parse_document(&body);
 
         let row_sel = Selector::parse("table.torrents tr:not(:first-child)").map_err(|_| {

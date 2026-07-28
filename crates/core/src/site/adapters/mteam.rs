@@ -473,7 +473,7 @@ impl UserInfoCapable for MTeamAdapter {
         let body = resp
             .text()
             .await
-            .map_err(|e| SiteError::HttpError(e.to_string()))?;
+            .map_err(SiteError::from)?;
 
         // Try to find passkey in the JSON response
         if let Ok(json) = serde_json::from_str::<serde_json::Value>(&body) {
@@ -629,7 +629,7 @@ impl RepostCapable for MTeamAdapter {
             let part = reqwest::multipart::Part::bytes(data.clone())
                 .file_name("torrent.torrent")
                 .mime_str("application/x-bittorrent")
-                .map_err(|e| SiteError::HttpError(e.to_string()))?;
+                .map_err(SiteError::from)?;
             form = form.part("file", part);
         }
 
@@ -639,7 +639,7 @@ impl RepostCapable for MTeamAdapter {
             .multipart(form)
             .send()
             .await
-            .map_err(|e| SiteError::HttpError(e.to_string()))?;
+            .map_err(SiteError::from)?;
 
         let status = resp.status();
         if status.as_u16() == 401 || status.as_u16() == 403 {
@@ -652,7 +652,7 @@ impl RepostCapable for MTeamAdapter {
         let body = resp
             .text()
             .await
-            .map_err(|e| SiteError::HttpError(e.to_string()))?;
+            .map_err(SiteError::from)?;
 
         // Parse to check for success
         let api_resp: MTeamApiResponse<UploadResult> = serde_json::from_str(&body)

@@ -29,6 +29,42 @@ pub fn is_session_expired(expires_at: &str) -> bool {
     expires_at <= format_sqlite_utc(now).as_str()
 }
 
+/// Name of the session cookie. Single source of truth for both the server
+/// middleware and the Leptos server functions — changing this value logs out
+/// every existing session.
+pub const SESSION_COOKIE_NAME: &str = "pt_reseeder_session";
+
+/// Generate a new session token. Returns `(raw_token_hex, token_hash_bytes)`.
+pub fn generate_session_token() -> (String, Vec<u8>) {
+    use rand::RngCore;
+    use sha2::{Digest, Sha256};
+
+    let mut raw = [0u8; 32];
+    rand::thread_rng().fill_bytes(&mut raw);
+    let hash = Sha256::digest(raw);
+    (hex::encode(raw), hash.to_vec())
+}
+
+/// Hash a raw token hex string to get the token hash bytes for DB lookup.
+///
+/// The hash is taken over the *decoded* bytes, not the hex text. Hashing the
+/// hex string instead would invalidate every stored session.
+pub fn hash_token(raw_hex: &str) -> Option<Vec<u8>> {
+    use sha2::{Digest, Sha256};
+
+    let raw_bytes = hex::decode(raw_hex).ok()?;
+    let hash = Sha256::digest(&raw_bytes);
+    Some(hash.to_vec())
+}
+
+/// Extract the session token value out of a raw `Cookie:` header.
+pub fn token_from_cookie_header(cookie_header: &str) -> Option<&str> {
+    cookie_header
+        .split(';')
+        .filter_map(|part| part.trim().split_once('='))
+        .find_map(|(name, value)| (name == SESSION_COOKIE_NAME).then_some(value))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

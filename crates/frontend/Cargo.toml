@@ -25,9 +25,8 @@ chrono = { workspace = true, optional = true }
 leptos_axum = { workspace = true, optional = true }
 axum = { workspace = true, optional = true }
 axum-extra = { workspace = true, optional = true }
-rand = { version = "0.8", optional = true }
-sha2 = { version = "0.10", optional = true }
-hex = { version = "0.4", optional = true }
+# rand / sha2 / hex dropped in B5-S1: the session token helpers that used them
+# moved to pt-reseeder-core.
 time = { version = "0.3", optional = true }
 tokio = { workspace = true, optional = true }
 
@@ -44,9 +43,6 @@ ssr = [
     "dep:leptos_axum",
     "dep:axum",
     "dep:axum-extra",
-    "dep:rand",
-    "dep:sha2",
-    "dep:hex",
     "dep:time",
     "dep:tokio",
 ]

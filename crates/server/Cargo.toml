@@ -28,9 +28,8 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 chrono = { workspace = true }
 sqlx = { workspace = true }
-rand = "0.8"
-sha2 = "0.10"
-hex = "0.4"
+# rand / sha2 / hex dropped in B5-S1: the session token helpers that used them
+# moved to pt-reseeder-core.
 time = "0.3"
 
 [features]

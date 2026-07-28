@@ -54,27 +54,12 @@ pub struct ServerFnContext {
     pub authenticated_user_id: Option<i64>,
 }
 
+// Cookie name and token hashing live in core so the server middleware and these
+// server functions cannot drift apart (a mismatch would silently log everyone
+// out). The cookie *builders* below stay local: they return `axum_extra` types
+// that core has no dependency on.
 #[cfg(feature = "ssr")]
-const SESSION_COOKIE_NAME: &str = "pt_reseeder_session";
-
-#[cfg(feature = "ssr")]
-fn generate_session_token() -> (String, Vec<u8>) {
-    use rand::RngCore;
-    use sha2::{Digest, Sha256};
-
-    let mut raw = [0u8; 32];
-    rand::thread_rng().fill_bytes(&mut raw);
-    let hash = Sha256::digest(raw);
-    (hex::encode(raw), hash.to_vec())
-}
-
-#[cfg(feature = "ssr")]
-fn hash_token(raw_hex: &str) -> Option<Vec<u8>> {
-    use sha2::{Digest, Sha256};
-
-    let raw_bytes = hex::decode(raw_hex).ok()?;
-    Some(Sha256::digest(raw_bytes).to_vec())
-}
+use pt_reseeder_core::session::{generate_session_token, hash_token, SESSION_COOKIE_NAME};
 
 #[cfg(feature = "ssr")]
 fn build_session_cookie(

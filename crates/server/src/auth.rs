@@ -6,27 +6,15 @@ use axum::{
     response::Response,
 };
 use axum_extra::extract::cookie::{Cookie, CookieJar, SameSite};
-use sha2::{Digest, Sha256};
 
-pub const SESSION_COOKIE_NAME: &str = "pt_reseeder_session";
-
-/// Generate a new session token. Returns (raw_token_hex, token_hash_bytes).
-pub fn generate_session_token() -> (String, Vec<u8>) {
-    use rand::RngCore;
-    let mut raw = [0u8; 32];
-    rand::thread_rng().fill_bytes(&mut raw);
-    let hash = Sha256::digest(raw);
-    (hex::encode(raw), hash.to_vec())
-}
-
-/// Hash a raw token hex string to get the token hash bytes for DB lookup.
-pub fn hash_token(raw_hex: &str) -> Option<Vec<u8>> {
-    let raw_bytes = hex::decode(raw_hex).ok()?;
-    let hash = Sha256::digest(&raw_bytes);
-    Some(hash.to_vec())
-}
+// Single source of truth lives in core so the Leptos server functions (which
+// cannot depend on this crate) share the exact same cookie name and hashing.
+pub use pt_reseeder_core::session::{generate_session_token, hash_token, SESSION_COOKIE_NAME};
 
 /// Build a session cookie with the given token value.
+///
+/// Stays here rather than in core: the return type is an `axum_extra` cookie,
+/// and core deliberately has no HTTP framework dependency.
 pub fn build_session_cookie(token: String, secure: bool) -> Cookie<'static> {
     Cookie::build((SESSION_COOKIE_NAME, token))
         .path("/")

@@ -17,6 +17,11 @@ argon2 = "0.5"
 aes-gcm = "0.10"
 rand = "0.8"
 sha1 = "0.10"
+# Re-added in B5-S1: the session token helpers moved here from the server and
+# frontend crates, and they hash with SHA-256. B1-S4 had removed sha2 when core
+# genuinely had no reference to it.
+sha2 = "0.10"
+hex = "0.4"
 zeroize = { version = "1.8", features = ["zeroize_derive"] }
 governor = "0.7"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "cookies", "multipart"] }

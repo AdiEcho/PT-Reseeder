@@ -4618,6 +4618,7 @@ dependencies = [
  "aes-gcm",
  "argon2",
  "async-trait",
+ "base64 0.22.1",
  "boa_engine",
  "chromiumoxide",
  "chrono",

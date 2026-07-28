@@ -532,21 +532,6 @@ fn collect_torrent_files(dir: &Path) -> Result<Vec<PathBuf>, CoreError> {
     Ok(result)
 }
 
-/// Build the announce URL set for a given pieces_hash from the cache.
-pub async fn get_cached_announce_urls(
-    repo: &Repository,
-    pieces_hash: &str,
-) -> Result<HashSet<String>, CoreError> {
-    let entries = repo.find_by_pieces_hash(pieces_hash).await?;
-    let mut urls = HashSet::new();
-    for entry in entries {
-        if let Some(url) = entry.announce_url {
-            urls.insert(url);
-        }
-    }
-    Ok(urls)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1,19 +1,16 @@
-//! Three-layer filter logic for the reseed engine.
+//! Filter helpers for the reseed engine.
 //!
 //! Filter 1: Tracker pre-filter — if any cached variant of this pieces_hash
 //!   has an announce URL matching the target site, skip (already seeding there).
 //!
-//! Filter 2: History pre-filter — if reseed_history shows a successful entry
-//!   for this pieces_hash + target site, skip.
+//! Filter 3: Info-hash dedup — superseded in production by the atomic
+//!   placeholder insert in `adder.rs`; see `filter_by_existing_hash`.
 //!
-//! Filter 3: Info-hash dedup at add time — if the destination downloader
-//!   already has this info_hash, skip and cache it.
+//! The history pre-filter that used to sit between these two was removed in B6 as
+//! dead code: nothing in the workspace called it, and the engine no longer
+//! consults `reseed_history` when deciding what to skip.
 
 use std::collections::HashSet;
-
-use crate::db::repo::Repository;
-use crate::error::CoreError;
-use crate::site::models::SiteId;
 
 /// Filter 1: Check if any cached torrent with this pieces_hash already has
 /// an announce URL belonging to the target site.
@@ -29,25 +26,12 @@ pub fn filter_by_tracker(cached_announce_urls: &HashSet<String>, site_base_url: 
     false
 }
 
-/// Filter 2: Check reseed_history for a prior successful add for this
-/// pieces_hash + site_id, but only skip if that successful info_hash is still
-/// present in the current source scan or destination downloader.
-pub async fn filter_by_history(
-    repo: &Repository,
-    pieces_hash: &str,
-    site_id: SiteId,
-    present_info_hashes: &HashSet<String>,
-) -> Result<bool, CoreError> {
-    let history = repo.find_reseed_history(pieces_hash, site_id.0).await?;
-    Ok(history.iter().any(|h| {
-        h.status == "success"
-            && h.info_hash
-                .as_deref()
-                .is_some_and(|info_hash| present_info_hashes.contains(info_hash))
-    }))
-}
-
 /// Filter 3: Check if the destination downloader already has this info_hash.
+///
+/// Superseded in production by the atomic placeholder insert in
+/// `adder.rs`, which closes the race this check left open. Kept because its three
+/// tests pin the hash-comparison semantics (exact match, case sensitivity, empty
+/// set) that the replacement still relies on.
 pub fn filter_by_existing_hash(dest_hashes: &HashSet<String>, info_hash: &str) -> bool {
     dest_hashes.contains(info_hash)
 }

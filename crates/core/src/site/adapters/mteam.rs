@@ -187,19 +187,25 @@ impl MTeamAdapter {
             .ok_or_else(|| SiteError::AuthFailed("no API token configured".into()).into())
     }
 
-    /// Send a POST request with a JSON body and parse the typed API response.
-    async fn api_post<T: serde::de::DeserializeOwned + Default>(
+    /// Send an API request and parse the typed response.
+    ///
+    /// `body` is `Some` only for POST. GET must pass `None` rather than an empty
+    /// value — attaching a JSON body would add a `Content-Type: application/json`
+    /// header and change the request's shape on the wire.
+    async fn api_request<T: serde::de::DeserializeOwned + Default>(
         &self,
+        method: reqwest::Method,
         path: &str,
-        body: &serde_json::Value,
+        body: Option<&serde_json::Value>,
     ) -> Result<T, CoreError> {
         let url = format!("{}{}", self.base_url, path);
-        debug!(site = %self.name, path, "POST API request");
+        debug!(site = %self.name, path, method = %method, "API request");
 
-        let resp = self
-            .client
-            .post(&url)
-            .json(body)
+        let mut req = self.client.request(method, &url);
+        if let Some(body) = body {
+            req = req.json(body);
+        }
+        let resp = req
             .send()
             .await
             .map_err(|e| SiteError::HttpError(format!("request to {path} failed: {e}")))?;
@@ -224,52 +230,6 @@ impl MTeamAdapter {
         })?;
 
         // MTeam uses code "0" or "SUCCESS" for success
-        if let Some(ref code) = api_resp.code {
-            if code != "0" && code.to_uppercase() != "SUCCESS" {
-                let msg = api_resp.message.unwrap_or_else(|| code.clone());
-                return Err(SiteError::HttpError(format!("API error from {path}: {msg}")).into());
-            }
-        }
-
-        api_resp.data.ok_or_else(|| {
-            SiteError::ParseError(format!("empty data in response from {path}")).into()
-        })
-    }
-
-    /// Send a GET request and parse the typed API response.
-    async fn api_get<T: serde::de::DeserializeOwned + Default>(
-        &self,
-        path: &str,
-    ) -> Result<T, CoreError> {
-        let url = format!("{}{}", self.base_url, path);
-        debug!(site = %self.name, path, "GET API request");
-
-        let resp = self
-            .client
-            .get(&url)
-            .send()
-            .await
-            .map_err(|e| SiteError::HttpError(format!("request to {path} failed: {e}")))?;
-
-        let status = resp.status();
-        if status.as_u16() == 429 {
-            warn!(site = %self.name, path, "rate limited by API");
-            return Err(SiteError::RateLimited.into());
-        }
-        if status.as_u16() == 401 || status.as_u16() == 403 {
-            return Err(SiteError::AuthFailed(format!(
-                "HTTP {status} from {path} (token=[REDACTED])"
-            ))
-            .into());
-        }
-        if !status.is_success() {
-            return Err(SiteError::HttpError(format!("HTTP {status} from {path}")).into());
-        }
-
-        let api_resp: MTeamApiResponse<T> = resp.json().await.map_err(|e| {
-            SiteError::ParseError(format!("failed to parse response from {path}: {e}"))
-        })?;
-
         if let Some(ref code) = api_resp.code {
             if code != "0" && code.to_uppercase() != "SUCCESS" {
                 let msg = api_resp.message.unwrap_or_else(|| code.clone());
@@ -341,7 +301,11 @@ impl ReseedCapable for MTeamAdapter {
         });
 
         let parsed: PiecesHashData = self
-            .api_post("/api/torrent/queryByPiecesHash", &body)
+            .api_request(
+                reqwest::Method::POST,
+                "/api/torrent/queryByPiecesHash",
+                Some(&body),
+            )
             .await?;
 
         debug!(
@@ -389,7 +353,11 @@ impl UserInfoCapable for MTeamAdapter {
         debug!(site = %self.name, "fetching user profile via API (token=[REDACTED])");
 
         let profile: ProfileData = self
-            .api_post("/api/member/profile", &serde_json::json!({}))
+            .api_request(
+                reqwest::Method::POST,
+                "/api/member/profile",
+                Some(&serde_json::json!({})),
+            )
             .await?;
 
         let (uploaded, downloaded, ratio, bonus, seeding_count, leeching_count, seeding_size) =
@@ -507,7 +475,9 @@ impl RepostCapable for MTeamAdapter {
         );
 
         let path = format!("/api/torrent/detail?id={}", torrent_id);
-        let detail: TorrentDetail = self.api_get(&path).await?;
+        let detail: TorrentDetail = self
+            .api_request(reqwest::Method::GET, &path, None)
+            .await?;
 
         let name = detail.name.unwrap_or_default();
         let small_descr = detail.small_descr.unwrap_or_default();
@@ -697,7 +667,9 @@ impl SearchCapable for MTeamAdapter {
             "pageSize": 100,
         });
 
-        let parsed: SearchData = self.api_post("/api/torrent/search", &body).await?;
+        let parsed: SearchData = self
+            .api_request(reqwest::Method::POST, "/api/torrent/search", Some(&body))
+            .await?;
 
         let mut results: Vec<TorrentSearchResult> = parsed
             .data
@@ -753,7 +725,9 @@ impl MTeamAdapter {
         let token_body = serde_json::json!({});
         let path = format!("/api/torrent/genDlToken?id={}", torrent_id);
 
-        let token_data: DlTokenData = self.api_post(&path, &token_body).await?;
+        let token_data: DlTokenData = self
+            .api_request(reqwest::Method::POST, &path, Some(&token_body))
+            .await?;
 
         let download_url = token_data
             .download_url

@@ -1111,23 +1111,23 @@ impl RepostCapable for NexusPhpAdapter {
 
             // Category fields - extract from select elements or text cells
             let torrent_type =
-                extract_selected_option(&html, "select[name='type'] option[selected]")
+                extract_by_selector(&html, "select[name='type'] option[selected]")
                     .or_else(|| extract_by_selector(&html, "span#type"))
                     .unwrap_or_default();
             let region =
-                extract_selected_option(&html, "select[name='source_sel'] option[selected]")
+                extract_by_selector(&html, "select[name='source_sel'] option[selected]")
                     .unwrap_or_default();
             let resolution =
-                extract_selected_option(&html, "select[name='standard_sel'] option[selected]")
+                extract_by_selector(&html, "select[name='standard_sel'] option[selected]")
                     .unwrap_or_default();
             let video_codec =
-                extract_selected_option(&html, "select[name='codec_sel'] option[selected]")
+                extract_by_selector(&html, "select[name='codec_sel'] option[selected]")
                     .unwrap_or_default();
             let audio_codec =
-                extract_selected_option(&html, "select[name='audiocodec_sel'] option[selected]")
+                extract_by_selector(&html, "select[name='audiocodec_sel'] option[selected]")
                     .unwrap_or_default();
             let medium =
-                extract_selected_option(&html, "select[name='medium_sel'] option[selected]")
+                extract_by_selector(&html, "select[name='medium_sel'] option[selected]")
                     .unwrap_or_default();
 
             (
@@ -1407,17 +1407,6 @@ impl SearchCapable for NexusPhpAdapter {
 // ---------------------------------------------------------------------------
 
 fn extract_by_selector(html: &Html, selector_str: &str) -> Option<String> {
-    let sel = Selector::parse(selector_str).ok()?;
-    let el = html.select(&sel).next()?;
-    let text: String = el.text().collect::<Vec<_>>().join("").trim().to_string();
-    if text.is_empty() {
-        None
-    } else {
-        Some(text)
-    }
-}
-
-fn extract_selected_option(html: &Html, selector_str: &str) -> Option<String> {
     let sel = Selector::parse(selector_str).ok()?;
     let el = html.select(&sel).next()?;
     let text: String = el.text().collect::<Vec<_>>().join("").trim().to_string();

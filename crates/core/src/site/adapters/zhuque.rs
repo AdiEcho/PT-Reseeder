@@ -164,18 +164,31 @@ impl ZhuqueAdapter {
         self.batch_size
     }
 
-    /// Make an authenticated GET request to the Zhuque REST API.
-    async fn api_get<T: serde::de::DeserializeOwned>(&self, path: &str) -> Result<T, CoreError> {
+    /// Make an authenticated request to the Zhuque REST API.
+    ///
+    /// `body` is `Some` only for POST; passing a body on GET would add a
+    /// `Content-Type: application/json` header and change the request on the wire.
+    ///
+    /// The two callers differed in two observable ways, both preserved here rather
+    /// than unified: only GET mapped 404 to `NotFound` (POST let it fall through to
+    /// `HttpError`), and the non-success message reads `from {path}` for GET but
+    /// `from POST {path}` for POST.
+    async fn api_request<T: serde::de::DeserializeOwned>(
+        &self,
+        method: reqwest::Method,
+        path: &str,
+        body: Option<&serde_json::Value>,
+    ) -> Result<T, CoreError> {
         let url = format!("{}{}", self.base_url, path);
+        let is_post = method == reqwest::Method::POST;
 
-        debug!(site = %self.name, path, "zhuque API GET request");
+        debug!(site = %self.name, path, method = %method, "zhuque API request");
 
-        let resp = self
-            .client
-            .get(&url)
-            .send()
-            .await
-            .map_err(SiteError::from)?;
+        let mut req = self.client.request(method, &url);
+        if let Some(body) = body {
+            req = req.json(body);
+        }
+        let resp = req.send().await.map_err(SiteError::from)?;
 
         let status = resp.status();
         if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
@@ -184,71 +197,23 @@ impl ZhuqueAdapter {
         if status == reqwest::StatusCode::FORBIDDEN || status == reqwest::StatusCode::UNAUTHORIZED {
             return Err(SiteError::AuthFailed(format!("HTTP {status}")).into());
         }
-        if status == reqwest::StatusCode::NOT_FOUND {
+        if status == reqwest::StatusCode::NOT_FOUND && !is_post {
             return Err(SiteError::NotFound(format!("GET {path}")).into());
         }
         if !status.is_success() {
-            return Err(SiteError::HttpError(format!("HTTP {status} from {path}")).into());
+            return Err(if is_post {
+                SiteError::HttpError(format!("HTTP {status} from POST {path}")).into()
+            } else {
+                CoreError::from(SiteError::HttpError(format!("HTTP {status} from {path}")))
+            });
         }
 
-        let body = resp
-            .text()
-            .await
-            .map_err(SiteError::from)?;
-
-        let api_resp: ZhuqueApiResponse<T> = serde_json::from_str(&body)
-            .map_err(|e| SiteError::ParseError(format!("failed to parse zhuque response: {e}")))?;
-
-        // code == 0 or code absent means success
-        if let Some(code) = api_resp.code {
-            if code != 0 {
-                let msg = api_resp.message.unwrap_or_default();
-                return Err(SiteError::HttpError(format!("API error code={code}: {msg}")).into());
-            }
-        }
-
-        api_resp
-            .data
-            .ok_or_else(|| SiteError::ParseError("API data field is null".into()).into())
-    }
-
-    /// Make an authenticated POST request with a JSON body to the Zhuque REST API.
-    async fn api_post_json<T: serde::de::DeserializeOwned>(
-        &self,
-        path: &str,
-        body: &serde_json::Value,
-    ) -> Result<T, CoreError> {
-        let url = format!("{}{}", self.base_url, path);
-
-        debug!(site = %self.name, path, "zhuque API POST request");
-
-        let resp = self
-            .client
-            .post(&url)
-            .json(body)
-            .send()
-            .await
-            .map_err(SiteError::from)?;
-
-        let status = resp.status();
-        if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
-            return Err(SiteError::RateLimited.into());
-        }
-        if status == reqwest::StatusCode::FORBIDDEN || status == reqwest::StatusCode::UNAUTHORIZED {
-            return Err(SiteError::AuthFailed(format!("HTTP {status}")).into());
-        }
-        if !status.is_success() {
-            return Err(SiteError::HttpError(format!("HTTP {status} from POST {path}")).into());
-        }
-
-        let body_text = resp
-            .text()
-            .await
-            .map_err(SiteError::from)?;
+        let body_text = resp.text().await.map_err(SiteError::from)?;
 
         let api_resp: ZhuqueApiResponse<T> = serde_json::from_str(&body_text)
             .map_err(|e| SiteError::ParseError(format!("failed to parse zhuque response: {e}")))?;
 
+        // code == 0 or code absent means success
         if let Some(code) = api_resp.code {
             if code != 0 {
                 let msg = api_resp.message.unwrap_or_default();
@@ -332,7 +297,11 @@ impl ReseedCapable for ZhuqueAdapter {
         });
 
         let matches: Vec<ZhuquePiecesHashMatch> = self
-            .api_post_json("/api/torrent/queryByHash", &body)
+            .api_request(
+                reqwest::Method::POST,
+                "/api/torrent/queryByHash",
+                Some(&body),
+            )
             .await?;
 
         debug!(
@@ -371,7 +340,9 @@ impl UserInfoCapable for ZhuqueAdapter {
 
         debug!(site = %self.name, "fetching user info via /api/user/me");
 
-        let profile: ZhuqueUserProfile = self.api_get("/api/user/me").await?;
+        let profile: ZhuqueUserProfile = self
+            .api_request(reqwest::Method::GET, "/api/user/me", None)
+            .await?;
 
         debug!(
             site = %self.name,
@@ -406,7 +377,9 @@ impl UserInfoCapable for ZhuqueAdapter {
         // Try fetching from user profile API
         debug!(site = %self.name, "attempting to fetch passkey from /api/user/me");
 
-        let profile: ZhuqueUserProfile = self.api_get("/api/user/me").await?;
+        let profile: ZhuqueUserProfile = self
+            .api_request(reqwest::Method::GET, "/api/user/me", None)
+            .await?;
 
         if let Some(ref pk) = profile.passkey {
             if !pk.is_empty() {
@@ -432,7 +405,9 @@ impl RepostCapable for ZhuqueAdapter {
         debug!(site = %self.name, torrent_id, "extracting torrent detail via /api/torrent/");
 
         let path = format!("/api/torrent/{}", torrent_id);
-        let detail: ZhuqueTorrentDetail = self.api_get(&path).await?;
+        let detail: ZhuqueTorrentDetail = self
+            .api_request(reqwest::Method::GET, &path, None)
+            .await?;
 
         let name = detail.name.clone();
         let small_descr = detail.small_descr.clone().unwrap_or_default();
@@ -574,7 +549,9 @@ impl SearchCapable for ZhuqueAdapter {
         let path = format!("/api/torrent/search?keyword={}", urlencoding::encode(query));
         debug!(site = %self.name, query, "searching torrents via /api/torrent/search");
 
-        let search_resp: ZhuqueSearchResponse = self.api_get(&path).await?;
+        let search_resp: ZhuqueSearchResponse = self
+            .api_request(reqwest::Method::GET, &path, None)
+            .await?;
 
         let mut results: Vec<TorrentSearchResult> = search_resp
             .torrents

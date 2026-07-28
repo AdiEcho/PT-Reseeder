@@ -1,3 +1,6 @@
+use crate::db::models::Session;
+use crate::db::repo::Repository;
+use crate::error::CoreError;
 use chrono::{DateTime, NaiveDateTime, Utc};
 
 /// Format a UTC timestamp the same way SQLite `datetime('now')` does.
@@ -63,6 +66,52 @@ pub fn token_from_cookie_header(cookie_header: &str) -> Option<&str> {
         .split(';')
         .filter_map(|part| part.trim().split_once('='))
         .find_map(|(name, value)| (name == SESSION_COOKIE_NAME).then_some(value))
+}
+
+/// Outcome of resolving a session cookie against the database.
+///
+/// Callers map this onto their own transport-level error (HTTP status, an empty
+/// "who am I" answer, …); the resolution logic itself stays transport-agnostic
+/// so the server middleware and the Leptos server functions can share it.
+#[derive(Debug)]
+pub enum SessionOutcome {
+    /// A live, unexpired session.
+    Valid(Session),
+    /// No cookie, a malformed token, or no matching row. Also returned for an
+    /// expired session, *after* the stale row has been deleted.
+    Unauthenticated,
+    /// The database lookup itself failed. Distinct from `Unauthenticated`
+    /// because a transient DB fault must not read as "logged out".
+    Failed(CoreError),
+}
+
+/// Resolve a raw `Cookie:` header into a session.
+///
+/// Expired sessions are always deleted before returning `Unauthenticated`. That
+/// used to differ per call site — the WebSocket path left stale rows behind
+/// while the other three cleaned up (AC-2.3).
+pub async fn resolve_session(repo: &Repository, cookie_header: Option<&str>) -> SessionOutcome {
+    let Some(header) = cookie_header else {
+        return SessionOutcome::Unauthenticated;
+    };
+    let Some(raw_token) = token_from_cookie_header(header) else {
+        return SessionOutcome::Unauthenticated;
+    };
+    let Some(token_hash) = hash_token(raw_token) else {
+        return SessionOutcome::Unauthenticated;
+    };
+    let session = match repo.find_session_by_hash(&token_hash).await {
+        Ok(Some(session)) => session,
+        Ok(None) => return SessionOutcome::Unauthenticated,
+        Err(e) => return SessionOutcome::Failed(e),
+    };
+    if is_session_expired(&session.expires_at) {
+        // Best-effort cleanup: a failed delete must not turn an expired session
+        // into a server error.
+        let _ = repo.delete_session(session.id).await;
+        return SessionOutcome::Unauthenticated;
+    }
+    SessionOutcome::Valid(session)
 }
 
 #[cfg(test)]

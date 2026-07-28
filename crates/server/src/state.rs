@@ -107,10 +107,7 @@ impl AppState {
     }
 
     /// Build a ServerFnContext for Leptos SSR / server functions.
-    pub fn server_fn_context(
-        &self,
-        authenticated_user_id: Option<i64>,
-    ) -> pt_reseeder_frontend::server_fns::ServerFnContext {
+    pub fn server_fn_context(&self) -> pt_reseeder_frontend::server_fns::ServerFnContext {
         let refresh_state = self.clone();
         let reconfigure_state = self.clone();
         let remove_state = self.clone();
@@ -154,7 +151,6 @@ impl AppState {
                         .map_err(|error| error.to_string())
                 })
             }),
-            authenticated_user_id,
         }
     }
 

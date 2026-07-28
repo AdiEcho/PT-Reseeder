@@ -5,7 +5,7 @@ use crate::ws;
 use axum::{
     body::Body,
     extract::State,
-    http::{header, HeaderMap, Method, Request, StatusCode},
+    http::{HeaderMap, Method, Request, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post},
     Router,
@@ -28,11 +28,23 @@ fn server_fn_name(path: &str) -> &str {
         .trim_end_matches(|c: char| c.is_ascii_digit())
 }
 
+/// Server functions that answer without a session.
+///
+/// These four are the pre-login surface: the landing page calls `has_user` and
+/// `get_current_user` before any session exists, and `login` / `register` are how
+/// a session gets created in the first place. Everything else is guarded.
+///
+/// Keep in sync with `crates/frontend/src/server_fns/auth.rs`. Renaming a server
+/// function without updating this list silently makes it require auth — the
+/// `include!`-based module layout offers no compile-time way to tie the two
+/// together (see plan erratum E6).
+pub const PUBLIC_SERVER_FNS: [&str; 4] = ["login", "register", "get_current_user", "has_user"];
+
 fn server_fn_requires_auth(path: &str) -> bool {
-    !matches!(
-        server_fn_name(path),
-        "login" | "register" | "get_current_user" | "has_user"
-    )
+    // Exact equality, matching the `matches!` this replaced. A prefix test here
+    // would let `login_v2` through — `allowlist_does_not_match_on_prefix` guards
+    // that.
+    !PUBLIC_SERVER_FNS.contains(&server_fn_name(path))
 }
 
 async fn validate_server_fn_request(
@@ -40,7 +52,7 @@ async fn validate_server_fn_request(
     method: &Method,
     path: &str,
     headers: &HeaderMap,
-) -> Result<Option<i64>, StatusCode> {
+) -> Result<(), StatusCode> {
     // No `X-PT-Reseeder` check here. Server functions are issued by the stock
     // Leptos browser client, which sends only `Content-Type` and `Accept`
     // (`server_fn::request::browser`), so requiring a custom header would reject
@@ -52,33 +64,15 @@ async fn validate_server_fn_request(
     // layer, because `pages/repost.rs` sends the header explicitly for those.
     let _ = method;
 
+    // MUST stay ahead of session resolution: `login` / `register` / `has_user` /
+    // `get_current_user` are the pre-login surface. Guarding them would make
+    // logging in require being logged in.
     if !server_fn_requires_auth(path) {
-        return Ok(None);
+        return Ok(());
     }
 
-    let cookie_header = headers
-        .get(header::COOKIE)
-        .and_then(|v| v.to_str().ok())
-        .ok_or(StatusCode::UNAUTHORIZED)?;
-    let token = cookie_header
-        .split(';')
-        .filter_map(|part| part.trim().split_once('='))
-        .find_map(|(name, value)| (name == crate::auth::SESSION_COOKIE_NAME).then_some(value))
-        .ok_or(StatusCode::UNAUTHORIZED)?;
-    let token_hash = crate::auth::hash_token(token).ok_or(StatusCode::UNAUTHORIZED)?;
-    let session = state
-        .inner
-        .repo
-        .find_session_by_hash(&token_hash)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-        .ok_or(StatusCode::UNAUTHORIZED)?;
-    if pt_reseeder_core::session::is_session_expired(&session.expires_at) {
-        let _ = state.inner.repo.delete_session(session.id).await;
-        return Err(StatusCode::UNAUTHORIZED);
-    }
-
-    Ok(Some(session.user_id))
+    crate::auth::resolve_session_from_headers(state, headers).await?;
+    Ok(())
 }
 
 fn provide_server_fn_context(context: pt_reseeder_frontend::server_fns::ServerFnContext) {
@@ -90,11 +84,10 @@ async fn server_fn_handler(State(state): State<AppState>, request: Request<Body>
     let method = request.method().clone();
     let path = request.uri().path().to_string();
     let headers = request.headers().clone();
-    let user_id = match validate_server_fn_request(&state, &method, &path, &headers).await {
-        Ok(user_id) => user_id,
-        Err(status) => return status.into_response(),
-    };
-    let context = state.server_fn_context(user_id);
+    if let Err(status) = validate_server_fn_request(&state, &method, &path, &headers).await {
+        return status.into_response();
+    }
+    let context = state.server_fn_context();
     leptos_axum::handle_server_fns_with_context(
         move || provide_server_fn_context(context.clone()),
         request,
@@ -201,7 +194,7 @@ pub fn build_router(state: AppState) -> Router {
             &state,
             routes,
             {
-                let context = state.server_fn_context(None);
+                let context = state.server_fn_context();
                 move || provide_server_fn_context(context.clone())
             },
             {

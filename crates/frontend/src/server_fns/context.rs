@@ -51,7 +51,6 @@ pub struct ServerFnContext {
     pub trigger_task_execution: std::sync::Arc<dyn Fn(i64, bool) + Send + Sync>,
     pub reconfigure_task_runtime: AsyncTaskHook,
     pub remove_task_runtime: AsyncTaskHook,
-    pub authenticated_user_id: Option<i64>,
 }
 
 // Cookie name and token hashing live in core so the server middleware and these
@@ -59,7 +58,15 @@ pub struct ServerFnContext {
 // out). The cookie *builders* below stay local: they return `axum_extra` types
 // that core has no dependency on.
 #[cfg(feature = "ssr")]
-use pt_reseeder_core::session::{generate_session_token, hash_token, SESSION_COOKIE_NAME};
+use pt_reseeder_core::session::{generate_session_token, SESSION_COOKIE_NAME};
+
+/// Borrow the raw `Cookie:` header value, as `resolve_session` expects it.
+#[cfg(feature = "ssr")]
+fn cookie_header(headers: &axum::http::HeaderMap) -> Option<&str> {
+    headers
+        .get(axum::http::header::COOKIE)
+        .and_then(|v| v.to_str().ok())
+}
 
 #[cfg(feature = "ssr")]
 fn build_session_cookie(

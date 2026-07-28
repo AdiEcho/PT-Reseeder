@@ -5,7 +5,9 @@ use axum::{
     middleware::Next,
     response::Response,
 };
-use axum_extra::extract::cookie::{Cookie, CookieJar, SameSite};
+use axum_extra::extract::cookie::{Cookie, SameSite};
+use pt_reseeder_core::db::models::Session;
+use pt_reseeder_core::session::{resolve_session, SessionOutcome};
 
 // Single source of truth lives in core so the Leptos server functions (which
 // cannot depend on this crate) share the exact same cookie name and hashing.
@@ -35,56 +37,54 @@ pub fn build_removal_cookie(secure: bool) -> Cookie<'static> {
         .build()
 }
 
-/// Auth middleware: checks session cookie, validates, injects user_id into request extensions.
+/// HTTP-layer wrapper around [`resolve_session`]: pull the cookie out of the
+/// request headers and map the outcome onto status codes.
+///
+/// `Failed` maps to 500, not 401 — a transient database fault must not look like
+/// a logged-out user, or the frontend would clear the session and bounce to the
+/// login page.
+pub async fn resolve_session_from_headers(
+    state: &AppState,
+    headers: &axum::http::HeaderMap,
+) -> Result<Session, StatusCode> {
+    let cookie_header = headers
+        .get(axum::http::header::COOKIE)
+        .and_then(|v| v.to_str().ok());
+    match resolve_session(&state.inner.repo, cookie_header).await {
+        SessionOutcome::Valid(session) => Ok(session),
+        SessionOutcome::Unauthenticated => Err(StatusCode::UNAUTHORIZED),
+        SessionOutcome::Failed(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
+    }
+}
+
+/// Auth middleware for the REST subtree: rejects a request without a live
+/// session.
 pub async fn require_auth(
     State(state): State<AppState>,
-    jar: CookieJar,
-    mut request: Request<axum::body::Body>,
+    request: Request<axum::body::Body>,
     next: Next,
 ) -> Result<Response, StatusCode> {
-    let cookie = jar
-        .get(SESSION_COOKIE_NAME)
-        .ok_or(StatusCode::UNAUTHORIZED)?;
-
-    let token_hash = hash_token(cookie.value()).ok_or(StatusCode::UNAUTHORIZED)?;
-
-    let session = state
-        .inner
-        .repo
-        .find_session_by_hash(&token_hash)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-        .ok_or(StatusCode::UNAUTHORIZED)?;
-
-    if pt_reseeder_core::session::is_session_expired(&session.expires_at) {
-        let _ = state.inner.repo.delete_session(session.id).await;
-        return Err(StatusCode::UNAUTHORIZED);
-    }
-
-    // Inject user_id into request extensions for downstream handlers
-    request.extensions_mut().insert(AuthenticatedUser {
-        user_id: session.user_id,
-    });
+    resolve_session_from_headers(&state, request.headers()).await?;
 
     Ok(next.run(request).await)
 }
 
-/// Extension type inserted by require_auth middleware.
-#[derive(Clone, Debug)]
-pub struct AuthenticatedUser {
-    pub user_id: i64,
-}
-
-/// CSRF middleware: all non-GET/HEAD/OPTIONS requests to /api/* must have X-PT-Reseeder: 1
+/// CSRF middleware: all non-GET/HEAD/OPTIONS requests to the /api subtree must
+/// carry `X-PT-Reseeder: 1`.
+///
+/// There is deliberately no `/api/` prefix test. This layer is applied to the
+/// `/api` subtree via `nest`, and `nest` strips the prefix before inner layers
+/// run — so `request.uri().path()` here reads `/repost/queue/1/review`, never
+/// `/api/repost/…`. The old `path.starts_with("/api/")` guard was therefore
+/// always false and the whole check silently never fired; the 401s that made it
+/// look alive came from `require_auth` further in.
 pub async fn csrf_check(
     request: Request<axum::body::Body>,
     next: Next,
 ) -> Result<Response, StatusCode> {
     let method = request.method().clone();
-    let path = request.uri().path().to_string();
 
-    if path.starts_with("/api/")
-        && !matches!(method, Method::GET | Method::HEAD | Method::OPTIONS)
+    if !matches!(method, Method::GET | Method::HEAD | Method::OPTIONS)
         && request.headers().get("X-PT-Reseeder").map(|v| v == "1") != Some(true)
     {
         return Err(StatusCode::FORBIDDEN);

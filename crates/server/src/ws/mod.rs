@@ -1,6 +1,5 @@
 pub mod events;
 
-use crate::auth::{hash_token, SESSION_COOKIE_NAME};
 use crate::state::AppState;
 use axum::{
     extract::{
@@ -22,52 +21,23 @@ async fn validate_ws_auth(
     state: &AppState,
     headers: &HeaderMap,
 ) -> Result<(), axum::http::StatusCode> {
-    // Validate Origin header for CSRF
-    if let Some(origin) = headers.get("origin") {
-        let origin_str = origin.to_str().unwrap_or("");
-        let bind = state.inner.config.server_bind;
-        let expected_origins = [
-            format!("http://127.0.0.1:{}", bind.port()),
-            format!("http://localhost:{}", bind.port()),
-        ];
-        if !expected_origins.iter().any(|o| origin_str == o) {
-            return Err(axum::http::StatusCode::FORBIDDEN);
-        }
-    }
-
-    // Validate session cookie from headers
-    let cookie_header = headers
-        .get("cookie")
+    // Origin is the *only* CSRF defence on this path: `csrf_check` is layered on
+    // the /api subtree, not /ws. An upgrade with no Origin header used to skip
+    // the check entirely; browsers always send Origin on a WS upgrade, so a
+    // missing one means a non-browser client — reject rather than wave through.
+    let origin = headers
+        .get("origin")
         .and_then(|v| v.to_str().ok())
-        .ok_or(axum::http::StatusCode::UNAUTHORIZED)?;
-
-    let session_token = cookie_header
-        .split(';')
-        .filter_map(|pair| {
-            let (name, value) = pair.trim().split_once('=')?;
-
-            if name == SESSION_COOKIE_NAME {
-                Some(value.to_string())
-            } else {
-                None
-            }
-        })
-        .next()
-        .ok_or(axum::http::StatusCode::UNAUTHORIZED)?;
-
-    let token_hash = hash_token(&session_token).ok_or(axum::http::StatusCode::UNAUTHORIZED)?;
-
-    let session = state
-        .inner
-        .repo
-        .find_session_by_hash(&token_hash)
-        .await
-        .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?
-        .ok_or(axum::http::StatusCode::UNAUTHORIZED)?;
-
-    if pt_reseeder_core::session::is_session_expired(&session.expires_at) {
-        return Err(axum::http::StatusCode::UNAUTHORIZED);
+        .ok_or(axum::http::StatusCode::FORBIDDEN)?;
+    let allowed = state.inner.config.effective_allowed_origins();
+    if !allowed.iter().any(|o| o == origin) {
+        return Err(axum::http::StatusCode::FORBIDDEN);
     }
+
+    // Validate session cookie from headers. Shared with the REST middleware and
+    // the server functions, so an expired session gets its row deleted here too
+    // — this path used to leave stale rows behind.
+    crate::auth::resolve_session_from_headers(state, headers).await?;
 
     Ok(())
 }

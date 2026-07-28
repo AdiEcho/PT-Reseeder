@@ -15,6 +15,13 @@ pub struct AppConfig {
     pub log_dir: PathBuf,
     pub log_retention_days: u32,
     pub log_min_level: String,
+    /// Origins allowed to open a WebSocket. Empty means "derive the loopback
+    /// pair from `server_bind`". Set via `ALLOWED_ORIGINS` (comma separated).
+    ///
+    /// A reverse-proxied HTTPS deployment must set this — the browser sends
+    /// `https://your-domain` as Origin, which the loopback default rejects.
+    #[serde(default)]
+    pub allowed_origins: Vec<String>,
 }
 
 impl Default for AppConfig {
@@ -29,6 +36,7 @@ impl Default for AppConfig {
             log_dir: PathBuf::from("logs"),
             log_retention_days: 30,
             log_min_level: "info".to_string(),
+            allowed_origins: Vec::new(),
         }
     }
 }
@@ -65,7 +73,34 @@ impl AppConfig {
                 .unwrap_or(30),
             log_min_level: std::env::var("LOG_MIN_LEVEL")
                 .unwrap_or_else(|_| Self::default().log_min_level),
+            allowed_origins: std::env::var("ALLOWED_ORIGINS")
+                .ok()
+                .map(|raw| {
+                    raw.split(',')
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty())
+                        .map(str::to_string)
+                        .collect()
+                })
+                .unwrap_or_default(),
         }
+    }
+
+    /// The effective WebSocket origin allow-list.
+    ///
+    /// Falls back to the loopback pair derived from `server_bind`, so a
+    /// zero-config deployment behaves exactly as it did before the list became
+    /// configurable. Note the absence of a trailing slash: browsers send Origin
+    /// without one, and adding it would reject every connection.
+    pub fn effective_allowed_origins(&self) -> Vec<String> {
+        if !self.allowed_origins.is_empty() {
+            return self.allowed_origins.clone();
+        }
+        let port = self.server_bind.port();
+        vec![
+            format!("http://127.0.0.1:{port}"),
+            format!("http://localhost:{port}"),
+        ]
     }
 }
 

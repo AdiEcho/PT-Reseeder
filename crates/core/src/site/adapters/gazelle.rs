@@ -1,13 +1,12 @@
 use std::collections::HashSet;
-use std::time::Duration;
 
 use async_trait::async_trait;
-use reqwest::header::{HeaderMap, HeaderValue, COOKIE, USER_AGENT};
 use reqwest::Client;
 use serde::Deserialize;
 use tracing::{debug, warn};
 
 use crate::error::{CoreError, SiteError};
+use crate::site::http::{build_site_client, fetch_torrent_bytes, filter_by_size_hint, SiteAuth};
 use crate::site::models::*;
 use crate::site::traits::*;
 
@@ -138,21 +137,10 @@ impl GazelleAdapter {
         passkey: Option<String>,
         batch_size: usize,
     ) -> Self {
-        let mut headers = HeaderMap::new();
-        headers.insert(USER_AGENT, HeaderValue::from_static("PT-Reseeder/0.1"));
-        if let Some(ref c) = cookie {
-            if let Ok(val) = HeaderValue::from_str(c) {
-                headers.insert(COOKIE, val);
-            }
-        }
-
-        let client = Client::builder()
-            .use_rustls_tls()
-            .cookie_store(true)
-            .timeout(Duration::from_secs(30))
-            .default_headers(headers)
-            .build()
-            .expect("failed to build reqwest client");
+        let client = build_site_client(
+            cookie.as_deref().map_or(SiteAuth::None, SiteAuth::Cookie),
+            true,
+        );
 
         Self {
             name,
@@ -446,23 +434,7 @@ impl RepostCapable for GazelleAdapter {
         let torrent_file_data = match torrent_id.parse::<i64>() {
             Ok(id) => {
                 let download_url = self.build_download_url(id);
-                match self.client.get(&download_url).send().await {
-                    Ok(resp) if resp.status().is_success() => match resp.bytes().await {
-                        Ok(bytes) => Some(bytes.to_vec()),
-                        Err(e) => {
-                            warn!(site = %self.name, torrent_id, "failed to read torrent file bytes: {e}");
-                            None
-                        }
-                    },
-                    Ok(resp) => {
-                        warn!(site = %self.name, torrent_id, status = %resp.status(), "failed to download torrent file");
-                        None
-                    }
-                    Err(e) => {
-                        warn!(site = %self.name, torrent_id, "failed to download torrent file: {e}");
-                        None
-                    }
-                }
+                fetch_torrent_bytes(&self.client, &self.name, torrent_id, &download_url).await
             }
             Err(_) => None,
         };
@@ -589,11 +561,7 @@ impl SearchCapable for GazelleAdapter {
         }
 
         // Filter by size hint with +-1% tolerance
-        if let Some(hint) = size_hint {
-            let lower = (hint as f64 * 0.99) as u64;
-            let upper = (hint as f64 * 1.01) as u64;
-            results.retain(|r| r.size >= lower && r.size <= upper);
-        }
+        filter_by_size_hint(&mut results, size_hint);
 
         debug!(
             site = %self.name,

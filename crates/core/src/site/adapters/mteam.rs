@@ -1,13 +1,12 @@
 use std::collections::HashSet;
-use std::time::Duration;
 
 use async_trait::async_trait;
-use reqwest::header::{HeaderMap, HeaderValue, USER_AGENT};
 use reqwest::Client;
 use serde::Deserialize;
 use tracing::{debug, warn};
 
 use crate::error::{CoreError, SiteError};
+use crate::site::http::{build_site_client, filter_by_size_hint, SiteAuth};
 use crate::site::models::*;
 use crate::site::traits::*;
 
@@ -165,21 +164,10 @@ impl MTeamAdapter {
         passkey: Option<String>,
         batch_size: usize,
     ) -> Self {
-        let mut headers = HeaderMap::new();
-        headers.insert(USER_AGENT, HeaderValue::from_static("PT-Reseeder/0.1"));
-        if let Some(ref token) = api_token {
-            if let Ok(val) = HeaderValue::from_str(token) {
-                headers.insert("x-api-key", val);
-            }
-        }
-
-        let client = Client::builder()
-            .use_rustls_tls()
-            .cookie_store(true)
-            .timeout(Duration::from_secs(30))
-            .default_headers(headers)
-            .build()
-            .expect("failed to build reqwest client");
+        let client = build_site_client(
+            api_token.as_deref().map_or(SiteAuth::None, SiteAuth::ApiKey),
+            true,
+        );
 
         Self {
             name,
@@ -742,11 +730,7 @@ impl SearchCapable for MTeamAdapter {
             .collect();
 
         // Filter by size hint with +-1% tolerance
-        if let Some(hint) = size_hint {
-            let lower = (hint as f64 * 0.99) as u64;
-            let upper = (hint as f64 * 1.01) as u64;
-            results.retain(|r| r.size >= lower && r.size <= upper);
-        }
+        filter_by_size_hint(&mut results, size_hint);
 
         debug!(
             site = %self.name,

@@ -52,6 +52,16 @@ impl From<sqlx::migrate::MigrateError> for DbError {
     }
 }
 
+/// Lets `?` lift a raw `sqlx::Error` straight to `CoreError`.
+///
+/// `#[from] DbError` on `CoreError::Db` only covers `DbError -> CoreError`, and
+/// `From` is not transitive, so `sqlx::Error -> CoreError` needs its own impl.
+impl From<sqlx::Error> for CoreError {
+    fn from(err: sqlx::Error) -> Self {
+        CoreError::Db(DbError::Sqlx(err))
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum SiteError {
     #[error("HTTP error: {0}")]

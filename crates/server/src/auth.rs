@@ -5,37 +5,15 @@ use axum::{
     middleware::Next,
     response::Response,
 };
-use axum_extra::extract::cookie::{Cookie, SameSite};
 use pt_reseeder_core::db::models::Session;
 use pt_reseeder_core::session::{resolve_session, SessionOutcome};
 
-// Single source of truth lives in core so the Leptos server functions (which
-// cannot depend on this crate) share the exact same cookie name and hashing.
-pub use pt_reseeder_core::session::{generate_session_token, hash_token, SESSION_COOKIE_NAME};
-
-/// Build a session cookie with the given token value.
-///
-/// Stays here rather than in core: the return type is an `axum_extra` cookie,
-/// and core deliberately has no HTTP framework dependency.
-pub fn build_session_cookie(token: String, secure: bool) -> Cookie<'static> {
-    Cookie::build((SESSION_COOKIE_NAME, token))
-        .path("/")
-        .http_only(true)
-        .same_site(SameSite::Strict)
-        .secure(secure)
-        .build()
-}
-
-/// Build a removal cookie to clear the session.
-pub fn build_removal_cookie(secure: bool) -> Cookie<'static> {
-    Cookie::build((SESSION_COOKIE_NAME, ""))
-        .path("/")
-        .http_only(true)
-        .same_site(SameSite::Strict)
-        .secure(secure)
-        .max_age(time::Duration::ZERO)
-        .build()
-}
+// Session cookies are minted and cleared exclusively by the Leptos server
+// functions (`server_fns/auth.rs` login / logout), which own the cookie builders.
+// This module only *reads* sessions, so it needs no cookie construction of its
+// own — the `build_session_cookie` / `build_removal_cookie` / token-helper
+// re-exports that used to live here lost their last consumer when B3 deleted
+// `api/auth.rs`, and being `pub` kept `dead_code` quiet about it.
 
 /// HTTP-layer wrapper around [`resolve_session`]: pull the cookie out of the
 /// request headers and map the outcome onto status codes.

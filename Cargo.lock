@@ -4692,7 +4692,6 @@ name = "pt-reseeder-server"
 version = "0.1.0"
 dependencies = [
  "axum",
- "axum-extra",
  "chrono",
  "leptos",
  "leptos_axum",
@@ -4701,7 +4700,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sqlx",
- "time",
  "tokio",
  "tokio-util",
  "tower",

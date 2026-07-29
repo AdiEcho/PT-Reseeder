@@ -65,6 +65,20 @@ pub(crate) fn log_entry_matches_task_id(entry: &LogEntry, task_id: i64) -> bool 
     })
 }
 
+/// Clamps a requested page number into the range that `total_lines` actually
+/// spans, so a caller asking past the end gets the last real page instead of an
+/// empty one.
+///
+/// An empty page would make the viewer render its empty state for a non-empty
+/// log. During SSR that also diverges from what the client renders for the same
+/// page, and the differing DOM shapes abort hydration.
+#[cfg(feature = "ssr")]
+fn clamp_page(page: usize, total_lines: usize, page_size: usize) -> usize {
+    let page_size = page_size.max(1);
+    let total_pages = total_lines.div_ceil(page_size).max(1);
+    page.max(1).min(total_pages)
+}
+
 #[server]
 pub async fn get_logs(
     filename: Option<String>,
@@ -156,6 +170,10 @@ pub async fn get_logs(
 
     let total_lines = entries.len();
 
+    // Clamp the requested page into the range that actually exists, so an
+    // out-of-range page never renders as "no logs" for a non-empty file.
+    let page = clamp_page(page, total_lines, page_size);
+
     // Reverse so newest entries come first, then paginate
     entries.reverse();
     let start = (page - 1) * page_size;
@@ -192,7 +210,7 @@ fn parse_log_line(line: &str) -> LogEntry {
 
 #[cfg(all(test, feature = "ssr"))]
 mod log_tests {
-    use super::{log_entry_matches_task_id, parse_log_line, LogEntry};
+    use super::{clamp_page, log_entry_matches_task_id, parse_log_line, LogEntry};
 
     fn entry(message: &str) -> LogEntry {
         LogEntry {
@@ -228,5 +246,29 @@ mod log_tests {
         let entry =
             parse_log_line("2026-07-16T12:00:00.000Z INFO scheduler task completed task_id=42");
         assert!(log_entry_matches_task_id(&entry, 42));
+    }
+
+    #[test]
+    fn clamps_page_past_the_end_to_the_last_real_page() {
+        // 123 lines at 100/page spans 2 pages; page 3+ must not return empty.
+        assert_eq!(clamp_page(3, 123, 100), 2);
+        assert_eq!(clamp_page(99, 123, 100), 2);
+        // Pages inside the range are left alone.
+        assert_eq!(clamp_page(1, 123, 100), 1);
+        assert_eq!(clamp_page(2, 123, 100), 2);
+    }
+
+    #[test]
+    fn clamps_page_for_short_and_empty_logs() {
+        // A single partial page stays page 1 whatever was asked for.
+        assert_eq!(clamp_page(5, 40, 100), 1);
+        // An exact multiple does not gain a trailing empty page.
+        assert_eq!(clamp_page(2, 100, 100), 1);
+        // An empty log still reports page 1 rather than page 0.
+        assert_eq!(clamp_page(1, 0, 100), 1);
+        assert_eq!(clamp_page(7, 0, 100), 1);
+        // Page 0 and a zero page_size are coerced into valid values.
+        assert_eq!(clamp_page(0, 123, 100), 1);
+        assert_eq!(clamp_page(3, 123, 0), 3);
     }
 }

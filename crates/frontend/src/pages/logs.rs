@@ -13,6 +13,46 @@ fn parse_task_id(value: Option<String>) -> Option<i64> {
         .filter(|task_id| *task_id > 0)
 }
 
+/// Advances the log viewer to the next page, stopping at the last page that the
+/// current result set actually has.
+///
+/// Kept out of the `view!` body and compiled away on the server: during SSR the
+/// `on:click` closure is invoked while the tree is being built, so writing
+/// `current_page` there would advance the page nobody asked for. The server
+/// would then serialise a different page than the one the client hydrates,
+/// leaving the two with different row counts — an unrecoverable hydration
+/// mismatch that takes down the whole WASM runtime, not just this page.
+fn advance_page(set_current_page: WriteSignal<usize>, total_pages: Memo<usize>) {
+    #[cfg(target_arch = "wasm32")]
+    set_current_page.update(|page| {
+        if *page < total_pages.get_untracked() {
+            *page += 1;
+        }
+    });
+
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let _ = (set_current_page, total_pages);
+    }
+}
+
+/// Steps the log viewer back one page, stopping at the first page.
+///
+/// Server-side no-op for the same reason as [`advance_page`].
+fn retreat_page(set_current_page: WriteSignal<usize>) {
+    #[cfg(target_arch = "wasm32")]
+    set_current_page.update(|page| {
+        if *page > 1 {
+            *page -= 1;
+        }
+    });
+
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let _ = set_current_page;
+    }
+}
+
 #[component]
 pub fn LogsPage() -> impl IntoView {
     let query = use_query_map();
@@ -37,9 +77,18 @@ pub fn LogsPage() -> impl IntoView {
         {
             leptos::task::spawn_local(async move {
                 gloo_timers::future::TimeoutFuture::new(400).await;
-                if keyword_seq.get_untracked() == my_seq && keyword.get_untracked() != value {
-                    set_keyword.set(value);
-                    set_current_page.set(1);
+                // The page may have been navigated away from while this task was
+                // sleeping, disposing every signal it captured. Reading a disposed
+                // signal panics, so bail out instead of asserting they still live.
+                let Some(latest_seq) = keyword_seq.try_get_untracked() else {
+                    return;
+                };
+                let Some(committed) = keyword.try_get_untracked() else {
+                    return;
+                };
+                if latest_seq == my_seq && committed != value {
+                    let _ = set_keyword.try_set(value);
+                    let _ = set_current_page.try_set(1);
                 }
             });
         }
@@ -72,6 +121,26 @@ pub fn LogsPage() -> impl IntoView {
             get_logs(file, Some(page), Some(100), level_opt, kw_opt, task_id)
         },
     );
+
+    // Page count for the current result set, derived from the resource rather
+    // than captured inside the render closure. A captured copy goes stale as
+    // soon as the resource reloads, which previously let "下一页" advance past
+    // the last page and desynchronise SSR from hydration.
+    let total_pages = Memo::new(move |_| {
+        logs.get()
+            .and_then(|result| result.ok())
+            .map(|page| page.total_lines.div_ceil(page.page_size.max(1)).max(1))
+            .unwrap_or(1)
+    });
+
+    // Keep the requested page inside the range the current result set spans, so
+    // the viewer never asks the server for a page that does not exist.
+    Effect::new(move |_| {
+        let last = total_pages.get();
+        if current_page.get() > last {
+            set_current_page.set(last);
+        }
+    });
 
     // WebSocket live log subscription
     let ws_data = use_logs_ws();
@@ -296,18 +365,15 @@ pub fn LogsPage() -> impl IntoView {
                         }
                             .into_any();
                     }
-                    let total_pages = (page.total_lines + page.page_size - 1).max(1)
-                        / page.page_size.max(1);
+                    let page_label = format!(
+                        "历史日志（共 {} 条，第 {}/{} 页）",
+                        page.total_lines,
+                        page.page,
+                        page.total_lines.div_ceil(page.page_size.max(1)).max(1),
+                    );
                     view! {
                         <div class="stats-table-section">
-                            <h2>
-                                {format!(
-                                    "历史日志（共 {} 条，第 {}/{} 页）",
-                                    page.total_lines,
-                                    page.page,
-                                    total_pages.max(1),
-                                )}
-                            </h2>
+                            <h2>{page_label}</h2>
                             <div class="table-wrap">
                                 <table class="stats-table log-table">
                                     <thead>
@@ -353,14 +419,7 @@ pub fn LogsPage() -> impl IntoView {
                                 <button
                                     class="btn btn--gray btn--sm"
                                     disabled=move || current_page.get() <= 1
-                                    on:click=move |_| {
-                                        set_current_page
-                                            .update(|p| {
-                                                if *p > 1 {
-                                                    *p -= 1
-                                                }
-                                            });
-                                    }
+                                    on:click=move |_| retreat_page(set_current_page)
                                 >
                                     "上一页"
                                 </button>
@@ -369,10 +428,8 @@ pub fn LogsPage() -> impl IntoView {
                                 </span>
                                 <button
                                     class="btn btn--gray btn--sm"
-                                    disabled=move || current_page.get() >= total_pages.max(1)
-                                    on:click=move |_| {
-                                        set_current_page.update(|p| *p += 1);
-                                    }
+                                    disabled=move || { current_page.get() >= total_pages.get() }
+                                    on:click=move |_| advance_page(set_current_page, total_pages)
                                 >
                                     "下一页"
                                 </button>

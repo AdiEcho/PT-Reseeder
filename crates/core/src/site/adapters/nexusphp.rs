@@ -1446,9 +1446,92 @@ fn extract_images(html: &Html, selector_str: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        extract_seeding_ajax_user_id, normalize_pieces_hash_data, parse_seeding_size_summary,
-        PiecesHashResponse,
+        extract_seeding_ajax_user_id, extract_text, normalize_pieces_hash_data,
+        parse_f64_from_text, parse_number_from_text, parse_seeding_size_summary,
+        parse_time_to_seconds, PiecesHashResponse,
     };
+    use scraper::Html;
+
+    /// ZMPT 的四个字段曾全部解析失败。以下用例锚定真实页面结构，
+    /// 防止选择器再被改回 NexusPHP 的通用默认值。
+    /// HTML 片段摘自 zmpt.cc/userdetails.php 与 index.php。
+    #[test]
+    fn extracts_zmpt_bonus_from_dianli_label() {
+        // ZMPT 把魔力值叫「电力值」，用通用的 '魔力值' 选择器取不到
+        let html = Html::parse_document(
+            r#"<table>
+                <tr><td class="rowhead nowrap">认领: </td><td class="rowfollow">140/2000</td></tr>
+                <tr><td class="rowhead nowrap">电力值</td><td class="rowfollow">211,644.5</td></tr>
+            </table>"#,
+        );
+        let sel = Some("td.rowhead:contains('电力值') + td".to_string());
+        assert_eq!(extract_text(&html, &sel).as_deref(), Some("211,644.5"));
+        // 千分位逗号需要被丢掉，否则会解析成 211.6445
+        assert_eq!(parse_f64_from_text("211,644.5"), Some(211_644.5));
+    }
+
+    #[test]
+    fn extracts_zmpt_seeding_counts_from_info_bar_arrows() {
+        // userdetails.php 的「当前做种」行是 ajax 点击后填充的，行内只有
+        // [显示/隐藏]；数字只在信息栏的箭头图标后面
+        let html = Html::parse_document(
+            r#"<div id="info_block">当前活动:
+                <img class="arrowup" alt="Torrents seeding" title="当前做种" src="pic/trans.gif">403
+                <img class="arrowdown" alt="Torrents leeching" title="当前下载" src="pic/trans.gif">0
+            </div>"#,
+        );
+        let up = Some("img.arrowup".to_string());
+        let down = Some("img.arrowdown".to_string());
+        assert_eq!(
+            extract_text(&html, &up).and_then(|t| parse_number_from_text(&t)),
+            Some(403)
+        );
+        assert_eq!(
+            extract_text(&html, &down).and_then(|t| parse_number_from_text(&t)),
+            Some(0)
+        );
+    }
+
+    #[test]
+    fn rejects_zmpt_ajax_seeding_row_without_number() {
+        // 说明为什么不能用 "td.rowhead:contains('当前做种') + td"：
+        // 兄弟单元格里没有数字，只有展开链接
+        let html = Html::parse_document(
+            r#"<table><tr>
+                <td class="rowhead nowrap">当前做种</td>
+                <td class="rowfollow"><a href="javascript: getusertorrentlistajax('16393', 'seeding', 'ka1')">[显示/隐藏]</a><div id="ka1" data-type="seeding"></div></td>
+            </tr></table>"#,
+        );
+        let sel = Some("td.rowhead:contains('当前做种') + td".to_string());
+        // 取到的是 "[显示/隐藏]"，没有可用数字
+        assert_eq!(
+            extract_text(&html, &sel).and_then(|t| parse_number_from_text(&t)),
+            None
+        );
+    }
+
+    #[test]
+    fn extracts_zmpt_seeding_time_from_embedded_cell() {
+        // 做种时间嵌在「BT时间」行的 td.embedded 里，没有自己的 rowhead。
+        // 外层 td.embedded 也包含「做种时间」，靠最短文本命中内层。
+        let html = Html::parse_document(
+            r#"<table><tr>
+                <td class="rowhead nowrap">BT时间</td>
+                <td class="rowfollow"><table><tr>
+                    <td class="embedded"><strong>做种时间</strong>:  325957天04:43:32</td>
+                    <td class="embedded">&nbsp;&nbsp;<strong>下载时间</strong>:  0:00</td>
+                </tr></table></td>
+            </tr></table>"#,
+        );
+        let sel = Some("td.embedded:contains('做种时间')".to_string());
+        let text = extract_text(&html, &sel).expect("seeding time cell");
+        assert!(text.contains("325957天"), "got {text}");
+        // 325957 天 + 4:43:32
+        assert_eq!(
+            parse_time_to_seconds(&text),
+            Some(325_957 * 24 * 3600 + 4 * 3600 + 43 * 60 + 32)
+        );
+    }
 
     #[test]
     fn extracts_ptcafe_seeding_ajax_user_id() {

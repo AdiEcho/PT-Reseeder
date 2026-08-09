@@ -1,3 +1,9 @@
+// Windows defaults to the `console` subsystem, which makes the OS attach a
+// terminal window to the process. The GUI build must opt into the `windows`
+// subsystem so only the WebView window shows. Kept off debug builds so that
+// `cargo run` still prints tracing output to a console.
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 mod webview;
 
 use pt_reseeder_core::config::AppConfig;

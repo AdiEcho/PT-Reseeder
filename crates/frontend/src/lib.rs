@@ -1,3 +1,9 @@
+// Leptos view! trees nest deeply enough that computing the layout of the
+// generated hydrate/resolve async blocks exceeds rustc's default query depth
+// of 128. The limit is hit during monomorphization, so it must be raised on
+// every crate that instantiates these views — see pt-reseeder-server too.
+#![recursion_limit = "512"]
+
 #[cfg(feature = "csr")]
 #[wasm_bindgen::prelude::wasm_bindgen]
 pub fn start() {

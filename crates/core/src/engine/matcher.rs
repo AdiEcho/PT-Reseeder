@@ -16,7 +16,7 @@ use super::filter;
 use super::scanner::ScanResult;
 use super::stats::ReseedStats;
 
-/// Per-site batch size, adaptive: starts at site definition value, halves on 413/400.
+/// Per-site batch size, adaptive: starts at site definition value, halves on 413/400/500.
 struct SiteBatchState {
     batch_size: usize,
     min_batch_size: usize,
@@ -26,7 +26,7 @@ impl SiteBatchState {
     fn new(initial: usize) -> Self {
         Self {
             batch_size: initial,
-            min_batch_size: 100,
+            min_batch_size: 50,
         }
     }
 
@@ -297,7 +297,7 @@ async fn match_single_site(
                 let is_batch_too_large = matches!(
                     &e,
                     CoreError::Site(SiteError::HttpError(msg))
-                    if msg.contains("413") || msg.contains("400")
+                    if msg.contains("413") || msg.contains("400") || msg.contains("500")
                 );
 
                 if is_batch_too_large && batch_state.batch_size > batch_state.min_batch_size {

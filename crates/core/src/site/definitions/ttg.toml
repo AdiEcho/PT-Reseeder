@@ -6,7 +6,7 @@ api_url = "https://totheglory.im/api/pieces-hash"
 adapter = "nexusphp"
 rate_limit_interval_ms = 5000
 rate_limit_burst = 1
-batch_size = 1000
+batch_size = 100
 
 [user_info]
 profile_url_template = "/userdetails.php?id={uid}"

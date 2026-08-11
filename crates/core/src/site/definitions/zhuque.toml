@@ -5,4 +5,4 @@ url = "https://zhuque.in"
 adapter = "zhuque"
 rate_limit_interval_ms = 5000
 rate_limit_burst = 1
-batch_size = 1000
+batch_size = 100

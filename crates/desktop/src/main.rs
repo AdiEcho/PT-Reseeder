@@ -7,8 +7,23 @@
 mod webview;
 
 use pt_reseeder_core::config::AppConfig;
-use tauri::Manager;
+use tauri::menu::{Menu, MenuItem};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::{Manager, AppHandle};
 use tokio_util::sync::CancellationToken;
+
+fn show_main_window(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+}
+
+fn quit_app(app: &AppHandle, cancel_token: &CancellationToken) {
+    cancel_token.cancel();
+    app.exit(0);
+}
 
 fn main() {
     let cancel_token = CancellationToken::new();
@@ -129,11 +144,46 @@ fn main() {
                     .inner_size(1200.0, 800.0)
                     .build()?;
 
+                // System tray: close-to-hide needs an exit path, otherwise Windows
+                // users have to kill the process from Task Manager.
+                let open_i = MenuItem::with_id(app, "open", "打开", true, None::<&str>)?;
+                let quit_i = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
+                let menu = Menu::with_items(app, &[&open_i, &quit_i])?;
+
+                let tray_icon = app
+                    .default_window_icon()
+                    .cloned()
+                    .ok_or("missing default window icon for tray")?;
+
+                let tray_cancel = cancel_token.clone();
+                let _tray = TrayIconBuilder::with_id("main")
+                    .icon(tray_icon)
+                    .tooltip("PT-Reseeder")
+                    .menu(&menu)
+                    .show_menu_on_left_click(false)
+                    .on_menu_event(move |app, event| match event.id().as_ref() {
+                        "open" => show_main_window(app),
+                        "quit" => quit_app(app, &tray_cancel),
+                        _ => {}
+                    })
+                    .on_tray_icon_event(|tray, event| {
+                        if let TrayIconEvent::Click {
+                            button: MouseButton::Left,
+                            button_state: MouseButtonState::Up,
+                            ..
+                        } = event
+                        {
+                            show_main_window(tray.app_handle());
+                        }
+                    })
+                    .build(app)?;
+
                 Ok(())
             }
         })
         .on_window_event(move |window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                // Hide to tray instead of exiting so background tasks keep running.
                 api.prevent_close();
                 let _ = window.hide();
             }

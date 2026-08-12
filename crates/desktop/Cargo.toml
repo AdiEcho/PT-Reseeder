@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 pt-reseeder-server = { path = "../server" }
 pt-reseeder-core = { path = "../core" }
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["tray-icon"] }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 tracing-subscriber = { workspace = true }

@@ -436,6 +436,9 @@ pub async fn get_reseed_run_detail(log_id: i64) -> Result<Option<ReseedRunDetail
     }))
 }
 
+// Only compiled for the SSR binary: the hydrate/WASM client does not link
+// pt-reseeder-core, and this helper is only called from #[server] bodies.
+#[cfg(feature = "ssr")]
 fn preview_to_info(
     preview: pt_reseeder_core::engine::DryRunPreview,
     force_dry_run: bool,

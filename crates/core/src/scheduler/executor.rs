@@ -501,7 +501,8 @@ impl TaskExecutor {
             )));
         }
 
-        let auto_start = row.auto_start.unwrap_or(true);
+        // NULL/缺失时默认暂停添加，避免误自动做种
+        let auto_start = row.auto_start.unwrap_or(false);
         let downloader = build_downloader(&row, self.vault.as_ref()).await?;
         Ok((downloader, auto_start))
     }

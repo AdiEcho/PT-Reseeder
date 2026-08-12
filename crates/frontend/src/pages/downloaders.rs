@@ -3,16 +3,16 @@ use crate::components::confirm_modal::ConfirmModal;
 use crate::components::empty_state::EmptyState;
 use crate::components::toast::{show_toast, ToastType};
 use crate::server_fns::{
-    create_downloader, delete_downloader, get_downloaders, test_downloader,
-    test_downloader_connection, DownloaderInfo,
+    create_downloader, delete_downloader, get_downloaders, set_downloader_auto_start,
+    test_downloader, test_downloader_connection, DownloaderInfo,
 };
 use leptos::prelude::*;
 
-/// The create-downloader action: its 7-tuple argument mirrors the
+/// The create-downloader action: its 8-tuple argument mirrors the
 /// `create_downloader` server fn parameters (name, dl_type, host, port, username,
-/// password, category).
+/// password, role, auto_start).
 type CreateDownloaderAction = Action<
-    (String, String, String, i64, String, String, String),
+    (String, String, String, i64, String, String, String, bool),
     Result<DownloaderInfo, ServerFnError>,
 >;
 
@@ -23,9 +23,18 @@ pub fn DownloadersPage() -> impl IntoView {
 
     // --- Mutation actions ---
     let create_dl_action = Action::new(
-        move |args: &(String, String, String, i64, String, String, String)| {
-            let (name, dl_type, host, port, username, password, role) = args.clone();
-            create_downloader(name, dl_type, host, port, username, password, role)
+        move |args: &(String, String, String, i64, String, String, String, bool)| {
+            let (name, dl_type, host, port, username, password, role, auto_start) = args.clone();
+            create_downloader(
+                name,
+                dl_type,
+                host,
+                port,
+                username,
+                password,
+                role,
+                auto_start,
+            )
         },
     );
 
@@ -37,6 +46,11 @@ pub fn DownloadersPage() -> impl IntoView {
     let test_dl_action = Action::new(move |id: &i64| {
         let id = *id;
         test_downloader(id)
+    });
+
+    let set_auto_start_action = Action::new(move |args: &(i64, bool)| {
+        let (id, auto_start) = *args;
+        set_downloader_auto_start(id, auto_start)
     });
 
     // Page-level delete confirmation target so modal mounts outside <tbody>.
@@ -66,6 +80,16 @@ pub fn DownloadersPage() -> impl IntoView {
             }
         }
     });
+    Effect::new(move |_| {
+        if let Some(result) = set_auto_start_action.value().get() {
+            match result {
+                Ok(_) => show_toast("自动开始设置已更新", ToastType::Success),
+                Err(e) => show_toast(format!("更新自动开始失败：{e}"), ToastType::Error),
+            }
+            // 成功/失败都 refetch，失败时把乐观切换的 checkbox 拉回真实值
+            downloaders.refetch();
+        }
+    });
 
     view! {
         <div class="dashboard">
@@ -78,6 +102,7 @@ pub fn DownloadersPage() -> impl IntoView {
                 downloaders=downloaders
                 create_dl_action=create_dl_action
                 test_dl_action=test_dl_action
+                set_auto_start_action=set_auto_start_action
                 on_request_delete=move |id: i64, name: String| set_confirm_delete_dl.set(Some((id, name)))
             />
 
@@ -143,6 +168,7 @@ fn DownloadersSection<F>(
     downloaders: Resource<Result<Vec<DownloaderInfo>, ServerFnError>>,
     create_dl_action: CreateDownloaderAction,
     test_dl_action: Action<i64, Result<String, ServerFnError>>,
+    set_auto_start_action: Action<(i64, bool), Result<(), ServerFnError>>,
     on_request_delete: F,
 ) -> impl IntoView
 where
@@ -158,6 +184,8 @@ where
     let (username, set_username) = signal(String::new());
     let (password, set_password) = signal(String::new());
     let (role, set_role) = signal("both".to_string());
+    // 默认暂停添加，降低误做种风险
+    let (auto_start, set_auto_start) = signal(false);
 
     // Validation & connection test state
     let (name_error, set_name_error) = signal(Option::<String>::None);
@@ -235,6 +263,7 @@ where
             set_username.set(String::new());
             set_password.set(String::new());
             set_role.set("both".to_string());
+            set_auto_start.set(false);
             set_name_error.set(None);
             set_host_error.set(None);
             set_port_error.set(None);
@@ -258,6 +287,7 @@ where
             username.get(),
             password.get(),
             role.get(),
+            auto_start.get(),
         ));
     };
 
@@ -370,6 +400,21 @@ where
                                         <option value="both">"拉取和推送"</option>
                                     </select>
                                 </div>
+                                <div class="form-group form-group--full">
+                                    <label class="setting-checkbox">
+                                        <input
+                                            type="checkbox"
+                                            prop:checked=move || auto_start.get()
+                                            on:change=move |ev| {
+                                                set_auto_start.set(event_target_checked(&ev));
+                                            }
+                                        />
+                                        <span>"添加后自动开始"</span>
+                                    </label>
+                                    <div class="text-muted setting-hint">
+                                        "关闭时，辅种写入目标下载器的种子会保持暂停，需手动开始。"
+                                    </div>
+                                </div>
                             </div>
 
                             // 连接测试结果
@@ -435,6 +480,7 @@ where
                                         <th>"类型"</th>
                                         <th>"主机"</th>
                                         <th>"用途"</th>
+                                        <th>"自动开始"</th>
                                         <th>"启用"</th>
                                         <th>"操作"</th>
                                     </tr>
@@ -447,6 +493,7 @@ where
                                                 <DownloaderRow
                                                     dl=dl
                                                     test_dl_action=test_dl_action
+                                                    set_auto_start_action=set_auto_start_action
                                                     on_request_delete=on_request_delete
                                                 />
                                             }
@@ -487,6 +534,7 @@ where
 fn DownloaderRow<F>(
     dl: DownloaderInfo,
     test_dl_action: Action<i64, Result<String, ServerFnError>>,
+    set_auto_start_action: Action<(i64, bool), Result<(), ServerFnError>>,
     on_request_delete: F,
 ) -> impl IntoView
 where
@@ -503,6 +551,9 @@ where
         "both" => "拉取和推送".to_string(),
         other => other.to_string(),
     };
+    let initial_auto_start = dl.auto_start;
+    let (auto_start, set_auto_start) = signal(initial_auto_start);
+    let toggling = set_auto_start_action.pending();
 
     view! {
         <tr>
@@ -510,6 +561,25 @@ where
             <td>{dl.dl_type}</td>
             <td>{host_port}</td>
             <td>{role_label}</td>
+            <td>
+                <label class="setting-checkbox">
+                    <input
+                        type="checkbox"
+                        prop:checked=move || auto_start.get()
+                        prop:disabled=move || toggling.get()
+                        on:change=move |ev| {
+                            let next = event_target_checked(&ev);
+                            set_auto_start.set(next);
+                            set_auto_start_action.dispatch((dl_id, next));
+                        }
+                    />
+                    <span class=move || {
+                        if auto_start.get() { "text-green" } else { "text-muted" }
+                    }>
+                        {move || if auto_start.get() { "开" } else { "关" }}
+                    </span>
+                </label>
+            </td>
             <td class=enabled_class>{enabled_label}</td>
             <td class="table__action-cell">
                 <button

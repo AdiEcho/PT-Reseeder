@@ -8,6 +8,8 @@ pub struct DownloaderInfo {
     pub host: String,
     pub port: i64,
     pub role: String,
+    /// 辅种写入目标下载器后是否自动开始（false=暂停添加，更安全）
+    pub auto_start: bool,
     pub enabled: bool,
 }
 
@@ -27,6 +29,8 @@ pub async fn get_downloaders() -> Result<Vec<DownloaderInfo>, ServerFnError> {
             host: d.host,
             port: d.port,
             role: d.role,
+            // NULL 按安全默认处理：暂停添加
+            auto_start: d.auto_start.unwrap_or(false),
             enabled: d.enabled,
         })
         .collect())
@@ -41,6 +45,7 @@ pub async fn create_downloader(
     username: String,
     password: String,
     role: String,
+    auto_start: bool,
 ) -> Result<DownloaderInfo, ServerFnError> {
     use pt_reseeder_core::db::models::DownloaderRow;
     use pt_reseeder_core::db::repo::Repository;
@@ -90,7 +95,8 @@ pub async fn create_downloader(
         torrent_dir: None,
         default_save_path: None,
         skip_hash_check: Some(true),
-        auto_start: Some(true),
+        // 默认暂停添加，避免误推送立即做种；需要时由调用方显式打开
+        auto_start: Some(auto_start),
         tag: Some("PT-Reseeder".into()),
         enabled: true,
         created_at: String::new(),
@@ -103,6 +109,20 @@ pub async fn create_downloader(
         .into_iter()
         .find(|d| d.id == id)
         .ok_or_else(|| ServerFnError::new("downloader created but not found"))
+}
+
+/// 更新下载器「添加后自动开始」开关。
+#[server]
+pub async fn set_downloader_auto_start(id: i64, auto_start: bool) -> Result<(), ServerFnError> {
+    use pt_reseeder_core::db::repo::Repository;
+
+    let repo = Repository::new(server_pool()?);
+    let mut row = repo
+        .get_downloader(id)
+        .await?
+        .ok_or_else(|| ServerFnError::new("下载器不存在"))?;
+    row.auto_start = Some(auto_start);
+    repo.update_downloader(&row).await.map_err(Into::into)
 }
 
 /// 在创建前测试下载器连接（不保存到数据库）

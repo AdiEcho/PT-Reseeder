@@ -80,7 +80,7 @@ CREATE TABLE downloaders (
     torrent_dir TEXT,
     default_save_path TEXT,
     skip_hash_check INTEGER DEFAULT 1,
-    auto_start INTEGER DEFAULT 1,
+    auto_start INTEGER DEFAULT 0,
     tag TEXT DEFAULT 'PT-Reseeder',
     enabled INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))

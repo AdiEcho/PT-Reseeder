@@ -381,7 +381,10 @@ pub fn TasksPage() -> impl IntoView {
                                                         <Suspense fallback=move || view! { <p class="text-muted">"正在加载下载器..."</p> }>
                                                             {move || {
                                                                 downloaders.get().flatten().map(|list| {
-                                                                    let enabled: Vec<DownloaderInfo> = list.into_iter().filter(|d| d.enabled).collect();
+                                                                    let enabled: Vec<DownloaderInfo> =
+                                                                        list.into_iter()
+                                                                            .filter(|d| d.enabled)
+                                                                            .collect();
                                                                     if enabled.is_empty() {
                                                                         return view! {
                                                                             <p class="field-hint">"暂无启用下载器。"</p>
@@ -463,7 +466,10 @@ pub fn TasksPage() -> impl IntoView {
                                                         }>
                                                             {move || {
                                                                 downloaders.get().flatten().map(|list| {
-                                                                    let enabled: Vec<DownloaderInfo> = list.into_iter().filter(|d| d.enabled).collect();
+                                                                    let enabled: Vec<DownloaderInfo> =
+                                                                        list.into_iter()
+                                                                            .filter(|d| d.enabled)
+                                                                            .collect();
                                                                     view! {
                                                                         <select
                                                                             class="input"

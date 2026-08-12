@@ -4,5 +4,6 @@ pub mod empty_state;
 pub mod icons;
 pub mod modal_focus;
 pub mod nav;
+pub mod resizable_th;
 pub mod theme;
 pub mod toast;

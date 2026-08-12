@@ -26,6 +26,20 @@
         letter-spacing: 0.4px;
     }
 
+    // 可拖拽列宽：用 thead 列宽驱动固定布局，超出时由 .table-wrap 横向滚动。
+    &--resizable {
+        table-layout: fixed;
+        width: max-content;
+        min-width: 100%;
+
+        tbody td {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            // 长路径/标题允许换行时仍截断过宽内容
+            white-space: nowrap;
+        }
+    }
+
     tbody td {
         padding: var(--table-cell-y) var(--table-cell-x);
         border-bottom: 1px solid var(--border);
@@ -90,4 +104,55 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+// ── 可拖拽列宽表头 ─────────────────────────────────────────────────────────
+.resizable-th {
+    position: relative;
+    // 右侧给拖拽手柄留出空间，避免标题被挡
+    padding-right: 12px !important;
+    overflow: hidden;
+    user-select: none;
+
+    &__label {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+}
+
+.th-resize-handle {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 6px;
+    height: 100%;
+    cursor: col-resize;
+    touch-action: none;
+    user-select: none;
+    z-index: 1;
+
+    // 细分割线，hover / 拖拽时高亮
+    &::after {
+        content: "";
+        position: absolute;
+        top: 20%;
+        bottom: 20%;
+        left: 2px;
+        width: 2px;
+        border-radius: 1px;
+        background: transparent;
+        transition: background 0.12s ease;
+    }
+
+    &:hover::after,
+    &.is-dragging::after {
+        background: var(--accent, #3b82f6);
+    }
+
+    &.is-dragging {
+        // 扩大命中区域，拖出 th 时也不容易丢
+        width: 12px;
+        right: -3px;
+    }
 }

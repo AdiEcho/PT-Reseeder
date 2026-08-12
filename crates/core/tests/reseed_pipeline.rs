@@ -629,6 +629,7 @@ async fn test_adder_downloads_and_adds() {
         true, // auto_start
         &db_writer,
         &stats,
+        None,
     )
     .await
     .unwrap();
@@ -705,6 +706,7 @@ async fn test_adder_skips_existing_hash() {
         false,
         &db_writer,
         &stats,
+        None,
     )
     .await
     .unwrap();
@@ -712,6 +714,85 @@ async fn test_adder_skips_existing_hash() {
     assert!(!added, "should skip existing torrent");
     assert_eq!(dest_client.added_count(), 0);
     assert_eq!(stats.skipped_exists.load(Ordering::Relaxed), 1);
+}
+
+#[tokio::test]
+async fn test_adder_retries_after_too_frequent_http_500() {
+    let (_db_dir, _repo, db_writer) = setup_db().await;
+    let stats = ReseedStats::new();
+
+    let (torrent_bytes, info_hash, pieces_hash) =
+        build_torrent_bytes("ratelimited", "http://tracker.example.com/announce", 0x42);
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let download_url = format!("http://127.0.0.1:{}/download/300", addr.port());
+
+    let hits = Arc::new(std::sync::atomic::AtomicU32::new(0));
+    let hits_clone = Arc::clone(&hits);
+    tokio::spawn(async move {
+        loop {
+            if let Ok((mut stream, _)) = listener.accept().await {
+                use tokio::io::{AsyncReadExt, AsyncWriteExt};
+                let mut request = [0u8; 1024];
+                let _ = stream.read(&mut request).await;
+                let n = hits_clone.fetch_add(1, Ordering::SeqCst);
+                let response = if n == 0 {
+                    let body = "下载过于频繁，请等待 1 秒后再下载。";
+                    format!(
+                        "HTTP/1.1 500 Internal Server Error\r\nContent-Length: {}\r\nContent-Type: text/plain; charset=utf-8\r\nConnection: close\r\n\r\n{}",
+                        body.len(),
+                        body
+                    )
+                    .into_bytes()
+                } else {
+                    let header = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nContent-Type: application/x-bittorrent\r\nConnection: close\r\n\r\n",
+                        torrent_bytes.len()
+                    );
+                    let mut buf = header.into_bytes();
+                    buf.extend_from_slice(&torrent_bytes);
+                    buf
+                };
+                let _ = stream.write_all(&response).await;
+                let _ = stream.flush().await;
+            }
+        }
+    });
+
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+    let dest_client = MockDownloader::new();
+    let dest_hashes = Arc::new(tokio::sync::Mutex::new(HashSet::new()));
+    let limiter = SiteRateLimiter::with_download_interval(1, 1, 1);
+    let matched = MatchedTorrent {
+        pieces_hash,
+        site_id: SiteId(4),
+        torrent_id: Some(300),
+        download_url,
+        save_path: "/downloads".to_string(),
+        skip_hash_check: true,
+        tag: None,
+    };
+
+    let http_client = reqwest::Client::new();
+    let added = add_torrent(
+        &matched,
+        &http_client,
+        &dest_client,
+        &dest_hashes,
+        false,
+        &db_writer,
+        &stats,
+        Some(&limiter),
+    )
+    .await
+    .unwrap();
+
+    assert!(added, "should succeed after waiting out the site rate limit");
+    assert_eq!(dest_client.added_count(), 1);
+    assert!(hits.load(Ordering::SeqCst) >= 2);
+    assert!(dest_hashes.lock().await.contains(&info_hash));
 }
 
 // ===========================================================================

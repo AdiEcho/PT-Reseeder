@@ -10,9 +10,15 @@ use crate::downloader::models::AddTorrentOpts;
 use crate::downloader::traits::Downloader;
 use crate::error::{CoreError, EngineError};
 use crate::site::models::SiteId;
+use crate::site::rate_limiter::{
+    is_download_rate_limited, parse_wait_seconds, SiteRateLimiter, MAX_DOWNLOAD_WAIT_SECS,
+};
 use crate::torrent::parser;
 
 use super::stats::ReseedStats;
+
+/// Extra attempts after a site says "please wait N seconds".
+const DOWNLOAD_RATE_LIMIT_RETRIES: u32 = 3;
 
 /// A match result from the matcher phase: one torrent to add to the destination.
 #[derive(Debug, Clone)]
@@ -31,6 +37,8 @@ pub struct MatchedTorrent {
 
 /// Download the .torrent from the site, verify its pieces_hash, and add it
 /// to the destination downloader.
+// 下载、校验、去重、入库和站点限速共用一条路径；拆 struct 不在本次范围内。
+#[allow(clippy::too_many_arguments)]
 pub async fn add_torrent(
     matched: &MatchedTorrent,
     http_client: &reqwest::Client,
@@ -39,9 +47,11 @@ pub async fn add_torrent(
     auto_start: bool,
     db_writer: &DbWriterHandle,
     stats: &ReseedStats,
+    rate_limiter: Option<&SiteRateLimiter>,
 ) -> Result<bool, CoreError> {
     // Download .torrent file
-    let torrent_data = download_torrent(http_client, &matched.download_url).await?;
+    let torrent_data =
+        download_torrent(http_client, &matched.download_url, rate_limiter).await?;
 
     // Parse and verify pieces_hash matches
     let meta = parser::parse_bytes(&torrent_data)?;
@@ -175,26 +185,107 @@ pub async fn add_torrent(
 }
 
 /// Download a .torrent file from a URL.
-async fn download_torrent(client: &reqwest::Client, url: &str) -> Result<Vec<u8>, CoreError> {
-    let resp = client
-        .get(url)
-        .send()
-        .await
-        .map_err(|e| EngineError::AddFailed(format!("download torrent: {}", e)))?;
+///
+/// Site-level download spacing is applied when a limiter is present. HTTP 500
+/// bodies that say "下载过于频繁，请等待 N 秒" are treated as rate limits:
+/// wait, then retry a few times instead of failing the add.
+async fn download_torrent(
+    client: &reqwest::Client,
+    url: &str,
+    rate_limiter: Option<&SiteRateLimiter>,
+) -> Result<Vec<u8>, CoreError> {
+    let mut last_wait = None;
+    for attempt in 0..=DOWNLOAD_RATE_LIMIT_RETRIES {
+        if let Some(limiter) = rate_limiter {
+            limiter.acquire_download().await?;
+        }
 
-    let status = resp.status();
-    if !status.is_success() {
-        return Err(
-            EngineError::AddFailed(format!("download torrent HTTP {}: {}", status, url)).into(),
-        );
+        let resp = client
+            .get(url)
+            .send()
+            .await
+            .map_err(|e| EngineError::AddFailed(format!("download torrent: {}", e)))?;
+
+        let status = resp.status();
+        if status.is_success() {
+            if let Some(limiter) = rate_limiter {
+                limiter.record_success();
+            }
+            let bytes = resp
+                .bytes()
+                .await
+                .map_err(|e| EngineError::AddFailed(format!("read torrent body: {}", e)))?;
+            return Ok(bytes.to_vec());
+        }
+
+        let body = resp.text().await.unwrap_or_default();
+        let preview = preview_body(&body);
+        if is_download_rate_limited(status, &body) && attempt < DOWNLOAD_RATE_LIMIT_RETRIES {
+            let wait_secs = parse_wait_seconds(&body).unwrap_or(5);
+            last_wait = Some((status, preview.clone(), wait_secs));
+            tracing::warn!(
+                status = %status,
+                wait_secs,
+                attempt = attempt + 1,
+                url,
+                body = %preview,
+                "torrent download rate-limited, waiting before retry"
+            );
+            if let Some(limiter) = rate_limiter {
+                limiter.record_extra_wait(wait_secs);
+                let _ = limiter.record_error().await;
+            } else {
+                let capped = wait_secs.min(MAX_DOWNLOAD_WAIT_SECS);
+                tokio::time::sleep(std::time::Duration::from_secs(capped)).await;
+            }
+            continue;
+        }
+
+        if let Some(limiter) = rate_limiter {
+            let _ = limiter.record_error().await;
+        }
+        return Err(EngineError::AddFailed(format!(
+            "download torrent HTTP {}: {}{}",
+            status,
+            url,
+            format_body_suffix(&preview)
+        ))
+        .into());
     }
 
-    let bytes = resp
-        .bytes()
-        .await
-        .map_err(|e| EngineError::AddFailed(format!("read torrent body: {}", e)))?;
+    let (status, preview, wait_secs) = last_wait.unwrap_or((
+        reqwest::StatusCode::INTERNAL_SERVER_ERROR,
+        String::new(),
+        0,
+    ));
+    Err(EngineError::AddFailed(format!(
+        "download torrent HTTP {} after {} retries (last wait {}s): {}{}",
+        status,
+        DOWNLOAD_RATE_LIMIT_RETRIES,
+        wait_secs,
+        url,
+        format_body_suffix(&preview)
+    ))
+    .into())
+}
 
-    Ok(bytes.to_vec())
+fn preview_body(body: &str) -> String {
+    const MAX: usize = 200;
+    let trimmed = body.trim();
+    let collapsed: String = trimmed.split_whitespace().collect::<Vec<_>>().join(" ");
+    if collapsed.chars().count() <= MAX {
+        collapsed
+    } else {
+        collapsed.chars().take(MAX).collect()
+    }
+}
+
+fn format_body_suffix(preview: &str) -> String {
+    if preview.is_empty() {
+        String::new()
+    } else {
+        format!("; body: {preview}")
+    }
 }
 
 /// Record a reseed attempt in the history via DbWriter.

@@ -373,20 +373,9 @@ async fn run_pipeline(
                     return Err(CoreError::from(EngineError::Cancelled));
                 }
 
-                // Optional site-level rate limiting for downloads.
-                // Soft-fail: a single site circuit/rate-limit should not abort
-                // the whole add phase for other sites.
-                if let Some(handle) = registry.get(&matched.site_id) {
-                    if let Err(e) = handle.rate_limiter.acquire().await {
-                        tracing::warn!(
-                            site_id = matched.site_id.0,
-                            error = %e,
-                            "rate limiter blocked torrent download, skipping"
-                        );
-                        stats.failed.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                        return Ok(());
-                    }
-                }
+                let limiter = registry
+                    .get(&matched.site_id)
+                    .map(|handle| Arc::clone(&handle.rate_limiter));
 
                 if let Err(e) = adder::add_torrent(
                     &matched,
@@ -396,6 +385,7 @@ async fn run_pipeline(
                     auto_start,
                     &db_writer,
                     stats,
+                    limiter.as_deref(),
                 )
                 .await
                 {

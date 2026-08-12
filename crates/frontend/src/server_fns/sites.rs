@@ -25,6 +25,7 @@ pub struct SiteDefinitionInfo {
     pub adapter: String,
     pub rate_limit_interval_ms: Option<u64>,
     pub rate_limit_burst: Option<u32>,
+    pub download_interval_ms: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -100,6 +101,7 @@ pub async fn get_site_definitions() -> Result<Vec<SiteDefinitionInfo>, ServerFnE
             adapter: def.site.adapter,
             rate_limit_interval_ms: def.site.rate_limit_interval_ms,
             rate_limit_burst: def.site.rate_limit_burst,
+            download_interval_ms: def.site.download_interval_ms,
         })
         .collect();
     results.sort_by(|a, b| a.name.cmp(&b.name));

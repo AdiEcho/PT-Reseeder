@@ -92,6 +92,7 @@ pub struct SiteDefinitionCore {
     pub adapter: String,
     pub rate_limit_interval_ms: Option<u64>,
     pub rate_limit_burst: Option<u32>,
+    pub download_interval_ms: Option<u64>,
     pub batch_size: Option<usize>,
 }
 
@@ -214,6 +215,7 @@ url = "https://test.example.com"
 adapter = "nexusphp"
 rate_limit_interval_ms = 5000
 rate_limit_burst = 1
+download_interval_ms = 5000
 batch_size = 500
 "#;
         let def: SiteDefinition = toml_lib::from_str(toml_str).unwrap();
@@ -223,6 +225,7 @@ batch_size = 500
         assert_eq!(def.site.adapter, "nexusphp");
         assert_eq!(def.site.rate_limit_interval_ms, Some(5000));
         assert_eq!(def.site.rate_limit_burst, Some(1));
+        assert_eq!(def.site.download_interval_ms, Some(5000));
         assert_eq!(def.site.batch_size, Some(500));
         assert!(def.user_info.is_none());
     }

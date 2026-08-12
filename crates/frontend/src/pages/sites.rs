@@ -381,6 +381,11 @@ pub fn SitesPage() -> impl IntoView {
                                                                     set_rate_limit_burst.set(
                                                                         def.rate_limit_burst.unwrap_or(1).to_string(),
                                                                     );
+                                                                    set_download_interval.set(
+                                                                        def.download_interval_ms
+                                                                            .unwrap_or(5000)
+                                                                            .to_string(),
+                                                                    );
                                                                 }
                                                             }
                                                         >

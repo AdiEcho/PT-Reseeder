@@ -446,9 +446,10 @@ fn build_adapter_handle(
         .and_then(|def| def.site.batch_size)
         .unwrap_or(1000);
 
-    let rate_limiter = Arc::new(SiteRateLimiter::new(
+    let rate_limiter = Arc::new(SiteRateLimiter::with_download_interval(
         site.rate_limit_interval_ms.unwrap_or(5000).max(1) as u64,
         site.rate_limit_burst.unwrap_or(1).max(1) as u32,
+        site.download_interval_ms.unwrap_or(5000).max(1) as u64,
     ));
 
     match site.adapter_type.as_str() {

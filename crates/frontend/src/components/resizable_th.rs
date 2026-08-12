@@ -7,8 +7,10 @@
 use leptos::ev;
 use leptos::prelude::*;
 
+#[cfg(target_arch = "wasm32")]
 const STORAGE_PREFIX: &str = "pt-reseeder-col-width:";
 
+#[cfg(target_arch = "wasm32")]
 fn storage_key(col_key: &str) -> String {
     format!("{STORAGE_PREFIX}{col_key}")
 }
@@ -45,6 +47,19 @@ fn save_col_width(col_key: &str, width: i32) {
 #[cfg(not(target_arch = "wasm32"))]
 fn save_col_width(_col_key: &str, _width: i32) {}
 
+#[cfg(target_arch = "wasm32")]
+fn release_pointer_capture(ev: &ev::PointerEvent) {
+    use wasm_bindgen::JsCast;
+    if let Some(target) = ev.target() {
+        if let Ok(el) = target.dyn_into::<web_sys::Element>() {
+            let _ = el.release_pointer_capture(ev.pointer_id());
+        }
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn release_pointer_capture(_ev: &ev::PointerEvent) {}
+
 /// A `<th>` whose right edge can be dragged to resize the column.
 ///
 /// Pair with a table that has class `stats-table--resizable` (`table-layout: fixed`).
@@ -77,29 +92,25 @@ pub fn ResizableTh(
         });
     }
 
-    let on_pointer_down = {
-        let col_key = col_key.clone();
-        move |ev: ev::PointerEvent| {
-            // Only primary button / touch.
-            if ev.button() != 0 {
-                return;
-            }
-            ev.prevent_default();
-            ev.stop_propagation();
-            start_x.set_value(ev.client_x());
-            start_w.set_value(width.get_untracked());
-            set_dragging.set(true);
+    let on_pointer_down = move |ev: ev::PointerEvent| {
+        // Only primary button / touch.
+        if ev.button() != 0 {
+            return;
+        }
+        ev.prevent_default();
+        ev.stop_propagation();
+        start_x.set_value(ev.client_x());
+        start_w.set_value(width.get_untracked());
+        set_dragging.set(true);
 
-            #[cfg(target_arch = "wasm32")]
-            {
-                use wasm_bindgen::JsCast;
-                if let Some(target) = ev.target() {
-                    if let Ok(el) = target.dyn_into::<web_sys::Element>() {
-                        let _ = el.set_pointer_capture(ev.pointer_id());
-                    }
+        #[cfg(target_arch = "wasm32")]
+        {
+            use wasm_bindgen::JsCast;
+            if let Some(target) = ev.target() {
+                if let Ok(el) = target.dyn_into::<web_sys::Element>() {
+                    let _ = el.set_pointer_capture(ev.pointer_id());
                 }
             }
-            let _ = &col_key;
         }
     };
 
@@ -122,16 +133,21 @@ pub fn ResizableTh(
             let final_w = width.get_untracked().max(min_width);
             set_width.set(final_w);
             save_col_width(&col_key, final_w);
+            release_pointer_capture(&ev);
+        }
+    };
 
-            #[cfg(target_arch = "wasm32")]
-            {
-                use wasm_bindgen::JsCast;
-                if let Some(target) = ev.target() {
-                    if let Ok(el) = target.dyn_into::<web_sys::Element>() {
-                        let _ = el.release_pointer_capture(ev.pointer_id());
-                    }
-                }
+    let on_pointer_cancel = {
+        let col_key = col_key.clone();
+        move |ev: ev::PointerEvent| {
+            if !dragging.get_untracked() {
+                return;
             }
+            set_dragging.set(false);
+            let final_w = width.get_untracked().max(min_width);
+            set_width.set(final_w);
+            save_col_width(&col_key, final_w);
+            release_pointer_capture(&ev);
         }
     };
 
@@ -157,7 +173,7 @@ pub fn ResizableTh(
                 on:pointerdown=on_pointer_down
                 on:pointermove=on_pointer_move
                 on:pointerup=on_pointer_up
-                on:pointercancel=on_pointer_up
+                on:pointercancel=on_pointer_cancel
             ></div>
         </th>
     }

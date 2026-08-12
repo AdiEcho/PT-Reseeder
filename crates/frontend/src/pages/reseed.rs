@@ -1,5 +1,6 @@
 use crate::components::async_view::AsyncView;
 use crate::components::empty_state::EmptyState;
+use crate::components::resizable_th::ResizableTh;
 use crate::server_fns::{
     get_reseed_run_detail, get_reseed_runs, DryRunPreviewItemInfo, ReseedRunDetail, ReseedRunInfo,
 };
@@ -132,18 +133,52 @@ pub fn ReseedPage() -> impl IntoView {
 
                         view! {
                             <div class="table-wrap">
-                                <table class="stats-table">
+                                <table class="stats-table stats-table--resizable">
                                     <thead>
                                         <tr>
-                                            <th>"时间"</th>
-                                            <th>"任务"</th>
-                                            <th>"状态"</th>
-                                            <th>"识别数"</th>
-                                            <th class="table-col--secondary">"成功"</th>
-                                            <th class="table-col--secondary">"失败"</th>
-                                            <th class="table-col--secondary">"总大小"</th>
-                                            <th class="table-col--secondary">"耗时"</th>
-                                            <th>"操作"</th>
+                                            <ResizableTh col_key="reseed-runs-time" default_width=160>
+                                                "时间"
+                                            </ResizableTh>
+                                            <ResizableTh col_key="reseed-runs-task" default_width=220>
+                                                "任务"
+                                            </ResizableTh>
+                                            <ResizableTh col_key="reseed-runs-status" default_width=90>
+                                                "状态"
+                                            </ResizableTh>
+                                            <ResizableTh col_key="reseed-runs-matched" default_width=80>
+                                                "识别数"
+                                            </ResizableTh>
+                                            <ResizableTh
+                                                col_key="reseed-runs-success"
+                                                default_width=70
+                                                class="table-col--secondary"
+                                            >
+                                                "成功"
+                                            </ResizableTh>
+                                            <ResizableTh
+                                                col_key="reseed-runs-failed"
+                                                default_width=70
+                                                class="table-col--secondary"
+                                            >
+                                                "失败"
+                                            </ResizableTh>
+                                            <ResizableTh
+                                                col_key="reseed-runs-size"
+                                                default_width=110
+                                                class="table-col--secondary"
+                                            >
+                                                "总大小"
+                                            </ResizableTh>
+                                            <ResizableTh
+                                                col_key="reseed-runs-duration"
+                                                default_width=90
+                                                class="table-col--secondary"
+                                            >
+                                                "耗时"
+                                            </ResizableTh>
+                                            <ResizableTh col_key="reseed-runs-actions" default_width=150>
+                                                "操作"
+                                            </ResizableTh>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -325,16 +360,38 @@ fn ReseedItemsTable(items: Vec<DryRunPreviewItemInfo>) -> impl IntoView {
 
     view! {
         <div class="table-wrap">
-            <table class="stats-table">
+            <table class="stats-table stats-table--resizable">
                 <thead>
                     <tr>
-                        <th>"站点"</th>
-                        <th>"识别到的种子"</th>
-                        <th>"种子链接"</th>
-                        <th>"本地目录"</th>
-                        <th>"目录大小"</th>
-                        <th class="table-col--secondary">"Torrent ID"</th>
-                        <th class="table-col--secondary">"Pieces Hash"</th>
+                        <ResizableTh col_key="reseed-items-site" default_width=120>
+                            "站点"
+                        </ResizableTh>
+                        <ResizableTh col_key="reseed-items-title" default_width=240>
+                            "识别到的种子"
+                        </ResizableTh>
+                        <ResizableTh col_key="reseed-items-link" default_width=90>
+                            "种子链接"
+                        </ResizableTh>
+                        <ResizableTh col_key="reseed-items-path" default_width=260>
+                            "本地目录"
+                        </ResizableTh>
+                        <ResizableTh col_key="reseed-items-size" default_width=100>
+                            "目录大小"
+                        </ResizableTh>
+                        <ResizableTh
+                            col_key="reseed-items-tid"
+                            default_width=100
+                            class="table-col--secondary"
+                        >
+                            "Torrent ID"
+                        </ResizableTh>
+                        <ResizableTh
+                            col_key="reseed-items-hash"
+                            default_width=140
+                            class="table-col--secondary"
+                        >
+                            "Pieces Hash"
+                        </ResizableTh>
                     </tr>
                 </thead>
                 <tbody>

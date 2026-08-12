@@ -47,6 +47,12 @@ const NAV: &[NavEntry] = &[
         exact: true,
     },
     NavEntry {
+        label: "辅种结果",
+        href: "/reseed",
+        icon: NavIcon::Reseed,
+        exact: true,
+    },
+    NavEntry {
         label: "文件夹",
         href: "/folders",
         icon: NavIcon::Folders,

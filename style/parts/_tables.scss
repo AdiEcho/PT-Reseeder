@@ -52,6 +52,12 @@
     cursor: pointer;
 }
 
+// Selected row highlight for expandable / detail-linked tables.
+.stats-table tbody tr.row-selected,
+.stats-table tbody tr.row-selected:hover {
+    background: color-mix(in srgb, var(--accent, #3b82f6) 14%, var(--bg-muted));
+}
+
 // 主单元格下的次要说明行（任务名下的关联摘要等）。
 .table-subtext {
     font-size: var(--fs-xs);

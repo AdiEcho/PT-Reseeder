@@ -860,7 +860,10 @@ async fn test_full_pipeline_e2e() {
         .run_sync(config, dest_client.clone(), false)
         .await
         .unwrap();
-    assert!(preview.is_none());
+    let preview = preview.expect("real runs also return a match result for task logs");
+    assert!(!preview.dry_run);
+    assert_eq!(preview.would_add_count, 2);
+    assert_eq!(preview.items.len(), 2);
 
     // --- Verify results ---
     // 3 torrents scanned
@@ -937,6 +940,7 @@ async fn test_pipeline_dry_run_skips_add_and_history() {
     assert_eq!(dest_client.resumed_count(), 0);
 
     let preview = preview.expect("dry-run should return preview");
+    assert!(preview.dry_run);
     assert_eq!(preview.would_add_count, 2);
     assert_eq!(preview.items.len(), 2);
     assert!(preview
@@ -1055,7 +1059,10 @@ async fn test_pipeline_no_matches_completes() {
         .run_sync(config, dest_client.clone(), false)
         .await
         .unwrap();
-    assert!(preview.is_none());
+    let preview = preview.expect("real runs also return a match result for task logs");
+    assert!(!preview.dry_run);
+    assert_eq!(preview.would_add_count, 0);
+    assert!(preview.items.is_empty());
 
     assert_eq!(snapshot.scanned, 1);
     assert_eq!(snapshot.matched, 0);

@@ -137,8 +137,13 @@ impl TaskExecutor {
                         .and_then(|p| serde_json::to_string(p).ok());
                     ("dry_run", text, 0i64)
                 } else {
+                    // Persist the matched-item list for real runs too so the
+                    // reseeding results page can show title/path/size/link.
                     let status = if *failed > 0 { "partial" } else { "success" };
-                    (status, None, *succeeded)
+                    let text = preview
+                        .as_ref()
+                        .and_then(|p| serde_json::to_string(p).ok());
+                    (status, text, *succeeded)
                 };
                 // Persist the completion log before flipping task status/run_count so
                 // dry-run clients polling for idle can already read the preview payload.

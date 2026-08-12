@@ -95,8 +95,8 @@ impl ReseedEngine {
 
     /// Run the pipeline synchronously (blocking until complete).
     ///
-    /// When `dry_run` is true, returns a preview of would-add items and never
-    /// calls destination add / reseed history writes.
+    /// When `dry_run` is true, never calls destination add / reseed history writes.
+    /// Always returns a structured match result (possibly empty) for task-log UI.
     pub async fn run_sync(
         &self,
         config: ReseedConfig,
@@ -132,8 +132,8 @@ impl ReseedEngine {
 
 /// Internal: run the three-phase pipeline.
 ///
-/// Returns `Some(preview)` when `dry_run` is true (including empty would-add list).
-/// Returns `None` for real runs.
+/// Returns a structured match result for both dry-run and real runs
+/// (including an empty would-add list), so task logs can show per-item detail.
 // 三阶段流水线需要同时持有配置、注册表、仓储、写队列、目标下载器、统计、
 // 取消令牌与进度通道。拆分不在本次范围内。
 #[allow(clippy::too_many_arguments)]
@@ -236,10 +236,7 @@ async fn run_pipeline(
 
     if merged_scan.pieces_groups.is_empty() {
         tracing::info!("no torrents to match, pipeline done");
-        if dry_run {
-            return Ok(Some(build_preview(&[], &merged_scan, registry)));
-        }
-        return Ok(None);
+        return Ok(Some(build_preview(&[], &merged_scan, registry, dry_run)));
     }
 
     // Shared HTTP client for pack detection and add phase.
@@ -340,17 +337,16 @@ async fn run_pipeline(
         "phase 2 complete"
     );
 
+    // Capture the match result for task-log persistence (dry-run and real runs).
+    let preview = build_preview(&matched_torrents, &merged_scan, registry, dry_run);
+
     if matched_torrents.is_empty() {
         tracing::info!("no matches found, pipeline done");
-        if dry_run {
-            return Ok(Some(build_preview(&[], &merged_scan, registry)));
-        }
-        return Ok(None);
+        return Ok(Some(preview));
     }
 
     // Dry-run: stop after match; never enter adder / history writes.
     if dry_run {
-        let preview = build_preview(&matched_torrents, &merged_scan, registry);
         update_progress(progress_tx, "dry_run_preview", stats, start);
         tracing::info!(
             would_add = preview.would_add_count,
@@ -435,7 +431,7 @@ async fn run_pipeline(
         "pipeline complete"
     );
 
-    Ok(None)
+    Ok(Some(preview))
 }
 
 fn site_id_for_jackett_tracker(

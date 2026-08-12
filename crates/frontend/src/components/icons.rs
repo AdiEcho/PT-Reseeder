@@ -17,6 +17,7 @@ pub enum NavIcon {
     Sites,
     Downloaders,
     Tasks,
+    Reseed,
     Folders,
     Repost,
     Logs,
@@ -32,6 +33,7 @@ pub fn Icon(icon: NavIcon) -> impl IntoView {
         NavIcon::Sites => view! { <IconSites /> }.into_any(),
         NavIcon::Downloaders => view! { <IconDownloaders /> }.into_any(),
         NavIcon::Tasks => view! { <IconTasks /> }.into_any(),
+        NavIcon::Reseed => view! { <IconReseed /> }.into_any(),
         NavIcon::Folders => view! { <IconFolders /> }.into_any(),
         NavIcon::Repost => view! { <IconRepost /> }.into_any(),
         NavIcon::Logs => view! { <IconLogs /> }.into_any(),
@@ -124,6 +126,29 @@ fn IconTasks() -> impl IntoView {
         >
             <circle cx="8" cy="8" r="6" />
             <path d="M8 4.5V8l2.5 1.5" />
+        </svg>
+    }
+}
+
+/// 辅种结果：种子发芽（识别到的辅种明细）。
+#[component]
+fn IconReseed() -> impl IntoView {
+    view! {
+        <svg
+            width="16"
+            height="16"
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+        >
+            <path d="M8 13.5V7" />
+            <path d="M8 7C8 4.5 6 2.5 3.5 2.5 3.5 5 5.5 7 8 7z" />
+            <path d="M8 7c0-2.5 2-4.5 4.5-4.5C12.5 5 10.5 7 8 7z" />
+            <path d="M5.5 13.5h5" />
         </svg>
     }
 }

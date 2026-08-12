@@ -1011,6 +1011,37 @@ impl Repository {
         Ok(rows)
     }
 
+    /// List recent reseed task logs across all reseed tasks (newest first).
+    ///
+    /// Includes dry_run / success / partial rows so the reseeding results page
+    /// can show both previews and real runs. Failed rows without structured
+    /// payload are still returned; the UI decides how to render them.
+    pub async fn list_recent_reseed_task_logs(
+        &self,
+        limit: i64,
+    ) -> Result<Vec<TaskLog>, CoreError> {
+        let rows = sqlx::query_as::<_, TaskLog>(
+            "SELECT tl.* FROM task_logs tl \
+             INNER JOIN tasks t ON t.id = tl.task_id \
+             WHERE t.task_type = 'reseed' \
+             ORDER BY tl.created_at DESC, tl.id DESC \
+             LIMIT ?",
+        )
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows)
+    }
+
+    /// Fetch a single task log by id.
+    pub async fn get_task_log(&self, log_id: i64) -> Result<Option<TaskLog>, CoreError> {
+        let row = sqlx::query_as::<_, TaskLog>("SELECT * FROM task_logs WHERE id = ?")
+            .bind(log_id)
+            .fetch_optional(&self.pool)
+            .await?;
+        Ok(row)
+    }
+
     // --- Repost Queue ---
 
     pub async fn create_repost_entry(

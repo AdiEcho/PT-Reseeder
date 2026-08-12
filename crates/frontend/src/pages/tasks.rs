@@ -8,6 +8,7 @@ use crate::server_fns::{
     get_task_logs, get_tasks, trigger_task, CreateTaskInput, DownloaderInfo, DryRunPreviewInfo,
     FolderInfo, SiteInfo, TaskInfo, TaskLogInfo,
 };
+use crate::utils::format_bytes;
 use leptos::ev;
 use leptos::prelude::*;
 use leptos_router::components::A;
@@ -821,6 +822,19 @@ where
                     >
                         "删除"
                     </button>
+                    {if is_reseed {
+                        Some(view! {
+                            <A
+                                href="/reseed"
+                                attr:class="btn btn--sm btn--outline"
+                                on:click=move |ev| ev.stop_propagation()
+                            >
+                                "结果"
+                            </A>
+                        })
+                    } else {
+                        None
+                    }}
                 </td>
             </tr>
             {move || {
@@ -909,6 +923,8 @@ where
                                         <th>"Pieces Hash"</th>
                                         <th>"Torrent ID"</th>
                                         <th>"保存路径"</th>
+                                        <th class="table-col--secondary">"大小"</th>
+                                        <th class="table-col--secondary">"链接"</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -924,13 +940,31 @@ where
                                                 .torrent_id
                                                 .map(|v| v.to_string())
                                                 .unwrap_or_else(|| "-".into());
+                                            let size = item
+                                                .total_size
+                                                .map(format_bytes)
+                                                .unwrap_or_else(|| "-".into());
+                                            let detail_url = item.detail_url.clone();
+                                            let save_path_title = item.save_path.clone();
+                                            let save_path = item.save_path;
                                             view! {
                                                 <tr>
                                                     <td>{item.site_name}</td>
                                                     <td title=item.title.clone().unwrap_or_default()>{title}</td>
                                                     <td class="text-muted" title=item.pieces_hash.clone()>{hash}</td>
                                                     <td class="text-muted">{tid}</td>
-                                                    <td class="text-muted">{item.save_path}</td>
+                                                    <td class="text-muted" title=save_path_title>{save_path}</td>
+                                                    <td class="text-muted table-col--secondary">{size}</td>
+                                                    <td class="table-col--secondary">
+                                                        {match detail_url {
+                                                            Some(url) if !url.is_empty() => view! {
+                                                                <a href=url target="_blank" rel="noopener noreferrer">
+                                                                    "详情"
+                                                                </a>
+                                                            }.into_any(),
+                                                            _ => view! { <span class="text-muted">"-"</span> }.into_any(),
+                                                        }}
+                                                    </td>
                                                 </tr>
                                             }
                                         })

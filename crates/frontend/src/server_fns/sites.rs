@@ -23,6 +23,8 @@ pub struct SiteDefinitionInfo {
     pub url: String,
     pub api_url: Option<String>,
     pub adapter: String,
+    pub rate_limit_interval_ms: Option<u64>,
+    pub rate_limit_burst: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -33,6 +35,9 @@ pub struct SiteInfo {
     pub api_url: Option<String>,
     pub adapter_type: String,
     pub auth_type: String,
+    pub rate_limit_interval_ms: Option<i64>,
+    pub rate_limit_burst: Option<i64>,
+    pub download_interval_ms: Option<i64>,
     pub probe_status: String,
     pub probe_detail_json: Option<String>,
     pub enabled: bool,
@@ -69,6 +74,9 @@ pub async fn get_sites() -> Result<Vec<SiteInfo>, ServerFnError> {
             api_url: s.api_url,
             adapter_type: s.adapter_type,
             auth_type: s.auth_type,
+            rate_limit_interval_ms: s.rate_limit_interval_ms,
+            rate_limit_burst: s.rate_limit_burst,
+            download_interval_ms: s.download_interval_ms,
             probe_status: s.probe_status,
             probe_detail_json: s.probe_detail_json,
             enabled: s.enabled,
@@ -90,6 +98,8 @@ pub async fn get_site_definitions() -> Result<Vec<SiteDefinitionInfo>, ServerFnE
             url: def.site.url,
             api_url: def.site.api_url,
             adapter: def.site.adapter,
+            rate_limit_interval_ms: def.site.rate_limit_interval_ms,
+            rate_limit_burst: def.site.rate_limit_burst,
         })
         .collect();
     results.sort_by(|a, b| a.name.cmp(&b.name));
@@ -128,6 +138,9 @@ pub async fn update_site(
     api_url: String,
     cookie: String,
     passkey: String,
+    rate_limit_interval_ms: Option<i64>,
+    rate_limit_burst: Option<i64>,
+    download_interval_ms: Option<i64>,
 ) -> Result<SiteInfo, ServerFnError> {
     use pt_reseeder_core::db::repo::Repository;
 
@@ -152,6 +165,16 @@ pub async fn update_site(
         Some(api_url.trim().to_string())
     };
     repo.update_site_url(id, &url, api_url_opt.as_deref())
+        .await?;
+
+    let rate_interval = rate_limit_interval_ms
+        .map(|v| v.max(1))
+        .or(Some(5000));
+    let rate_burst = rate_limit_burst.map(|v| v.max(1)).or(Some(1));
+    let download_interval = download_interval_ms
+        .map(|v| v.max(1))
+        .or(Some(5000));
+    repo.update_site_rate_limits(id, rate_interval, rate_burst, download_interval)
         .await?;
 
     // Update credentials (only if user provided new values; empty means keep existing)
@@ -206,6 +229,9 @@ pub async fn create_site(
     auth_type: String,
     cookie: String,
     passkey: String,
+    rate_limit_interval_ms: Option<i64>,
+    rate_limit_burst: Option<i64>,
+    download_interval_ms: Option<i64>,
 ) -> Result<SiteInfo, ServerFnError> {
     use pt_reseeder_core::db::repo::Repository;
 
@@ -226,6 +252,13 @@ pub async fn create_site(
             "不支持的站点架构：{adapter_type}"
         )));
     }
+    let rate_interval = rate_limit_interval_ms
+        .map(|v| v.max(1))
+        .or(Some(5000));
+    let rate_burst = rate_limit_burst.map(|v| v.max(1)).or(Some(1));
+    let download_interval = download_interval_ms
+        .map(|v| v.max(1))
+        .or(Some(5000));
     let id = match repo
         .create_site(
             &name,
@@ -233,6 +266,9 @@ pub async fn create_site(
             (!api_url.trim().is_empty()).then_some(api_url.as_str()),
             &adapter,
             &auth_type,
+            rate_interval,
+            rate_burst,
+            download_interval,
         )
         .await
     {
@@ -500,6 +536,9 @@ pub async fn get_site_detail(id: i64) -> Result<SiteDetailData, ServerFnError> {
             api_url: site.api_url,
             adapter_type: site.adapter_type,
             auth_type: site.auth_type,
+            rate_limit_interval_ms: site.rate_limit_interval_ms,
+            rate_limit_burst: site.rate_limit_burst,
+            download_interval_ms: site.download_interval_ms,
             probe_status: site.probe_status,
             probe_detail_json: site.probe_detail_json,
             enabled: site.enabled,

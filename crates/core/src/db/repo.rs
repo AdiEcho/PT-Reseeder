@@ -186,6 +186,8 @@ impl Repository {
 
     // --- Sites ---
 
+    // 速率参数与 sites 表三列直接对应；默认值由 SQLite DEFAULT 兜底。
+    #[allow(clippy::too_many_arguments)]
     pub async fn create_site(
         &self,
         name: &str,
@@ -193,16 +195,23 @@ impl Repository {
         api_url: Option<&str>,
         adapter_type: &str,
         auth_type: &str,
+        rate_limit_interval_ms: Option<i64>,
+        rate_limit_burst: Option<i64>,
+        download_interval_ms: Option<i64>,
     ) -> Result<i64, CoreError> {
         let result = sqlx::query(
-            "INSERT INTO sites (name, url, api_url, adapter_type, auth_type) \
-             VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO sites (name, url, api_url, adapter_type, auth_type, \
+             rate_limit_interval_ms, rate_limit_burst, download_interval_ms) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(name)
         .bind(url)
         .bind(api_url)
         .bind(adapter_type)
         .bind(auth_type)
+        .bind(rate_limit_interval_ms)
+        .bind(rate_limit_burst)
+        .bind(download_interval_ms)
         .execute(&self.pool)
         .await?;
         Ok(result.last_insert_rowid())
@@ -281,6 +290,27 @@ impl Repository {
         )
         .bind(url)
         .bind(api_url)
+        .bind(id)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn update_site_rate_limits(
+        &self,
+        id: i64,
+        rate_limit_interval_ms: Option<i64>,
+        rate_limit_burst: Option<i64>,
+        download_interval_ms: Option<i64>,
+    ) -> Result<(), CoreError> {
+        sqlx::query(
+            "UPDATE sites SET rate_limit_interval_ms = ?, rate_limit_burst = ?, \
+             download_interval_ms = ?, updated_at = datetime('now') \
+             WHERE id = ?",
+        )
+        .bind(rate_limit_interval_ms)
+        .bind(rate_limit_burst)
+        .bind(download_interval_ms)
         .bind(id)
         .execute(&self.pool)
         .await?;
@@ -1184,6 +1214,9 @@ mod tests {
                 Some("https://hdsky.me/api"),
                 "nexusphp",
                 "cookie",
+                None,
+                None,
+                None,
             )
             .await
             .unwrap();
@@ -1197,10 +1230,10 @@ mod tests {
     #[tokio::test]
     async fn list_sites_returns_all_sites() {
         let repo = setup_repo().await;
-        repo.create_site("Site1", "http://1", None, "np", "cookie")
+        repo.create_site("Site1", "http://1", None, "np", "cookie", None, None, None)
             .await
             .unwrap();
-        repo.create_site("Site2", "http://2", None, "np", "cookie")
+        repo.create_site("Site2", "http://2", None, "np", "cookie", None, None, None)
             .await
             .unwrap();
         let sites = repo.list_sites().await.unwrap();
@@ -1211,7 +1244,7 @@ mod tests {
     async fn delete_site_removes_row() {
         let repo = setup_repo().await;
         let id = repo
-            .create_site("ToDelete", "http://x", None, "np", "cookie")
+            .create_site("ToDelete", "http://x", None, "np", "cookie", None, None, None)
             .await
             .unwrap();
         repo.delete_site(id).await.unwrap();
@@ -1362,7 +1395,7 @@ mod tests {
     async fn insert_and_find_reseed_history() {
         let repo = setup_repo().await;
         let site_id = repo
-            .create_site("S", "http://s", None, "np", "cookie")
+            .create_site("S", "http://s", None, "np", "cookie", None, None, None)
             .await
             .unwrap();
         repo.insert_reseed_history("ph", site_id, Some(42), Some("ih"), "success", None)
@@ -1497,11 +1530,11 @@ mod tests {
             .await
             .unwrap();
         let s1 = repo
-            .create_site("S1", "http://1", None, "np", "cookie")
+            .create_site("S1", "http://1", None, "np", "cookie", None, None, None)
             .await
             .unwrap();
         let s2 = repo
-            .create_site("S2", "http://2", None, "np", "cookie")
+            .create_site("S2", "http://2", None, "np", "cookie", None, None, None)
             .await
             .unwrap();
 

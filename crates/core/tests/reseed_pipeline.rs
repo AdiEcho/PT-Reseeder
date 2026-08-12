@@ -230,6 +230,9 @@ async fn setup_db() -> (
         None,
         "mock",
         "cookie",
+        None,
+        None,
+        None,
     )
     .await
     .unwrap();

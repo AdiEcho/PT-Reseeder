@@ -171,6 +171,9 @@ async fn setup_repo() -> Repository {
         None,
         "mock",
         "cookie",
+        None,
+        None,
+        None,
     )
     .await
     .unwrap();
@@ -180,6 +183,9 @@ async fn setup_repo() -> Repository {
         None,
         "mock",
         "cookie",
+        None,
+        None,
+        None,
     )
     .await
     .unwrap();

@@ -61,6 +61,9 @@ pub fn SiteDetailPage() -> impl IntoView {
     let (edit_api_url, set_edit_api_url) = signal(String::new());
     let (edit_cookie, set_edit_cookie) = signal(String::new());
     let (edit_passkey, set_edit_passkey) = signal(String::new());
+    let (edit_rate_limit_interval, set_edit_rate_limit_interval) = signal("5000".to_string());
+    let (edit_rate_limit_burst, set_edit_rate_limit_burst) = signal("1".to_string());
+    let (edit_download_interval, set_edit_download_interval) = signal("5000".to_string());
 
     // Load site detail.
     // The source closure must own `site_id` (a `&site_id` reference, as clippy
@@ -81,10 +84,12 @@ pub fn SiteDetailPage() -> impl IntoView {
     });
 
     // Update site action
-    let update_site_action = Action::new(move |args: &(i64, String, String, String, String)| {
-        let (id, u, au, c, p) = args.clone();
-        async move { crate::server_fns::update_site(id, u, au, c, p).await }
-    });
+    let update_site_action = Action::new(
+        move |args: &(i64, String, String, String, String, Option<i64>, Option<i64>, Option<i64>)| {
+            let (id, u, au, c, p, rli, rlb, di) = args.clone();
+            async move { crate::server_fns::update_site(id, u, au, c, p, rli, rlb, di).await }
+        },
+    );
 
     let refresh_pending = refresh_action.pending();
     let probe_pending = probe_action.pending();
@@ -152,6 +157,9 @@ pub fn SiteDetailPage() -> impl IntoView {
                     let site_api_url_display = site.api_url.clone().unwrap_or_default();
                     let site_url_for_edit = site.url.clone();
                     let site_api_url_for_edit = site.api_url.clone().unwrap_or_default();
+                    let site_rate_interval = site.rate_limit_interval_ms.unwrap_or(5000);
+                    let site_rate_burst = site.rate_limit_burst.unwrap_or(1);
+                    let site_download_interval = site.download_interval_ms.unwrap_or(5000);
                     let site_adapter = site.adapter_type.clone();
                     let site_auth_type = site.auth_type.clone();
                     let site_probe_status = site.probe_status.clone();
@@ -230,6 +238,37 @@ pub fn SiteDetailPage() -> impl IntoView {
                                                     />
                                                     <p class="field-hint">"留空则保持现有凭证不变，不会清空已保存的 Passkey。"</p>
                                                 </div>
+                                                <div class="form-group">
+                                                    <label>"API 请求间隔 (ms)"</label>
+                                                    <input
+                                                        type="number"
+                                                        min="1"
+                                                        step="1"
+                                                        prop:value=move || edit_rate_limit_interval.get()
+                                                        on:input=move |ev| set_edit_rate_limit_interval.set(event_target_value(&ev))
+                                                    />
+                                                    <p class="field-hint">"两次 API 请求的最小间隔。遇到 429 时可调大，例如 8000–15000。"</p>
+                                                </div>
+                                                <div class="form-group">
+                                                    <label>"突发容量"</label>
+                                                    <input
+                                                        type="number"
+                                                        min="1"
+                                                        step="1"
+                                                        prop:value=move || edit_rate_limit_burst.get()
+                                                        on:input=move |ev| set_edit_rate_limit_burst.set(event_target_value(&ev))
+                                                    />
+                                                </div>
+                                                <div class="form-group">
+                                                    <label>"下载间隔 (ms)"</label>
+                                                    <input
+                                                        type="number"
+                                                        min="1"
+                                                        step="1"
+                                                        prop:value=move || edit_download_interval.get()
+                                                        on:input=move |ev| set_edit_download_interval.set(event_target_value(&ev))
+                                                    />
+                                                </div>
                                             </div>
                                             <div class="form-actions">
                                                 <button
@@ -243,7 +282,31 @@ pub fn SiteDetailPage() -> impl IntoView {
                                                     class="btn btn--primary"
                                                     disabled=move || update_site_action.pending().get()
                                                     on:click=move |_| {
-                                                        update_site_action.dispatch((current_site_id, edit_url.get_untracked(), edit_api_url.get_untracked(), edit_cookie.get_untracked(), edit_passkey.get_untracked()));
+                                                        let rli = edit_rate_limit_interval
+                                                            .get_untracked()
+                                                            .parse::<i64>()
+                                                            .ok()
+                                                            .filter(|v| *v > 0);
+                                                        let rlb = edit_rate_limit_burst
+                                                            .get_untracked()
+                                                            .parse::<i64>()
+                                                            .ok()
+                                                            .filter(|v| *v > 0);
+                                                        let di = edit_download_interval
+                                                            .get_untracked()
+                                                            .parse::<i64>()
+                                                            .ok()
+                                                            .filter(|v| *v > 0);
+                                                        update_site_action.dispatch((
+                                                            current_site_id,
+                                                            edit_url.get_untracked(),
+                                                            edit_api_url.get_untracked(),
+                                                            edit_cookie.get_untracked(),
+                                                            edit_passkey.get_untracked(),
+                                                            rli,
+                                                            rlb,
+                                                            di,
+                                                        ));
                                                     }
                                                 >
                                                     {move || if update_site_action.pending().get() { "保存中..." } else { "保存" }}
@@ -267,6 +330,14 @@ pub fn SiteDetailPage() -> impl IntoView {
                                             } else {
                                                 None
                                             }}
+                                            <p class="text-muted">
+                                                {format!(
+                                                    "API 请求间隔: {} ms · 突发: {} · 下载间隔: {} ms",
+                                                    site_rate_interval,
+                                                    site_rate_burst,
+                                                    site_download_interval,
+                                                )}
+                                            </p>
                                             <button
                                                 class="btn btn--sm btn--outline"
                                                 on:click=move |_| {
@@ -274,6 +345,9 @@ pub fn SiteDetailPage() -> impl IntoView {
                                                     set_edit_api_url.set(api_url_for_btn.clone());
                                                     set_edit_cookie.set(String::new());
                                                     set_edit_passkey.set(String::new());
+                                                    set_edit_rate_limit_interval.set(site_rate_interval.to_string());
+                                                    set_edit_rate_limit_burst.set(site_rate_burst.to_string());
+                                                    set_edit_download_interval.set(site_download_interval.to_string());
                                                     set_editing_url.set(true);
                                                 }
                                             >

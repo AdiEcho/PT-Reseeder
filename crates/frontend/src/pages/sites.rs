@@ -168,12 +168,18 @@ pub fn SitesPage() -> impl IntoView {
     let (cookie, set_cookie) = signal(String::new());
     let (passkey, set_passkey) = signal(String::new());
     let (is_custom, set_is_custom) = signal(true);
+    let (rate_limit_interval, set_rate_limit_interval) = signal("5000".to_string());
+    let (rate_limit_burst, set_rate_limit_burst) = signal("1".to_string());
+    let (download_interval, set_download_interval) = signal("5000".to_string());
 
     // Edit site form signals
     let (edit_url, set_edit_url) = signal(String::new());
     let (edit_api_url, set_edit_api_url) = signal(String::new());
     let (edit_cookie, set_edit_cookie) = signal(String::new());
     let (edit_passkey, set_edit_passkey) = signal(String::new());
+    let (edit_rate_limit_interval, set_edit_rate_limit_interval) = signal("5000".to_string());
+    let (edit_rate_limit_burst, set_edit_rate_limit_burst) = signal("1".to_string());
+    let (edit_download_interval, set_edit_download_interval) = signal("5000".to_string());
 
     // Load sites list
     let sites = Resource::new(|| (), |_| crate::server_fns::get_sites());
@@ -190,7 +196,22 @@ pub fn SitesPage() -> impl IntoView {
         let aht = auth_type.get_untracked();
         let c = cookie.get_untracked();
         let p = passkey.get_untracked();
-        async move { crate::server_fns::create_site(n, u, au, at, aht, c, p).await }
+        let rli = rate_limit_interval
+            .get_untracked()
+            .parse::<i64>()
+            .ok()
+            .filter(|v| *v > 0);
+        let rlb = rate_limit_burst
+            .get_untracked()
+            .parse::<i64>()
+            .ok()
+            .filter(|v| *v > 0);
+        let di = download_interval
+            .get_untracked()
+            .parse::<i64>()
+            .ok()
+            .filter(|v| *v > 0);
+        async move { crate::server_fns::create_site(n, u, au, at, aht, c, p, rli, rlb, di).await }
     });
 
     // Validate site action
@@ -222,10 +243,12 @@ pub fn SitesPage() -> impl IntoView {
     });
 
     // Update site action
-    let update_site_action = Action::new(move |args: &(i64, String, String, String, String)| {
-        let (id, u, au, c, p) = args.clone();
-        async move { crate::server_fns::update_site(id, u, au, c, p).await }
-    });
+    let update_site_action = Action::new(
+        move |args: &(i64, String, String, String, String, Option<i64>, Option<i64>, Option<i64>)| {
+            let (id, u, au, c, p, rli, rlb, di) = args.clone();
+            async move { crate::server_fns::update_site(id, u, au, c, p, rli, rlb, di).await }
+        },
+    );
 
     // Refetch sites after create/delete/probe/update
     Effect::new(move |_| {
@@ -243,6 +266,9 @@ pub fn SitesPage() -> impl IntoView {
                     set_auth_type.set("cookie".to_string());
                     set_cookie.set(String::new());
                     set_passkey.set(String::new());
+                    set_rate_limit_interval.set("5000".to_string());
+                    set_rate_limit_burst.set("1".to_string());
+                    set_download_interval.set("5000".to_string());
                     set_is_custom.set(true);
                     set_show_form.set(false);
                 }
@@ -328,6 +354,9 @@ pub fn SitesPage() -> impl IntoView {
                                                                         set_url.set(String::new());
                                                                         set_api_url.set(String::new());
                                                                         set_adapter_type.set("NexusPHP".to_string());
+                                                                        set_rate_limit_interval.set("5000".to_string());
+                                                                        set_rate_limit_burst.set("1".to_string());
+                                                                        set_download_interval.set("5000".to_string());
                                                                     }
                                                                 } else if let Some(def) = defs_for_change.iter().find(|d| d.id == val) {
                                                                     set_is_custom.set(false);
@@ -344,6 +373,14 @@ pub fn SitesPage() -> impl IntoView {
                                                                         other => other,
                                                                     };
                                                                     set_adapter_type.set(adapter_display.to_string());
+                                                                    set_rate_limit_interval.set(
+                                                                        def.rate_limit_interval_ms
+                                                                            .unwrap_or(5000)
+                                                                            .to_string(),
+                                                                    );
+                                                                    set_rate_limit_burst.set(
+                                                                        def.rate_limit_burst.unwrap_or(1).to_string(),
+                                                                    );
                                                                 }
                                                             }
                                                         >
@@ -454,6 +491,48 @@ pub fn SitesPage() -> impl IntoView {
                                             set_passkey.set(event_target_value(&ev))
                                         }
                                     />
+                                </div>
+                                <div class="form-group">
+                                    <label>"API 请求间隔 (ms)"</label>
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        step="1"
+                                        placeholder="5000"
+                                        prop:value=move || rate_limit_interval.get()
+                                        on:input=move |ev| {
+                                            set_rate_limit_interval.set(event_target_value(&ev))
+                                        }
+                                    />
+                                    <p class="field-hint">"两次 API 请求的最小间隔，越大越不容易触发站点 429。默认 5000。"</p>
+                                </div>
+                                <div class="form-group">
+                                    <label>"突发容量"</label>
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        step="1"
+                                        placeholder="1"
+                                        prop:value=move || rate_limit_burst.get()
+                                        on:input=move |ev| {
+                                            set_rate_limit_burst.set(event_target_value(&ev))
+                                        }
+                                    />
+                                    <p class="field-hint">"允许短时间内连发的请求数，默认 1。"</p>
+                                </div>
+                                <div class="form-group">
+                                    <label>"下载间隔 (ms)"</label>
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        step="1"
+                                        placeholder="5000"
+                                        prop:value=move || download_interval.get()
+                                        on:input=move |ev| {
+                                            set_download_interval.set(event_target_value(&ev))
+                                        }
+                                    />
+                                    <p class="field-hint">"种子下载请求间隔，默认 5000。"</p>
                                 </div>
                             </div>
                             <div class="form-actions">
@@ -604,6 +683,19 @@ pub fn SitesPage() -> impl IntoView {
                                                                     set_edit_api_url.set(site_api_url.clone());
                                                                     set_edit_cookie.set(String::new());
                                                                     set_edit_passkey.set(String::new());
+                                                                    set_edit_rate_limit_interval.set(
+                                                                        site.rate_limit_interval_ms
+                                                                            .unwrap_or(5000)
+                                                                            .to_string(),
+                                                                    );
+                                                                    set_edit_rate_limit_burst.set(
+                                                                        site.rate_limit_burst.unwrap_or(1).to_string(),
+                                                                    );
+                                                                    set_edit_download_interval.set(
+                                                                        site.download_interval_ms
+                                                                            .unwrap_or(5000)
+                                                                            .to_string(),
+                                                                    );
                                                                     set_edit_url_site.set(Some((site_id, site_url.clone(), site_api_url.clone())));
                                                                 }
                                                             >
@@ -649,15 +741,39 @@ pub fn SitesPage() -> impl IntoView {
                             set_edit_cookie=set_edit_cookie
                             edit_passkey=edit_passkey
                             set_edit_passkey=set_edit_passkey
+                            edit_rate_limit_interval=edit_rate_limit_interval
+                            set_edit_rate_limit_interval=set_edit_rate_limit_interval
+                            edit_rate_limit_burst=edit_rate_limit_burst
+                            set_edit_rate_limit_burst=set_edit_rate_limit_burst
+                            edit_download_interval=edit_download_interval
+                            set_edit_download_interval=set_edit_download_interval
                             pending=Signal::derive(move || update_site_action.pending().get())
                             on_cancel=move || set_edit_url_site.set(None)
                             on_save=move || {
+                                let rli = edit_rate_limit_interval
+                                    .get_untracked()
+                                    .parse::<i64>()
+                                    .ok()
+                                    .filter(|v| *v > 0);
+                                let rlb = edit_rate_limit_burst
+                                    .get_untracked()
+                                    .parse::<i64>()
+                                    .ok()
+                                    .filter(|v| *v > 0);
+                                let di = edit_download_interval
+                                    .get_untracked()
+                                    .parse::<i64>()
+                                    .ok()
+                                    .filter(|v| *v > 0);
                                 update_site_action.dispatch((
                                     edit_id,
                                     edit_url.get_untracked(),
                                     edit_api_url.get_untracked(),
                                     edit_cookie.get_untracked(),
                                     edit_passkey.get_untracked(),
+                                    rli,
+                                    rlb,
+                                    di,
                                 ));
                             }
                         />
@@ -698,6 +814,12 @@ fn EditSiteModal(
     set_edit_cookie: WriteSignal<String>,
     edit_passkey: ReadSignal<String>,
     set_edit_passkey: WriteSignal<String>,
+    edit_rate_limit_interval: ReadSignal<String>,
+    set_edit_rate_limit_interval: WriteSignal<String>,
+    edit_rate_limit_burst: ReadSignal<String>,
+    set_edit_rate_limit_burst: WriteSignal<String>,
+    edit_download_interval: ReadSignal<String>,
+    set_edit_download_interval: WriteSignal<String>,
     pending: Signal<bool>,
     on_cancel: impl Fn() + 'static + Clone,
     on_save: impl Fn() + 'static + Clone,
@@ -763,6 +885,37 @@ fn EditSiteModal(
                             on:input=move |ev| set_edit_passkey.set(event_target_value(&ev))
                         />
                         <p class="field-hint">"留空则保持现有凭证不变，不会清空已保存的 Passkey。"</p>
+                    </div>
+                    <div class="form-group">
+                        <label>"API 请求间隔 (ms)"</label>
+                        <input
+                            type="number"
+                            min="1"
+                            step="1"
+                            prop:value=move || edit_rate_limit_interval.get()
+                            on:input=move |ev| set_edit_rate_limit_interval.set(event_target_value(&ev))
+                        />
+                        <p class="field-hint">"两次 API 请求的最小间隔。遇到 429 时可调大，例如 8000–15000。"</p>
+                    </div>
+                    <div class="form-group">
+                        <label>"突发容量"</label>
+                        <input
+                            type="number"
+                            min="1"
+                            step="1"
+                            prop:value=move || edit_rate_limit_burst.get()
+                            on:input=move |ev| set_edit_rate_limit_burst.set(event_target_value(&ev))
+                        />
+                    </div>
+                    <div class="form-group">
+                        <label>"下载间隔 (ms)"</label>
+                        <input
+                            type="number"
+                            min="1"
+                            step="1"
+                            prop:value=move || edit_download_interval.get()
+                            on:input=move |ev| set_edit_download_interval.set(event_target_value(&ev))
+                        />
                     </div>
                 </div>
                 <div class="form-actions">

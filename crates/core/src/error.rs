@@ -141,6 +141,8 @@ pub enum SchedulerError {
     InvalidConfig(String),
     #[error("folder not found: {0}")]
     FolderNotFound(i64),
+    #[error("task {0} is running and cannot be edited")]
+    TaskRunning(i64),
 }
 
 #[cfg(test)]

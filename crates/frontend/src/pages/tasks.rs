@@ -5,8 +5,8 @@ use crate::components::modal_focus::use_modal_focus;
 use crate::components::toast::{show_toast, ToastType};
 use crate::server_fns::{
     create_task, delete_task, get_downloaders, get_folders, get_latest_dry_run_preview, get_sites,
-    get_task_logs, get_tasks, trigger_task, CreateTaskInput, DownloaderInfo, DryRunPreviewInfo,
-    FolderInfo, SiteInfo, TaskInfo, TaskLogInfo,
+    get_task_logs, get_tasks, trigger_task, update_task, CreateTaskInput, DownloaderInfo,
+    DryRunPreviewInfo, FolderInfo, SiteInfo, TaskInfo, TaskLogInfo,
 };
 use crate::utils::format_bytes;
 use leptos::ev;
@@ -87,6 +87,7 @@ fn association_summary(task: &TaskInfo) -> String {
 pub fn TasksPage() -> impl IntoView {
     let (version, set_version) = signal(0u64);
     let (show_form, set_show_form) = signal(false);
+    let (editing_id, set_editing_id) = signal(None::<i64>);
 
     let tasks = Resource::new(move || version.get(), |_| get_tasks());
     let sites = Resource::new(
@@ -138,6 +139,7 @@ pub fn TasksPage() -> impl IntoView {
     let (submitting, set_submitting) = signal(false);
 
     let reset_form = move || {
+        set_editing_id.set(None);
         set_name.set(String::new());
         set_task_type.set("reseed".to_string());
         set_trigger_type.set("manual".to_string());
@@ -152,6 +154,22 @@ pub fn TasksPage() -> impl IntoView {
         set_form_error.set(None);
     };
 
+    let fill_form_from_task = move |task: &TaskInfo| {
+        set_editing_id.set(Some(task.id));
+        set_name.set(task.name.clone());
+        set_task_type.set(task.task_type.clone());
+        set_trigger_type.set(task.trigger_type.clone());
+        set_cron_expr.set(task.cron_expression.clone().unwrap_or_default());
+        set_site_ids.set(task.site_ids.clone());
+        set_folder_ids.set(task.folder_ids.clone());
+        set_source_downloader_ids.set(task.source_downloader_ids.clone());
+        set_destination_downloader_id.set(task.destination_downloader_id);
+        set_name_error.set(None);
+        set_cron_error.set(None);
+        set_reseed_error.set(None);
+        set_form_error.set(None);
+    };
+
     let on_create = move |ev: leptos::ev::SubmitEvent| {
         ev.prevent_default();
         if submitting.get_untracked() {
@@ -160,6 +178,7 @@ pub fn TasksPage() -> impl IntoView {
         let n = name.get_untracked();
         let tt = task_type.get_untracked();
         let tg = trigger_type.get_untracked();
+        let edit_id = editing_id.get_untracked();
         let mut selected_sites = site_ids.get_untracked();
         let mut selected_folders = folder_ids.get_untracked();
         let mut selected_sources = source_downloader_ids.get_untracked();
@@ -210,7 +229,7 @@ pub fn TasksPage() -> impl IntoView {
         // Collapse immediately on submit start for responsive UX; reopen only on hard failure.
         set_show_form.set(false);
         leptos::task::spawn_local(async move {
-            match create_task(CreateTaskInput {
+            let input = CreateTaskInput {
                 name: n,
                 task_type: tt,
                 trigger_type: tg,
@@ -219,18 +238,30 @@ pub fn TasksPage() -> impl IntoView {
                 folder_ids: selected_folders,
                 source_downloader_ids: selected_sources,
                 destination_downloader_id: selected_destination,
-            })
-            .await
-            {
+            };
+            let result = if let Some(id) = edit_id {
+                update_task(id, input).await
+            } else {
+                create_task(input).await
+            };
+            match result {
                 Ok(_) => {
-                    show_toast("任务创建成功", ToastType::Success);
+                    show_toast(
+                        if edit_id.is_some() {
+                            "任务已保存"
+                        } else {
+                            "任务创建成功"
+                        },
+                        ToastType::Success,
+                    );
                     reset_form();
                     set_version.update(|v| *v += 1);
                 }
                 Err(e) => {
                     // Reopen so the user can correct and resubmit.
                     set_show_form.set(true);
-                    show_toast(format!("创建失败：{e}"), ToastType::Error);
+                    let verb = if edit_id.is_some() { "保存" } else { "创建" };
+                    show_toast(format!("{verb}失败：{e}"), ToastType::Error);
                     set_form_error.set(Some(format!("{e}")));
                 }
             }
@@ -253,7 +284,17 @@ pub fn TasksPage() -> impl IntoView {
                         });
                     }
                 >
-                    {move || if show_form.get() { "取消" } else { "创建任务" }}
+                    {move || {
+                        if show_form.get() {
+                            if editing_id.get().is_some() {
+                                "取消编辑"
+                            } else {
+                                "取消"
+                            }
+                        } else {
+                            "创建任务"
+                        }
+                    }}
                 </button>
             </div>
 
@@ -262,7 +303,7 @@ pub fn TasksPage() -> impl IntoView {
                 if show_form.get() {
                     view! {
                         <div class="form-section">
-                            <h2>"创建任务"</h2>
+                            <h2>{move || if editing_id.get().is_some() { "编辑任务" } else { "创建任务" }}</h2>
                             <form class="inline-form" on:submit=on_create>
                                 <label>
                                     "名称" <span class="required">"*"</span>
@@ -504,7 +545,19 @@ pub fn TasksPage() -> impl IntoView {
                                     }
                                 }}
                                 <button type="submit" disabled=move || submitting.get()>
-                                    {move || if submitting.get() { "创建中..." } else { "创建" }}
+                                    {move || {
+                                        if submitting.get() {
+                                            if editing_id.get().is_some() {
+                                                "保存中..."
+                                            } else {
+                                                "创建中..."
+                                            }
+                                        } else if editing_id.get().is_some() {
+                                            "保存"
+                                        } else {
+                                            "创建"
+                                        }
+                                    }}
                                 </button>
                             </form>
                             {move || {
@@ -595,6 +648,17 @@ pub fn TasksPage() -> impl IntoView {
                                                     <TaskRow
                                                         task=task
                                                         on_change=move || set_version.update(|v| *v += 1)
+                                                        on_request_edit=move |task: TaskInfo| {
+                                                            if task.status == "running" {
+                                                                show_toast(
+                                                                    "任务正在运行，请等待结束后再编辑。",
+                                                                    ToastType::Error,
+                                                                );
+                                                                return;
+                                                            }
+                                                            fill_form_from_task(&task);
+                                                            set_show_form.set(true);
+                                                        }
                                                         on_request_delete=move |id: i64, name: String| {
                                                             set_confirm_delete.set(Some((id, name)));
                                                         }
@@ -618,14 +682,16 @@ pub fn TasksPage() -> impl IntoView {
 }
 
 #[component]
-fn TaskRow<F, G, H>(
+fn TaskRow<F, E, G, H>(
     task: TaskInfo,
     on_change: F,
+    on_request_edit: E,
     on_request_delete: G,
     on_dry_run_preview: H,
 ) -> impl IntoView
 where
     F: Fn() + Copy + Send + Sync + 'static,
+    E: Fn(TaskInfo) + Copy + 'static,
     G: Fn(i64, String) + Copy + 'static,
     H: Fn(DryRunPreviewInfo) + Copy + 'static,
 {
@@ -744,6 +810,14 @@ where
         on_request_delete(task_id, task_name.clone());
     };
 
+    let on_edit = {
+        let task = task.clone();
+        move |ev: ev::MouseEvent| {
+            ev.stop_propagation();
+            on_request_edit(task.clone());
+        }
+    };
+
     let sc = status_class(&task.status);
     let status_label = match task.status.as_str() {
         "running" => "运行中",
@@ -821,6 +895,13 @@ where
                     >
                         "日志"
                     </A>
+                    <button
+                        class="btn btn--sm btn--outline"
+                        disabled=move || acting.get() || task.status == "running"
+                        on:click=on_edit
+                    >
+                        "编辑"
+                    </button>
                     <button
                         class="btn btn--sm btn--danger"
                         disabled=move || acting.get()
@@ -1045,5 +1126,28 @@ mod tests {
         assert_eq!(truncate_utf8("短文本", 16), "短文本");
         assert_eq!(truncate_utf8("123456789012345中", 16), "123456789012345");
         assert_eq!(truncate_utf8("中文文本", 4), "中");
+    }
+
+    #[test]
+    fn association_summary_counts_sites_and_sources() {
+        let task = crate::server_fns::TaskInfo {
+            id: 1,
+            name: "t".into(),
+            task_type: "reseed".into(),
+            trigger_type: "manual".into(),
+            cron_expression: None,
+            status: "idle".into(),
+            last_run_at: None,
+            next_run_at: None,
+            run_count: 0,
+            site_ids: vec![1, 2],
+            folder_ids: vec![3],
+            source_downloader_ids: vec![],
+            destination_downloader_id: Some(9),
+        };
+        assert_eq!(
+            super::association_summary(&task),
+            "站点 2 · 文件夹 1 · 目标下载器"
+        );
     }
 }

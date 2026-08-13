@@ -138,7 +138,6 @@ pub struct CreateTaskInput {
 
 #[server]
 pub async fn create_task(input: CreateTaskInput) -> Result<TaskInfo, ServerFnError> {
-    use pt_reseeder_core::error::{CoreError, SchedulerError};
     use pt_reseeder_core::scheduler::task::{TaskCreateRequest, TaskManager};
 
     let context = server_context()?;
@@ -158,11 +157,10 @@ pub async fn create_task(input: CreateTaskInput) -> Result<TaskInfo, ServerFnErr
         source_downloader_ids: input.source_downloader_ids,
     };
 
-    let id = task_manager.create_task(&req).await.map_err(|e| match e {
-        CoreError::Scheduler(SchedulerError::InvalidConfig(msg))
-        | CoreError::Scheduler(SchedulerError::InvalidCron(msg)) => ServerFnError::new(msg),
-        other => ServerFnError::new(format!("{other}")),
-    })?;
+    let id = task_manager
+        .create_task(&req)
+        .await
+        .map_err(map_task_manager_error)?;
 
     // Runtime configure is best-effort for manual tasks; failures should not leave
     // the UI thinking create failed after the row is already persisted.
@@ -192,6 +190,82 @@ pub async fn create_task(input: CreateTaskInput) -> Result<TaskInfo, ServerFnErr
             source_downloader_ids: req.source_downloader_ids,
             destination_downloader_id: req.destination_downloader_id,
         }),
+    }
+}
+
+#[cfg(feature = "ssr")]
+fn map_task_manager_error(e: pt_reseeder_core::error::CoreError) -> ServerFnError {
+    use pt_reseeder_core::error::{CoreError, SchedulerError};
+
+    match e {
+        CoreError::Scheduler(SchedulerError::InvalidConfig(msg))
+        | CoreError::Scheduler(SchedulerError::InvalidCron(msg)) => ServerFnError::new(msg),
+        CoreError::Scheduler(SchedulerError::TaskRunning(_)) => {
+            ServerFnError::new("任务正在运行，请等待结束后再编辑。")
+        }
+        other => ServerFnError::new(format!("{other}")),
+    }
+}
+
+#[server]
+pub async fn update_task(id: i64, input: CreateTaskInput) -> Result<TaskInfo, ServerFnError> {
+    use pt_reseeder_core::scheduler::task::{TaskCreateRequest, TaskManager};
+
+    let context = server_context()?;
+    let task_manager = TaskManager::new(pt_reseeder_core::db::repo::Repository::new(
+        context.pool.clone(),
+    ));
+
+    let req = TaskCreateRequest {
+        name: input.name,
+        task_type: input.task_type,
+        trigger_type: input.trigger_type,
+        cron_expression: input.cron_expression,
+        destination_downloader_id: input.destination_downloader_id,
+        config_json: None,
+        folder_ids: input.folder_ids,
+        site_ids: input.site_ids,
+        source_downloader_ids: input.source_downloader_ids,
+    };
+
+    task_manager
+        .update_task(id, &req)
+        .await
+        .map_err(map_task_manager_error)?;
+
+    if let Err(error) = (context.reconfigure_task_runtime)(id).await {
+        eprintln!("task {id} updated but runtime configure failed: {error}");
+    }
+
+    match get_tasks().await {
+        Ok(tasks) => tasks
+            .into_iter()
+            .find(|t| t.id == id)
+            .ok_or_else(|| ServerFnError::new("task updated but not found")),
+        Err(_) => {
+            let existing = task_manager.get_task(id).await.ok();
+            Ok(TaskInfo {
+                id,
+                name: req.name,
+                task_type: req.task_type,
+                trigger_type: req.trigger_type,
+                cron_expression: req.cron_expression,
+                status: existing
+                    .as_ref()
+                    .map(|t| t.status.clone())
+                    .unwrap_or_else(|| "idle".to_string()),
+                last_run_at: existing.as_ref().and_then(|t| t.last_run_at.clone()),
+                next_run_at: existing.as_ref().and_then(|t| t.next_run_at.clone()),
+                run_count: existing
+                    .as_ref()
+                    .and_then(|t| t.run_count)
+                    .unwrap_or_default(),
+                site_ids: req.site_ids,
+                folder_ids: req.folder_ids,
+                source_downloader_ids: req.source_downloader_ids,
+                destination_downloader_id: req.destination_downloader_id,
+            })
+        }
     }
 }
 

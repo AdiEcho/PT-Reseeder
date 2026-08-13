@@ -105,8 +105,10 @@ impl TaskManager {
     pub async fn update_task(&self, id: i64, req: &TaskCreateRequest) -> Result<(), CoreError> {
         validate_task_request(req)?;
 
-        // Verify the task exists
-        let _ = self.get_task(id).await?;
+        let existing = self.get_task(id).await?;
+        if existing.status == "running" {
+            return Err(CoreError::Scheduler(SchedulerError::TaskRunning(id)));
+        }
 
         // Update core fields in-place
         self.repo
@@ -406,6 +408,124 @@ mod tests {
         let mut repost = base_request("repost");
         repost.site_ids = vec![];
         assert!(validate_task_request(&repost).is_ok());
+    }
+
+    #[tokio::test]
+    async fn update_task_replaces_associations_and_preserves_id() {
+        use crate::db::init_db;
+        use crate::db::models::DownloaderRow;
+        use crate::db::repo::Repository;
+
+        let pool = init_db("sqlite::memory:").await.unwrap();
+        let repo = Repository::new(pool);
+        let manager = TaskManager::new(repo.clone());
+
+        let site_a = repo
+            .create_site("A", "http://a", None, "np", "cookie", None, None, None)
+            .await
+            .unwrap();
+        let site_b = repo
+            .create_site("B", "http://b", None, "np", "cookie", None, None, None)
+            .await
+            .unwrap();
+        let dest = repo
+            .create_downloader(&DownloaderRow {
+                id: 0,
+                name: "dest".into(),
+                dl_type: "qbittorrent".into(),
+                host: "127.0.0.1".into(),
+                port: 8080,
+                encrypted_username: None,
+                username_nonce: None,
+                encrypted_password: None,
+                password_nonce: None,
+                role: "destination".into(),
+                torrent_dir: None,
+                default_save_path: None,
+                skip_hash_check: Some(true),
+                auto_start: Some(true),
+                tag: None,
+                enabled: true,
+                created_at: String::new(),
+            })
+            .await
+            .unwrap();
+        let folder = repo.create_folder("/data", "local", None).await.unwrap();
+
+        let mut create = base_request("reseed");
+        create.site_ids = vec![site_a];
+        create.folder_ids = vec![folder];
+        create.destination_downloader_id = Some(dest);
+        let id = manager.create_task(&create).await.unwrap();
+
+        let mut update = create.clone();
+        update.name = "renamed".into();
+        update.site_ids = vec![site_a, site_b];
+        manager.update_task(id, &update).await.unwrap();
+
+        let task = manager.get_task(id).await.unwrap();
+        assert_eq!(task.name, "renamed");
+        let mut sites = manager.get_task_sites(id).await.unwrap();
+        sites.sort();
+        assert_eq!(sites, vec![site_a, site_b]);
+        assert_eq!(task.run_count.unwrap_or_default(), 0);
+        assert_eq!(task.status, "idle");
+    }
+
+    #[tokio::test]
+    async fn update_task_rejects_running_task() {
+        use crate::db::init_db;
+        use crate::db::models::DownloaderRow;
+        use crate::db::repo::Repository;
+
+        let pool = init_db("sqlite::memory:").await.unwrap();
+        let repo = Repository::new(pool);
+        let manager = TaskManager::new(repo.clone());
+
+        let site = repo
+            .create_site("A", "http://a", None, "np", "cookie", None, None, None)
+            .await
+            .unwrap();
+        let dest = repo
+            .create_downloader(&DownloaderRow {
+                id: 0,
+                name: "dest".into(),
+                dl_type: "qbittorrent".into(),
+                host: "127.0.0.1".into(),
+                port: 8080,
+                encrypted_username: None,
+                username_nonce: None,
+                encrypted_password: None,
+                password_nonce: None,
+                role: "destination".into(),
+                torrent_dir: None,
+                default_save_path: None,
+                skip_hash_check: Some(true),
+                auto_start: Some(true),
+                tag: None,
+                enabled: true,
+                created_at: String::new(),
+            })
+            .await
+            .unwrap();
+        let folder = repo.create_folder("/data", "local", None).await.unwrap();
+
+        let mut create = base_request("reseed");
+        create.site_ids = vec![site];
+        create.folder_ids = vec![folder];
+        create.destination_downloader_id = Some(dest);
+        let id = manager.create_task(&create).await.unwrap();
+        repo.update_task_status(id, "running").await.unwrap();
+
+        create.name = "should-fail".into();
+        let err = manager.update_task(id, &create).await.unwrap_err();
+        match err {
+            CoreError::Scheduler(SchedulerError::TaskRunning(task_id)) => {
+                assert_eq!(task_id, id);
+            }
+            other => panic!("expected TaskRunning, got {other}"),
+        }
+        assert_eq!(manager.get_task(id).await.unwrap().name, "test-task");
     }
 
 }

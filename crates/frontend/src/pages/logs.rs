@@ -3,6 +3,7 @@ use crate::components::empty_state::EmptyState;
 use crate::server_fns::{
     get_log_files, get_logs, log_entry_matches_task_id, LogEntry, LogFileInfo, LogPage,
 };
+use crate::utils::{format_local_timestamp, local_tz_offset_minutes};
 use crate::ws::use_logs_ws;
 use leptos::prelude::*;
 use leptos_router::{components::A, hooks::use_query_map};
@@ -67,6 +68,20 @@ pub fn LogsPage() -> impl IntoView {
     let (current_page, set_current_page) = signal(1usize);
     let (auto_scroll, set_auto_scroll) = signal(true);
     let (live_lines, set_live_lines) = signal(Vec::<LogEntry>::new());
+
+    // Viewer timezone offset, applied to the UTC timestamps the log lines carry.
+    //
+    // Starts as `None` — meaning "render the raw UTC string" — and is only
+    // filled in from an effect after mount. The server has no way to know the
+    // viewer's timezone, so anything else would make the first client render
+    // disagree with the server markup. Leptos hydrates text nodes by adopting
+    // the server's text without comparing it, so such a disagreement is not a
+    // loud failure: the cell would keep showing UTC while the view believed it
+    // had already written local time, and no later update would fix it.
+    let (tz_offset, set_tz_offset) = signal(None::<i32>);
+    Effect::new(move |_| {
+        set_tz_offset.set(local_tz_offset_minutes());
+    });
 
     // Debounce keyword updates (~400ms). Only the latest generation may commit.
     Effect::new(move |_| {
@@ -330,9 +345,14 @@ pub fn LogsPage() -> impl IntoView {
                                                 .into_iter()
                                                 .map(|entry| {
                                                     let level_class = level_css_class(&entry.level);
+                                                    let ts = entry.timestamp.clone();
                                                     view! {
                                                         <tr>
-                                                            <td class="log-ts">{entry.timestamp.clone()}</td>
+                                                            <td class="log-ts">
+                                                                {move || {
+                                                                    format_local_timestamp(&ts, tz_offset.get())
+                                                                }}
+                                                            </td>
                                                             <td>
                                                                 <span class=level_class>{entry.level.clone()}</span>
                                                             </td>
@@ -390,10 +410,13 @@ pub fn LogsPage() -> impl IntoView {
                                             .into_iter()
                                             .map(|entry| {
                                                 let level_class = level_css_class(&entry.level);
+                                                let ts = entry.timestamp.clone();
                                                 view! {
                                                     <tr>
                                                         <td class="log-ts">
-                                                            {entry.timestamp.clone()}
+                                                            {move || {
+                                                                format_local_timestamp(&ts, tz_offset.get())
+                                                            }}
                                                         </td>
                                                         <td>
                                                             <span class=level_class>

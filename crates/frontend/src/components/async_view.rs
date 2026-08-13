@@ -3,6 +3,11 @@ use leptos::prelude::*;
 /// Renders the states of an async `Resource` load: pending, error (with retry),
 /// and loaded.
 ///
+/// Uses `<Transition/>` rather than `<Suspense/>` so a refetch keeps the last
+/// successful view on screen. `<Suspense/>` would swap the whole block for
+/// "加载中…" and collapse the page, which jumps the scroll position back to
+/// the top — painful on long tables that poll or refresh in the background.
+///
 /// Every server function in this crate returns `Result<T, ServerFnError>`, so
 /// the error type is fixed rather than generic. Empty-state handling stays with
 /// the caller, because "empty" is shaped differently per payload (`Vec::is_empty`,
@@ -26,7 +31,7 @@ where
     IV: IntoView + 'static,
 {
     view! {
-        <Suspense fallback=move || {
+        <Transition fallback=move || {
             view! { <p class="load-pending">"加载中…"</p> }
         }>
             {move || {
@@ -51,6 +56,6 @@ where
                         Ok(value) => render(value).into_any(),
                     })
             }}
-        </Suspense>
+        </Transition>
     }
 }

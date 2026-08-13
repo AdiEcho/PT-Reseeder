@@ -318,7 +318,7 @@ pub fn ReseedPage() -> impl IntoView {
             {move || {
                 selected_log_id.get().map(|_| {
                     view! {
-                        <Suspense fallback=move || {
+                        <Transition fallback=move || {
                             view! {
                                 <div class="stats-table-section">
                                     <p class="text-muted">"正在加载明细..."</p>
@@ -342,7 +342,7 @@ pub fn ReseedPage() -> impl IntoView {
                                     }.into_any(),
                                 })
                             }}
-                        </Suspense>
+                        </Transition>
                     }
                 })
             }}

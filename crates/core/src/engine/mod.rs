@@ -9,5 +9,6 @@ pub mod scanner;
 pub mod stats;
 
 pub use dry_run::{DryRunPreview, DryRunPreviewItem};
+pub use matcher::{HistorySkippedTorrent, MatchPhaseOutput};
 pub use pipeline::{DownloaderScanTarget, ReseedConfig, ReseedEngine, ReseedProgress};
 pub use stats::ReseedStats;

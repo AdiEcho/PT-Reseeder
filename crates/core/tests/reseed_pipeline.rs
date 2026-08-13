@@ -462,17 +462,17 @@ async fn test_matcher_queries_site() {
     .await
     .unwrap();
 
-    assert_eq!(matched.len(), 1, "should find 1 match");
-    assert_eq!(matched[0].pieces_hash, pieces_hash);
-    assert_eq!(matched[0].site_id, site_id);
-    assert_eq!(matched[0].torrent_id, Some(42));
+    assert_eq!(matched.matched.len(), 1, "should find 1 match");
+    assert_eq!(matched.matched[0].pieces_hash, pieces_hash);
+    assert_eq!(matched.matched[0].site_id, site_id);
+    assert_eq!(matched.matched[0].torrent_id, Some(42));
     assert_eq!(
-        matched[0].download_url,
+        matched.matched[0].download_url,
         "https://mocksite.example.com/download/42"
     );
-    assert_eq!(matched[0].save_path, "/downloads");
-    assert!(matched[0].skip_hash_check);
-    assert_eq!(matched[0].tag, Some("reseed".to_string()));
+    assert_eq!(matched.matched[0].save_path, "/downloads");
+    assert!(matched.matched[0].skip_hash_check);
+    assert_eq!(matched.matched[0].tag, Some("reseed".to_string()));
     assert_eq!(stats.matched.load(Ordering::Relaxed), 1);
 }
 
@@ -529,7 +529,7 @@ async fn test_matcher_no_matches() {
     .await
     .unwrap();
 
-    assert!(matched.is_empty(), "should find no matches");
+    assert!(matched.matched.is_empty(), "should find no matches");
     assert_eq!(stats.matched.load(Ordering::Relaxed), 0);
 }
 
@@ -564,7 +564,7 @@ async fn test_matcher_empty_scan() {
     .await
     .unwrap();
 
-    assert!(matched.is_empty());
+    assert!(matched.matched.is_empty());
 }
 
 // ===========================================================================

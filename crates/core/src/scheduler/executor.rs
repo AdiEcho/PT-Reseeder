@@ -103,6 +103,7 @@ impl TaskExecutor {
                 version: crate::engine::dry_run::DRY_RUN_PREVIEW_VERSION,
                 would_add_count: 0,
                 dry_run,
+                history_skipped_count: 0,
                 items: Vec::new(),
             };
             let starter_json = serde_json::to_string(&starter).ok();

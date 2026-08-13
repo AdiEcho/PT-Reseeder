@@ -229,9 +229,9 @@ async fn test_adapter_transforms_metadata() {
 
     let adapted = adapt_torrent_info(&raw, "ourbits", Some(&mapping)).unwrap();
 
-    // Title: watermark "@HDSky" should be stripped
-    assert_eq!(adapted.name, "Movie.2024.1080p.BluRay.x265");
-    assert!(!adapted.name.contains("@HDSky"));
+    // Title: "@HDSky" is part of the release name and must be preserved
+    assert_eq!(adapted.name, "Movie.2024.1080p.BluRay.x265 @HDSky");
+    assert!(adapted.name.contains("@HDSky"));
 
     // BBCode: [quote=user] -> [quote], [img=800,600] -> [img], [hide]...[/hide] removed
     assert!(!adapted.descr.contains("[quote=user]"));
@@ -404,7 +404,7 @@ async fn test_full_repost_pipeline_e2e() {
     // ---- Stage 2: Adapt for target site ----
     let mapping = sample_adapter_mapping();
     let adapted = adapt_torrent_info(&extracted, "MockTarget", Some(&mapping)).unwrap();
-    assert!(!adapted.name.contains("@HDSky"));
+    assert_eq!(adapted.name, "Movie.2024.1080p.BluRay.x265 @HDSky");
     assert_eq!(adapted.category_id, Some(401));
 
     // ---- Stage 3: Enqueue and review ----

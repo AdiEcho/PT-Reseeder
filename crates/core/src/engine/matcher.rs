@@ -46,10 +46,32 @@ impl SiteBatchState {
 /// Match result from one site: list of (pieces_hash, torrent_id) hits.
 pub type SiteMatches = Vec<(String, i64)>;
 
+/// A `(site_id, pieces_hash)` pair Filter-2 skipped because `reseed_history`
+/// already has a `status='success'` row for it.
+///
+/// Not a `MatchedTorrent`: there is no `download_url` and nothing will be
+/// downloaded or added. It exists only to produce a run-detail row.
+#[derive(Debug, Clone)]
+pub struct HistorySkippedTorrent {
+    pub pieces_hash: String,
+    pub site_id: SiteId,
+    /// Newest non-NULL `torrent_id` from history; detail-link decoration only.
+    pub torrent_id: Option<i64>,
+    pub save_path: String,
+}
+
+/// Everything phase 2 produces.
+#[derive(Debug, Default)]
+pub struct MatchPhaseOutput {
+    pub matched: Vec<MatchedTorrent>,
+    pub history_skipped: Vec<HistorySkippedTorrent>,
+}
+
 /// Run the match phase: query all target sites in parallel for pieces_hash matches,
 /// applying three-layer filtering before and after.
 ///
-/// Returns a flat list of `MatchedTorrent` ready for the adder.
+/// Returns matched torrents ready for the adder, plus history-skipped pairs
+/// that should appear in the run-detail list without being queried or added.
 // 参数多但各自独立（数据源、注册表、目标、仓储、四个行为开关）。拆分超长函数
 // 与参数打包不在本次重构范围内（见 .omc/specs 的 Non-Goals）。
 #[allow(clippy::too_many_arguments)]
@@ -63,9 +85,9 @@ pub async fn match_all_sites(
     tag: Option<&str>,
     stats: &ReseedStats,
     cancel: &CancellationToken,
-) -> Result<Vec<MatchedTorrent>, CoreError> {
+) -> Result<MatchPhaseOutput, CoreError> {
     if scan.pieces_groups.is_empty() {
-        return Ok(Vec::new());
+        return Ok(MatchPhaseOutput::default());
     }
 
     // pieces_hash -> preferred save_path from any source info_hash that has one.
@@ -81,13 +103,6 @@ pub async fn match_all_sites(
         .collect();
 
     let all_pieces_hashes: Arc<[String]> = scan.pieces_groups.keys().cloned().collect();
-    let present_info_hashes: Arc<HashSet<String>> = Arc::new(
-        scan.dest_hashes
-            .iter()
-            .cloned()
-            .chain(scan.torrents.keys().cloned())
-            .collect(),
-    );
 
     tracing::info!(
         sites = target_site_ids.len(),
@@ -102,6 +117,7 @@ pub async fn match_all_sites(
 
     // Launch one task per site, all in parallel
     let mut handles = Vec::new();
+    let mut history_skipped: Vec<HistorySkippedTorrent> = Vec::new();
 
     for &site_id in target_site_ids {
         let handle = registry.get(&site_id);
@@ -131,7 +147,6 @@ pub async fn match_all_sites(
         let initial_batch_size = reseed.batch_size().max(1);
 
         let hashes = Arc::clone(&all_pieces_hashes);
-        let present_info_hashes = Arc::clone(&present_info_hashes);
         let repo = repo.clone();
         let cancel = cancel.clone();
         let default_save_path = default_save_path.to_string();
@@ -155,28 +170,33 @@ pub async fn match_all_sites(
             .cloned()
             .collect();
 
-        // Filter-2: history check via batch load
+        // Filter-2: history check via batch load. Success alone is the skip
+        // criterion — the info_hash no longer has to still be present in a
+        // downloader.
         let history_by_hash = repo
-            .find_successful_reseed_info_hashes(&remaining, site_id.0)
+            .find_successful_reseed_torrent_ids(&remaining, site_id.0)
             .await?;
-        let mut history_filtered: HashSet<String> = HashSet::new();
-        for ph in &remaining {
-            if let Some(success_hashes) = history_by_hash.get(ph) {
-                if success_hashes
-                    .iter()
-                    .any(|ih| present_info_hashes.contains(ih))
-                {
-                    history_filtered.insert(ph.clone());
+        let mut query_hashes: Vec<String> = Vec::with_capacity(remaining.len());
+        for ph in remaining {
+            // Copy out first so the map borrow ends before `ph` moves (E0505).
+            let history_torrent_id = history_by_hash.get(&ph).copied();
+            match history_torrent_id {
+                Some(torrent_id) => {
                     stats.skipped_history.fetch_add(1, Ordering::Relaxed);
+                    let save_path = save_path_by_pieces
+                        .get(&ph)
+                        .cloned()
+                        .unwrap_or_else(|| default_save_path.clone());
+                    history_skipped.push(HistorySkippedTorrent {
+                        pieces_hash: ph,
+                        site_id,
+                        torrent_id,
+                        save_path,
+                    });
                 }
+                None => query_hashes.push(ph),
             }
         }
-
-        // Remaining hashes to query
-        let query_hashes: Vec<String> = remaining
-            .into_iter()
-            .filter(|h| !history_filtered.contains(h))
-            .collect();
 
         if query_hashes.is_empty() {
             tracing::debug!(site_id = site_id.0, "all hashes filtered, skipping site");
@@ -224,10 +244,14 @@ pub async fn match_all_sites(
 
     tracing::info!(
         total_matches = matched_torrents.len(),
+        history_skipped = history_skipped.len(),
         "match phase complete"
     );
 
-    Ok(matched_torrents)
+    Ok(MatchPhaseOutput {
+        matched: matched_torrents,
+        history_skipped,
+    })
 }
 
 /// Query a single site with batched pieces_hash requests, respecting rate limits.

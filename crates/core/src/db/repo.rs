@@ -627,20 +627,26 @@ impl Repository {
         Ok(rows)
     }
 
-    /// Batch load successful reseed history info_hashes for a site, keyed by pieces_hash.
-    pub async fn find_successful_reseed_info_hashes(
+    /// Batch load `pieces_hash`es that already have a `status='success'`
+    /// reseed_history row for `site_id`.
+    ///
+    /// **Key presence IS the skip criterion.** The value is the newest non-NULL
+    /// `torrent_id` for that pair, used only to decorate the run-detail row. An
+    /// entry whose value is `None` still means "skip" — success rows written for
+    /// Jackett pack matches have `torrent_id IS NULL`.
+    pub async fn find_successful_reseed_torrent_ids(
         &self,
         pieces_hashes: &[String],
         site_id: i64,
-    ) -> Result<HashMap<String, HashSet<String>>, CoreError> {
-        let mut map: HashMap<String, HashSet<String>> = HashMap::new();
+    ) -> Result<HashMap<String, Option<i64>>, CoreError> {
+        let mut map: HashMap<String, Option<i64>> = HashMap::new();
         if pieces_hashes.is_empty() {
             return Ok(map);
         }
 
         for chunk in pieces_hashes.chunks(SQLITE_IN_CHUNK) {
             let mut qb = sqlx::QueryBuilder::new(
-                "SELECT pieces_hash, info_hash FROM reseed_history \
+                "SELECT pieces_hash, torrent_id FROM reseed_history \
                  WHERE site_id = ",
             );
             qb.push_bind(site_id);
@@ -651,16 +657,14 @@ impl Repository {
                     separated.push_bind(hash);
                 }
             }
-            qb.push(")");
+            qb.push(") ORDER BY created_at DESC, id DESC");
 
-            let rows: Vec<(String, Option<String>)> = qb
-                .build_query_as()
-                .fetch_all(&self.pool)
-                .await?;
+            let rows: Vec<(String, Option<i64>)> = qb.build_query_as().fetch_all(&self.pool).await?;
 
-            for (pieces_hash, info_hash) in rows {
-                if let Some(ih) = info_hash {
-                    map.entry(pieces_hash).or_default().insert(ih);
+            for (pieces_hash, torrent_id) in rows {
+                let slot = map.entry(pieces_hash).or_insert(None);
+                if slot.is_none() {
+                    *slot = torrent_id;
                 }
             }
         }
@@ -1488,6 +1492,81 @@ mod tests {
         assert_eq!(history.len(), 1);
         assert_eq!(history[0].status, "success");
         assert_eq!(history[0].torrent_id, Some(42));
+    }
+
+    #[tokio::test]
+    async fn success_row_makes_key_present_with_torrent_id() {
+        let repo = setup_repo().await;
+        let site_id = repo
+            .create_site("S", "http://s", None, "np", "cookie", None, None, None)
+            .await
+            .unwrap();
+        repo.insert_reseed_history("ph", site_id, Some(42), Some("ih"), "success", None)
+            .await
+            .unwrap();
+        let map = repo
+            .find_successful_reseed_torrent_ids(&["ph".into()], site_id)
+            .await
+            .unwrap();
+        assert_eq!(map.get("ph"), Some(&Some(42)));
+    }
+
+    #[tokio::test]
+    async fn success_row_with_null_torrent_id_still_marks_skip() {
+        let repo = setup_repo().await;
+        let site_id = repo
+            .create_site("S", "http://s", None, "np", "cookie", None, None, None)
+            .await
+            .unwrap();
+        repo.insert_reseed_history("ph", site_id, None, None, "success", None)
+            .await
+            .unwrap();
+        let map = repo
+            .find_successful_reseed_torrent_ids(&["ph".into()], site_id)
+            .await
+            .unwrap();
+        assert!(map.contains_key("ph"));
+        assert_eq!(map.get("ph"), Some(&None));
+    }
+
+    #[tokio::test]
+    async fn failed_and_skipped_rows_are_absent() {
+        let repo = setup_repo().await;
+        let site_id = repo
+            .create_site("S", "http://s", None, "np", "cookie", None, None, None)
+            .await
+            .unwrap();
+        repo.insert_reseed_history("ph2", site_id, Some(1), Some("ih"), "failed", None)
+            .await
+            .unwrap();
+        repo.insert_reseed_history("ph2", site_id, Some(1), Some("ih"), "skipped", None)
+            .await
+            .unwrap();
+        let map = repo
+            .find_successful_reseed_torrent_ids(&["ph2".into()], site_id)
+            .await
+            .unwrap();
+        assert!(!map.contains_key("ph2"));
+    }
+
+    #[tokio::test]
+    async fn newest_non_null_torrent_id_wins() {
+        let repo = setup_repo().await;
+        let site_id = repo
+            .create_site("S", "http://s", None, "np", "cookie", None, None, None)
+            .await
+            .unwrap();
+        repo.insert_reseed_history("ph", site_id, Some(1), Some("ih"), "success", None)
+            .await
+            .unwrap();
+        repo.insert_reseed_history("ph", site_id, Some(2), Some("ih"), "success", None)
+            .await
+            .unwrap();
+        let map = repo
+            .find_successful_reseed_torrent_ids(&["ph".into()], site_id)
+            .await
+            .unwrap();
+        assert_eq!(map.get("ph"), Some(&Some(2)));
     }
 
     #[tokio::test]

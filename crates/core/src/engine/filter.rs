@@ -6,9 +6,11 @@
 //! Filter 3: Info-hash dedup — superseded in production by the atomic
 //!   placeholder insert in `adder.rs`; see `filter_by_existing_hash`.
 //!
-//! The history pre-filter that used to sit between these two was removed in B6 as
-//! dead code: nothing in the workspace called it, and the engine no longer
-//! consults `reseed_history` when deciding what to skip.
+//! The history pre-filter helper that used to sit between these two was removed
+//! in B6 as dead code: nothing in the workspace called it. The live history
+//! check is Filter-2 in `matcher.rs`, which skips any `(site_id, pieces_hash)`
+//! that already has a `status='success'` row in `reseed_history` — regardless of
+//! whether that info_hash is still present in any downloader.
 
 use std::collections::HashSet;
 

@@ -14,10 +14,15 @@ use super::scanner::ScanResult;
 pub struct DryRunPreview {
     /// Schema version for forward-compatible parsing.
     pub version: u32,
+    /// Add candidates only — never counts history-skipped rows.
     pub would_add_count: usize,
     /// Whether this result came from a dry-run (add phase skipped).
     #[serde(default)]
     pub dry_run: bool,
+    /// True total of history-skipped pairs this run, even when `items` was
+    /// capped at `HISTORY_SKIP_ITEM_CAP`.
+    #[serde(default)]
+    pub history_skipped_count: usize,
     pub items: Vec<DryRunPreviewItem>,
 }
 
@@ -50,7 +55,17 @@ pub struct DryRunPreviewItem {
 /// v1: site/title/hash/torrent_id/save_path
 /// v2: + dry_run envelope flag, total_size, detail_url
 /// v3: + per-item outcome
-pub const DRY_RUN_PREVIEW_VERSION: u32 = 3;
+/// v4: + history_skipped_count; `items` may include history-skipped rows that
+///     are not add candidates (capped at HISTORY_SKIP_ITEM_CAP), so
+///     `would_add_count` can be < items.len().
+pub const DRY_RUN_PREVIEW_VERSION: u32 = 4;
+
+/// Cap on history-skipped rows kept in `items`.
+///
+/// `persist_processed_item` re-serializes the whole preview on every add, so an
+/// unbounded skip list turns one run into hundreds of MB of SQLite writes.
+/// `history_skipped_count` keeps the real total.
+pub const HISTORY_SKIP_ITEM_CAP: usize = 200;
 
 pub fn preview_item_from_match(
     matched: &MatchedTorrent,
@@ -72,7 +87,35 @@ pub fn preview_item_from_match(
     }
 }
 
+/// Build a run-detail row for a pair Filter-2 skipped on success history.
+///
+/// These are never add candidates: callers MUST append them to
+/// `DryRunPreview::items` *after* `would_add_count` is set.
+pub fn preview_item_from_history_skip(
+    skip: &super::matcher::HistorySkippedTorrent,
+    scan: &ScanResult,
+    registry: &SiteRegistry,
+) -> DryRunPreviewItem {
+    let (title, total_size) = meta_from_scan(scan, &skip.pieces_hash);
+    DryRunPreviewItem {
+        site_id: skip.site_id.0,
+        site_name: site_name(registry, skip.site_id),
+        pieces_hash: skip.pieces_hash.clone(),
+        torrent_id: skip.torrent_id,
+        title,
+        save_path: skip.save_path.clone(),
+        total_size,
+        detail_url: detail_url(registry, skip.site_id, skip.torrent_id),
+        // Must stay in sync with `item_outcome_label`
+        // (crates/frontend/src/pages/reseed.rs:80) → 「已跳过」.
+        outcome: Some("skipped".to_string()),
+    }
+}
+
 /// Build a reseed-run result from post-match candidates.
+///
+/// `would_add_count` is the candidate count only. History-skipped rows are
+/// appended by the caller after this function returns.
 ///
 /// Title / size resolution order:
 /// 1. scan `pieces_groups` → `torrents[info_hash].{name,total_size}`
@@ -92,6 +135,7 @@ pub fn build_preview(
         version: DRY_RUN_PREVIEW_VERSION,
         would_add_count: items.len(),
         dry_run,
+        history_skipped_count: 0,
         items,
     }
 }

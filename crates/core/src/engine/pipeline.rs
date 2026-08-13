@@ -16,7 +16,7 @@ use crate::site::models::SiteId;
 use crate::site::registry::SiteRegistry;
 
 use super::adder;
-use super::dry_run::{build_preview, preview_item_from_match, DryRunPreview};
+use super::dry_run::{build_preview, preview_item_from_history_skip, preview_item_from_match, DryRunPreview};
 use super::filter;
 use super::matcher;
 use super::scanner;
@@ -326,7 +326,10 @@ async fn run_pipeline(
 
     // Determine save paths from source torrents
     // For now use the configured default; the adder will use it
-    let mut matched_torrents = matcher::match_all_sites(
+    let matcher::MatchPhaseOutput {
+        matched: mut matched_torrents,
+        history_skipped,
+    } = matcher::match_all_sites(
         &merged_scan,
         registry,
         &config.target_site_ids,
@@ -356,17 +359,39 @@ async fn run_pipeline(
         "phase 2 complete"
     );
 
+    // History-skipped pairs get a run-detail row but are never add candidates, so
+    // they are appended AFTER would_add_count is computed. The row list is capped —
+    // persist_processed_item re-serializes the whole preview on every add.
+    let history_skipped_count = history_skipped.len();
+    let skipped_items: Vec<super::dry_run::DryRunPreviewItem> = history_skipped
+        .iter()
+        .take(super::dry_run::HISTORY_SKIP_ITEM_CAP)
+        .map(|skip| preview_item_from_history_skip(skip, &merged_scan, registry))
+        .collect();
+    if history_skipped_count > skipped_items.len() {
+        tracing::info!(
+            task_id,
+            total = history_skipped_count,
+            shown = skipped_items.len(),
+            "history-skip detail rows capped; total kept in history_skipped_count"
+        );
+    }
+
     // Capture the match result for task-log persistence.
     // Dry-run writes the full candidate list immediately. Real runs start with
-    // an empty item list and append each torrent after it is processed.
+    // history-skipped rows and append each torrent after it is processed.
     let preview = if dry_run {
-        build_preview(&matched_torrents, &merged_scan, registry, true)
+        let mut preview = build_preview(&matched_torrents, &merged_scan, registry, true);
+        preview.history_skipped_count = history_skipped_count;
+        preview.items.extend(skipped_items);
+        preview
     } else {
         DryRunPreview {
             version: super::dry_run::DRY_RUN_PREVIEW_VERSION,
             would_add_count: matched_torrents.len(),
             dry_run: false,
-            items: Vec::new(),
+            history_skipped_count,
+            items: skipped_items,
         }
     };
     persist_run_progress(

@@ -296,11 +296,7 @@ pub fn FoldersPage() -> impl IntoView {
 }
 
 #[component]
-fn FolderRow<F>(
-    folder: FolderInfo,
-    downloader_label: String,
-    on_request_delete: F,
-) -> impl IntoView
+fn FolderRow<F>(folder: FolderInfo, downloader_label: String, on_request_delete: F) -> impl IntoView
 where
     F: Fn(i64, String) + Copy + 'static,
 {

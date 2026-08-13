@@ -224,7 +224,10 @@ mod tests {
         let limiter = SiteRateLimiter::with_download_interval(1, 100, 1);
         limiter.record_extra_wait(1);
         let start = Instant::now();
-        limiter.acquire_download().await.expect("download after wait");
+        limiter
+            .acquire_download()
+            .await
+            .expect("download after wait");
         assert!(start.elapsed() >= Duration::from_millis(900));
         let start = Instant::now();
         limiter.acquire_download().await.expect("no leftover wait");

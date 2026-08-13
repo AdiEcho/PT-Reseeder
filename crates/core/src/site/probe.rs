@@ -147,10 +147,7 @@ pub async fn probe_site(
 
                 let fields: Vec<(&str, Option<String>)> = vec![
                     ("uploaded", stats.uploaded.map(format_bytes_preview)),
-                    (
-                        "downloaded",
-                        stats.downloaded.map(format_bytes_preview),
-                    ),
+                    ("downloaded", stats.downloaded.map(format_bytes_preview)),
                     ("ratio", stats.ratio.map(|v| format!("{:.3}", v))),
                     ("bonus", stats.bonus.map(|v| format!("{:.1}", v))),
                     ("user_class", stats.user_class.clone()),
@@ -159,10 +156,7 @@ pub async fn probe_site(
                         "leeching_count",
                         stats.leeching_count.map(|v| v.to_string()),
                     ),
-                    (
-                        "seeding_size",
-                        stats.seeding_size.map(format_bytes_preview),
-                    ),
+                    ("seeding_size", stats.seeding_size.map(format_bytes_preview)),
                     (
                         "upload_time_seconds",
                         stats.upload_time_seconds.map(|v| format!("{}s", v)),

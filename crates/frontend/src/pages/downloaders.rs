@@ -26,14 +26,7 @@ pub fn DownloadersPage() -> impl IntoView {
         move |args: &(String, String, String, i64, String, String, String, bool)| {
             let (name, dl_type, host, port, username, password, role, auto_start) = args.clone();
             create_downloader(
-                name,
-                dl_type,
-                host,
-                port,
-                username,
-                password,
-                role,
-                auto_start,
+                name, dl_type, host, port, username, password, role, auto_start,
             )
         },
     );

@@ -169,12 +169,9 @@ pub fn build_router(state: AppState) -> Router {
 
     // The only REST routes left that need a session: repost review / submit /
     // autofill, called by the hydrated page (see pages/repost.rs).
-    let authed_routes = Router::new()
-        .merge(api::repost::router())
-        .route_layer(axum::middleware::from_fn_with_state(
-            state.clone(),
-            require_auth,
-        ));
+    let authed_routes = Router::new().merge(api::repost::router()).route_layer(
+        axum::middleware::from_fn_with_state(state.clone(), require_auth),
+    );
 
     // Health check stays outside require_auth so probes need no cookie.
     // `csrf_check` must wrap the whole /api subtree: the hydrated page sends

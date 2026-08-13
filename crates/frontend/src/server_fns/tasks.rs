@@ -72,6 +72,8 @@ pub struct ReseedRunInfo {
     pub dry_run: bool,
     pub item_count: usize,
     pub total_size: Option<i64>,
+    #[serde(default)]
+    pub history_skipped_count: usize,
     pub created_at: String,
 }
 
@@ -400,17 +402,18 @@ pub async fn get_reseed_runs(
                 .map(|p| p.dry_run)
                 .unwrap_or(false);
 
-        let (item_count, total_size) = match &parsed {
+        let (item_count, total_size, history_skipped_count) = match &parsed {
             Some(p) => {
                 let sum = p
                     .items
                     .iter()
+                    .filter(|item| item.outcome.as_deref() != Some("skipped"))
                     .filter_map(|item| item.total_size)
                     .fold(0i64, |acc, n| acc.saturating_add(n));
                 let total = if sum > 0 { Some(sum) } else { None };
-                (p.items.len(), total)
+                (p.items.len(), total, p.history_skipped_count)
             }
-            None => (0, None),
+            None => (0, None, 0),
         };
 
         out.push(ReseedRunInfo {
@@ -425,6 +428,7 @@ pub async fn get_reseed_runs(
             dry_run,
             item_count,
             total_size,
+            history_skipped_count,
             created_at: log.created_at,
         });
     }
@@ -488,6 +492,7 @@ pub async fn get_reseed_run_detail(log_id: i64) -> Result<Option<ReseedRunDetail
     let total_size = {
         let sum = items
             .iter()
+            .filter(|item| item.outcome.as_deref() != Some("skipped"))
             .filter_map(|item| item.total_size)
             .fold(0i64, |acc, n| acc.saturating_add(n));
         if sum > 0 {
@@ -510,6 +515,10 @@ pub async fn get_reseed_run_detail(log_id: i64) -> Result<Option<ReseedRunDetail
             dry_run,
             item_count: items.len(),
             total_size,
+            history_skipped_count: parsed
+                .as_ref()
+                .map(|p| p.history_skipped_count)
+                .unwrap_or(0),
             created_at: log.created_at,
         },
         items,

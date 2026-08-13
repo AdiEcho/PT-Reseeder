@@ -6,7 +6,7 @@
 //! generated `.torrent` fixture files.
 
 use std::collections::HashSet;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
@@ -173,6 +173,18 @@ struct MockReseedSite {
     base_url: String,
     /// (pieces_hash, torrent_id) pairs this site "knows about".
     known_matches: Vec<(String, i64)>,
+    query_calls: Arc<AtomicUsize>,
+}
+
+impl MockReseedSite {
+    fn new(name: &str, base_url: &str, known_matches: Vec<(String, i64)>) -> Self {
+        Self {
+            name: name.to_string(),
+            base_url: base_url.to_string(),
+            known_matches,
+            query_calls: Arc::new(AtomicUsize::new(0)),
+        }
+    }
 }
 
 impl SiteCore for MockReseedSite {
@@ -192,6 +204,7 @@ impl SiteCore for MockReseedSite {
 #[async_trait]
 impl ReseedCapable for MockReseedSite {
     async fn query_pieces_hash(&self, hashes: &[String]) -> Result<Vec<(String, i64)>, CoreError> {
+        self.query_calls.fetch_add(1, Ordering::Relaxed);
         let matches: Vec<(String, i64)> = self
             .known_matches
             .iter()
@@ -246,11 +259,7 @@ fn build_registry_with_site(
     base_url: &str,
     known_matches: Vec<(String, i64)>,
 ) -> SiteRegistry {
-    let site = Arc::new(MockReseedSite {
-        name: name.to_string(),
-        base_url: base_url.to_string(),
-        known_matches,
-    });
+    let site = Arc::new(MockReseedSite::new(name, base_url, known_matches));
 
     let mut registry = SiteRegistry::new();
     registry.register(
@@ -792,7 +801,10 @@ async fn test_adder_retries_after_too_frequent_http_500() {
     .await
     .unwrap();
 
-    assert!(added, "should succeed after waiting out the site rate limit");
+    assert!(
+        added,
+        "should succeed after waiting out the site rate limit"
+    );
     assert_eq!(dest_client.added_count(), 1);
     assert!(hits.load(Ordering::SeqCst) >= 2);
     assert!(dest_hashes.lock().await.contains(&info_hash));
@@ -832,11 +844,11 @@ async fn test_full_pipeline_e2e() {
 
     // --- Set up mock site that knows about movie1 and movie2 ---
     let site_id = SiteId(1);
-    let site = Arc::new(MockReseedSite {
-        name: "TestSite".to_string(),
-        base_url: "https://testsite.example.com".to_string(),
-        known_matches: vec![(pieces_hash_1.clone(), 1001), (pieces_hash_2.clone(), 1002)],
-    });
+    let site = Arc::new(MockReseedSite::new(
+        "TestSite",
+        "https://testsite.example.com",
+        vec![(pieces_hash_1.clone(), 1001), (pieces_hash_2.clone(), 1002)],
+    ));
 
     let mut registry = SiteRegistry::new();
     registry.register(
@@ -1049,11 +1061,11 @@ async fn test_pipeline_persists_incremental_items_to_running_log() {
     });
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
-    let site_local = Arc::new(MockReseedSite {
-        name: "TestSite".to_string(),
-        base_url: format!("http://127.0.0.1:{port}"),
-        known_matches: vec![(pieces_hash_1.clone(), 2001), (pieces_hash_2.clone(), 2002)],
-    });
+    let site_local = Arc::new(MockReseedSite::new(
+        "TestSite",
+        &format!("http://127.0.0.1:{port}"),
+        vec![(pieces_hash_1.clone(), 2001), (pieces_hash_2.clone(), 2002)],
+    ));
     let mut registry = SiteRegistry::new();
     registry.register(
         site_id,
@@ -1087,7 +1099,10 @@ async fn test_pipeline_persists_incremental_items_to_running_log() {
     db_writer.flush().await.unwrap();
 
     let log = repo.get_task_log(log_id).await.unwrap().unwrap();
-    assert_eq!(log.status, "running", "pipeline leaves terminal status to executor");
+    assert_eq!(
+        log.status, "running",
+        "pipeline leaves terminal status to executor"
+    );
     let stored: pt_reseeder_core::engine::DryRunPreview =
         serde_json::from_str(log.log_text.as_deref().unwrap()).unwrap();
     assert_eq!(stored.items.len(), 2);
@@ -1115,11 +1130,11 @@ async fn test_pipeline_dry_run_skips_add_and_history() {
     let pieces_hash_2 = metas[1].1.clone();
 
     let site_id = SiteId(1);
-    let site = Arc::new(MockReseedSite {
-        name: "TestSite".to_string(),
-        base_url: "https://example.test".to_string(),
-        known_matches: vec![(pieces_hash_1.clone(), 1001), (pieces_hash_2.clone(), 1002)],
-    });
+    let site = Arc::new(MockReseedSite::new(
+        "TestSite",
+        "https://example.test",
+        vec![(pieces_hash_1.clone(), 1001), (pieces_hash_2.clone(), 1002)],
+    ));
 
     let mut registry = SiteRegistry::new();
     registry.register(
@@ -1309,4 +1324,381 @@ async fn test_scanner_respects_cancellation() {
     let result = scan_folder(dir.path(), &repo, &db_writer, &dest_client, &stats, &cancel).await;
 
     assert!(result.is_err(), "should return error when cancelled");
+}
+
+// ===========================================================================
+// History-skip: success is enough; failed/skipped still query; preview rows
+// ===========================================================================
+
+async fn serve_torrent_hits(
+    bodies: Vec<(String, Vec<u8>)>,
+) -> (u16, Arc<std::sync::atomic::AtomicU32>) {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let hits = Arc::new(std::sync::atomic::AtomicU32::new(0));
+    let hits_clone = Arc::clone(&hits);
+    tokio::spawn(async move {
+        loop {
+            if let Ok((mut stream, _)) = listener.accept().await {
+                use tokio::io::{AsyncReadExt, AsyncWriteExt};
+                let mut buf = [0u8; 1024];
+                let n = stream.read(&mut buf).await.unwrap_or(0);
+                let request = String::from_utf8_lossy(&buf[..n]);
+                hits_clone.fetch_add(1, Ordering::SeqCst);
+                let body = bodies
+                    .iter()
+                    .find(|(marker, _)| request.contains(marker.as_str()))
+                    .map(|(_, bytes)| bytes.as_slice())
+                    .unwrap_or(&[]);
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nContent-Type: application/x-bittorrent\r\nConnection: close\r\n\r\n",
+                    body.len()
+                );
+                let _ = stream.write_all(response.as_bytes()).await;
+                let _ = stream.write_all(body).await;
+                let _ = stream.flush().await;
+            }
+        }
+    });
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    (port, hits)
+}
+
+fn register_site(site: Arc<MockReseedSite>, site_id: SiteId) -> SiteRegistry {
+    let mut registry = SiteRegistry::new();
+    registry.register(
+        site_id,
+        AdapterHandle {
+            core: site.clone() as Arc<dyn SiteCore>,
+            reseed: Some(site as Arc<dyn ReseedCapable>),
+            repost: None,
+            user_info: None,
+            search: None,
+            rate_limiter: Arc::new(SiteRateLimiter::new(1, 100)),
+        },
+    );
+    registry
+}
+
+#[tokio::test]
+async fn test_history_success_skips_query_download_and_add() {
+    let (_db_dir, repo, db_writer) = setup_db().await;
+    let cancel = CancellationToken::new();
+    let site_id = SiteId(1);
+
+    let (dir, meta) = write_torrent_fixtures(&[(
+        "already_seeded",
+        "http://other-tracker.example.com/announce",
+        0x51,
+    )]);
+    let pieces_hash = meta[0].1.clone();
+
+    repo.insert_reseed_history(
+        &pieces_hash,
+        site_id.0,
+        Some(4242),
+        Some("deleted-from-everywhere-hash"),
+        "success",
+        None,
+    )
+    .await
+    .unwrap();
+
+    let (torrent_bytes, _, _) = build_torrent_bytes(
+        "already_seeded",
+        "http://other-tracker.example.com/announce",
+        0x51,
+    );
+    let (port, hits) = serve_torrent_hits(vec![("/download/4242".into(), torrent_bytes)]).await;
+    let site = Arc::new(MockReseedSite::new(
+        "TestSite",
+        &format!("http://127.0.0.1:{port}"),
+        vec![(pieces_hash.clone(), 4242)],
+    ));
+    let registry = register_site(Arc::clone(&site), site_id);
+    let dest_client = Arc::new(MockDownloader::new());
+    let config = ReseedConfig {
+        scan_folders: vec![dir.path().to_path_buf()],
+        source_downloaders: vec![],
+        target_site_ids: vec![site_id],
+        default_save_path: "/downloads".to_string(),
+        skip_hash_check: true,
+        auto_start: false,
+        tag: None,
+        jackett_config: None,
+    };
+
+    let engine = ReseedEngine::new(Arc::new(registry), repo, db_writer, cancel);
+    let (snapshot, preview) = engine
+        .run_sync(config, dest_client.clone(), false, None, None)
+        .await
+        .unwrap();
+    let preview = preview.expect("preview");
+
+    assert_eq!(site.query_calls.load(Ordering::Relaxed), 0);
+    assert_eq!(hits.load(Ordering::SeqCst), 0);
+    assert_eq!(snapshot.skipped_history, 1);
+    assert_eq!(snapshot.matched, 0);
+    assert_eq!(snapshot.added, 0);
+    assert_eq!(dest_client.added_count(), 0);
+    assert_eq!(preview.items.len(), 1);
+    assert_eq!(preview.would_add_count, 0);
+    assert_eq!(preview.history_skipped_count, 1);
+    assert_eq!(preview.items[0].outcome.as_deref(), Some("skipped"));
+    assert_eq!(preview.items[0].site_name, "TestSite");
+    assert!(preview.items[0].title.is_some());
+    assert_eq!(preview.items[0].save_path, "/downloads");
+    assert_eq!(preview.items[0].torrent_id, Some(4242));
+}
+
+#[tokio::test]
+async fn test_failed_history_still_queries_downloads_and_adds() {
+    let (_db_dir, repo, db_writer) = setup_db().await;
+    let cancel = CancellationToken::new();
+    let site_id = SiteId(1);
+
+    let (dir, meta) = write_torrent_fixtures(&[(
+        "retry_me",
+        "http://other-tracker.example.com/announce",
+        0x52,
+    )]);
+    let pieces_hash = meta[0].1.clone();
+
+    repo.insert_reseed_history(
+        &pieces_hash,
+        site_id.0,
+        Some(5201),
+        Some("ih-failed"),
+        "failed",
+        None,
+    )
+    .await
+    .unwrap();
+    repo.insert_reseed_history(
+        &pieces_hash,
+        site_id.0,
+        Some(5201),
+        Some("ih-skipped"),
+        "skipped",
+        None,
+    )
+    .await
+    .unwrap();
+
+    let (torrent_bytes, _, _) = build_torrent_bytes(
+        "retry_me",
+        "http://other-tracker.example.com/announce",
+        0x52,
+    );
+    let (port, _hits) = serve_torrent_hits(vec![("/download/5201".into(), torrent_bytes)]).await;
+    let site = Arc::new(MockReseedSite::new(
+        "TestSite",
+        &format!("http://127.0.0.1:{port}"),
+        vec![(pieces_hash.clone(), 5201)],
+    ));
+    let registry = register_site(Arc::clone(&site), site_id);
+    let dest_client = Arc::new(MockDownloader::new());
+    let config = ReseedConfig {
+        scan_folders: vec![dir.path().to_path_buf()],
+        source_downloaders: vec![],
+        target_site_ids: vec![site_id],
+        default_save_path: "/downloads".to_string(),
+        skip_hash_check: true,
+        auto_start: false,
+        tag: None,
+        jackett_config: None,
+    };
+
+    let engine = ReseedEngine::new(Arc::new(registry), repo, db_writer, cancel);
+    let (snapshot, _preview) = engine
+        .run_sync(config, dest_client.clone(), false, None, None)
+        .await
+        .unwrap();
+
+    assert!(site.query_calls.load(Ordering::Relaxed) >= 1);
+    assert_eq!(snapshot.matched, 1);
+    assert_eq!(snapshot.added, 1);
+    assert_eq!(snapshot.skipped_history, 0);
+    assert_eq!(dest_client.added_count(), 1);
+}
+
+#[tokio::test]
+async fn test_dry_run_shows_history_skip_rows_and_writes_no_history() {
+    let (_db_dir, repo, db_writer) = setup_db().await;
+    let cancel = CancellationToken::new();
+    let site_id = SiteId(1);
+
+    let (dir, meta) = write_torrent_fixtures(&[
+        (
+            "hist_skip",
+            "http://other-tracker.example.com/announce",
+            0x61,
+        ),
+        (
+            "hist_match",
+            "http://other-tracker.example.com/announce",
+            0x62,
+        ),
+    ]);
+    let hash1 = meta[0].1.clone();
+    let hash2 = meta[1].1.clone();
+
+    repo.insert_reseed_history(
+        &hash1,
+        site_id.0,
+        Some(6101),
+        Some("old-ih"),
+        "success",
+        None,
+    )
+    .await
+    .unwrap();
+
+    let site = Arc::new(MockReseedSite::new(
+        "TestSite",
+        "https://example.test",
+        vec![(hash1.clone(), 6101), (hash2.clone(), 6102)],
+    ));
+    let registry = register_site(Arc::clone(&site), site_id);
+    let dest_client = Arc::new(MockDownloader::new());
+    let config = ReseedConfig {
+        scan_folders: vec![dir.path().to_path_buf()],
+        source_downloaders: vec![],
+        target_site_ids: vec![site_id],
+        default_save_path: "/downloads".to_string(),
+        skip_hash_check: true,
+        auto_start: false,
+        tag: None,
+        jackett_config: None,
+    };
+
+    let engine = ReseedEngine::new(Arc::new(registry), repo.clone(), db_writer, cancel);
+    let (_snapshot, preview) = engine
+        .run_sync(config, dest_client, true, None, None)
+        .await
+        .unwrap();
+    let preview = preview.expect("dry-run preview");
+
+    assert!(preview.dry_run);
+    assert_eq!(preview.would_add_count, 1);
+    assert_eq!(preview.items.len(), 2);
+    assert_eq!(preview.history_skipped_count, 1);
+    let skipped: Vec<_> = preview
+        .items
+        .iter()
+        .filter(|item| item.outcome.as_deref() == Some("skipped"))
+        .collect();
+    assert_eq!(skipped.len(), 1);
+    assert_eq!(skipped[0].pieces_hash, hash1);
+    let matched = preview
+        .items
+        .iter()
+        .find(|item| item.pieces_hash == hash2)
+        .expect("hash2 row");
+    assert_eq!(matched.outcome, None);
+
+    let h1 = repo.find_reseed_history(&hash1, site_id.0).await.unwrap();
+    let h2 = repo.find_reseed_history(&hash2, site_id.0).await.unwrap();
+    assert_eq!(h1.len(), 1);
+    assert!(h2.is_empty());
+}
+
+#[tokio::test]
+async fn test_real_run_preserves_skip_rows_alongside_added_rows() {
+    let (_db_dir, repo, db_writer) = setup_db().await;
+    let cancel = CancellationToken::new();
+    let site_id = SiteId(1);
+    let task_id = repo
+        .create_task("live-skip", "reseed", "manual", None, None, None)
+        .await
+        .unwrap();
+    let log_id = repo
+        .insert_task_log(
+            task_id,
+            "running",
+            0,
+            0,
+            0,
+            None,
+            Some(r#"{"version":3,"would_add_count":0,"dry_run":false,"items":[]}"#),
+        )
+        .await
+        .unwrap();
+
+    let (dir, meta) = write_torrent_fixtures(&[
+        (
+            "live_skip",
+            "http://other-tracker.example.com/announce",
+            0x71,
+        ),
+        (
+            "live_add",
+            "http://other-tracker.example.com/announce",
+            0x72,
+        ),
+    ]);
+    let hash1 = meta[0].1.clone();
+    let hash2 = meta[1].1.clone();
+
+    repo.insert_reseed_history(
+        &hash1,
+        site_id.0,
+        Some(7101),
+        Some("old-ih"),
+        "success",
+        None,
+    )
+    .await
+    .unwrap();
+
+    let (torrent_bytes, _, _) = build_torrent_bytes(
+        "live_add",
+        "http://other-tracker.example.com/announce",
+        0x72,
+    );
+    let (port, _hits) = serve_torrent_hits(vec![("/download/7102".into(), torrent_bytes)]).await;
+    let site = Arc::new(MockReseedSite::new(
+        "TestSite",
+        &format!("http://127.0.0.1:{port}"),
+        vec![(hash1.clone(), 7101), (hash2.clone(), 7102)],
+    ));
+    let registry = register_site(site, site_id);
+    let dest_client = Arc::new(MockDownloader::new());
+    let config = ReseedConfig {
+        scan_folders: vec![dir.path().to_path_buf()],
+        source_downloaders: vec![],
+        target_site_ids: vec![site_id],
+        default_save_path: "/downloads".to_string(),
+        skip_hash_check: true,
+        auto_start: false,
+        tag: None,
+        jackett_config: None,
+    };
+
+    let engine = ReseedEngine::new(Arc::new(registry), repo.clone(), db_writer.clone(), cancel);
+    let (_snapshot, preview) = engine
+        .run_sync(config, dest_client, false, Some(task_id), Some(log_id))
+        .await
+        .unwrap();
+    let preview = preview.expect("preview");
+    db_writer.flush().await.unwrap();
+
+    let log = repo.get_task_log(log_id).await.unwrap().unwrap();
+    let stored: pt_reseeder_core::engine::DryRunPreview =
+        serde_json::from_str(log.log_text.as_deref().unwrap()).unwrap();
+    assert_eq!(stored.items.len(), 2);
+    assert_eq!(preview.items.len(), 2);
+    assert_eq!(stored.would_add_count, 1);
+    assert_eq!(stored.history_skipped_count, 1);
+    assert_eq!(preview.would_add_count, 1);
+    assert_eq!(preview.history_skipped_count, 1);
+    assert!(stored
+        .items
+        .iter()
+        .any(|item| item.pieces_hash == hash1 && item.outcome.as_deref() == Some("skipped")));
+    assert!(stored
+        .items
+        .iter()
+        .any(|item| item.pieces_hash == hash2 && item.outcome.as_deref() == Some("added")));
+    assert_eq!(log.matched_count, Some(1));
 }

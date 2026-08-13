@@ -128,8 +128,7 @@ impl ReseedStatsService {
                  ORDER BY date(created_at)",
             )
             .fetch_all(&self.pool)
-            .await
-            ?
+            .await?
         } else {
             sqlx::query_as(
                 "SELECT date(created_at) AS date, \
@@ -142,8 +141,7 @@ impl ReseedStatsService {
             )
             .bind(days)
             .fetch_all(&self.pool)
-            .await
-            ?
+            .await?
         };
 
         Ok(rows

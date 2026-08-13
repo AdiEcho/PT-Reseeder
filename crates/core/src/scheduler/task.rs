@@ -52,10 +52,7 @@ impl TaskManager {
             )
             .await?;
 
-        if let Err(error) = self
-            .persist_associations_and_schedule(task_id, req)
-            .await
-        {
+        if let Err(error) = self.persist_associations_and_schedule(task_id, req).await {
             if let Err(cleanup_error) = self.repo.delete_task(task_id).await {
                 tracing::error!(
                     task_id,
@@ -527,5 +524,4 @@ mod tests {
         }
         assert_eq!(manager.get_task(id).await.unwrap().name, "test-task");
     }
-
 }

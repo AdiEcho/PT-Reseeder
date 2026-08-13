@@ -69,9 +69,7 @@ pub fn hash_token(raw_hex: &str) -> Option<Vec<u8>> {
 /// Values are unquoted and percent-decoded, matching what `CookieJar` did before
 /// this logic moved into core: a proxy that normalises the cookie to
 /// `name="value"` form must still authenticate.
-pub fn token_from_cookie_headers<'a>(
-    headers: impl IntoIterator<Item = &'a str>,
-) -> Option<String> {
+pub fn token_from_cookie_headers<'a>(headers: impl IntoIterator<Item = &'a str>) -> Option<String> {
     headers
         .into_iter()
         .flat_map(|header| header.split(';'))

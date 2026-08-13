@@ -23,26 +23,21 @@ static RE_AUTOUP: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)\bautoup\b
 // translate_bbcode regexes
 static RE_QUOTE_ATTR: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?i)\[quote=[^\]]*\]").unwrap());
-static RE_IMG_SIZED: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)\[img=[^\]]*\]").unwrap());
-static RE_MEDIAINFO: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)\[mediainfo\]").unwrap());
+static RE_IMG_SIZED: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)\[img=[^\]]*\]").unwrap());
+static RE_MEDIAINFO: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)\[mediainfo\]").unwrap());
 static RE_MEDIAINFO_CLOSE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?i)\[/mediainfo\]").unwrap());
 static RE_HIDE_OPEN: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?i)\[hide(?:=[^\]]*)?]").unwrap());
-static RE_HIDE_CLOSE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)\[/hide\]").unwrap());
-static RE_EXCESS_NEWLINES: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"\n{4,}").unwrap());
+static RE_HIDE_CLOSE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)\[/hide\]").unwrap());
+static RE_EXCESS_NEWLINES: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\n{4,}").unwrap());
 
 // clean_description regexes (ref: auto_feed.js fill_raw_info)
 static RE_EMPTY_QUOTE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?i)\[quote\]\s*\[/quote\]").unwrap());
 static RE_EMPTY_BOLD: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?i)\[b\]\s*\[/b\]").unwrap());
-static RE_CONSECUTIVE_NEWLINES: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"\n{3,}").unwrap());
+static RE_CONSECUTIVE_NEWLINES: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\n{3,}").unwrap());
 
 // extract_url regexes (ref: auto_feed.js fill_raw_info)
 static RE_IMDB_URL: LazyLock<Regex> =
@@ -53,16 +48,13 @@ static RE_DOUBAN_URL: LazyLock<Regex> =
 // infer_from_title regexes (ref: auto_feed.js String.prototype.medium_sel etc.)
 static RE_MEDIUM_WEBDL: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?i)(Web-?dl|WEB[. ])").unwrap());
-static RE_MEDIUM_WEBRIP: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)webrip").unwrap());
-static RE_MEDIUM_REMUX: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)\bremux\b").unwrap());
+static RE_MEDIUM_WEBRIP: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)webrip").unwrap());
+static RE_MEDIUM_REMUX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)\bremux\b").unwrap());
 static RE_MEDIUM_BLURAY: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?i)(Blu-?ray|BDISO|BDMV)").unwrap());
 static RE_MEDIUM_UHD: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?i)\b(UHD|UltraHD)\b").unwrap());
-static RE_MEDIUM_HDTV: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)\bHDTV\b").unwrap());
+static RE_MEDIUM_HDTV: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)\bHDTV\b").unwrap());
 static RE_MEDIUM_ENCODE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?i)\b(Encode|BDRip)\b").unwrap());
 static RE_MEDIUM_DVD: LazyLock<Regex> =
@@ -72,23 +64,15 @@ static RE_CODEC_H264: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?i)\b(H\.?264|x\.?264|AVC)\b").unwrap());
 static RE_CODEC_H265: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?i)\b(H\.?265|x\.?265|HEVC)\b").unwrap());
-static RE_CODEC_VC1: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)\bVC-?1\b").unwrap());
-static RE_CODEC_MPEG2: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)\bMPEG-?2\b").unwrap());
-static RE_CODEC_AV1: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)\bAV1\b").unwrap());
+static RE_CODEC_VC1: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)\bVC-?1\b").unwrap());
+static RE_CODEC_MPEG2: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)\bMPEG-?2\b").unwrap());
+static RE_CODEC_AV1: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)\bAV1\b").unwrap());
 
-static RE_RES_2160P: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)\b2160p\b").unwrap());
-static RE_RES_1080P: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)\b1080p\b").unwrap());
-static RE_RES_1080I: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)\b1080i\b").unwrap());
-static RE_RES_720P: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)\b720p\b").unwrap());
-static RE_RES_SD: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)\b(480p|576p)\b").unwrap());
+static RE_RES_2160P: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)\b2160p\b").unwrap());
+static RE_RES_1080P: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)\b1080p\b").unwrap());
+static RE_RES_1080I: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)\b1080i\b").unwrap());
+static RE_RES_720P: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)\b720p\b").unwrap());
+static RE_RES_SD: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)\b(480p|576p)\b").unwrap());
 
 // ---------------------------------------------------------------------------
 // Sites known to NOT support [mediainfo] tags (use [code] instead)
@@ -176,11 +160,9 @@ pub fn adapt_torrent_info(
         let codec = find_mapping(&video_codec, &m.codecs, |c| (&c.codec, &c.aliases))
             .map(|c| c.codec_id)
             .or_else(|| default_codec_id(&video_codec));
-        let res = find_mapping(&resolution, &m.resolutions, |r| {
-            (&r.resolution, &r.aliases)
-        })
-        .map(|r| r.resolution_id)
-        .or_else(|| default_resolution_id(&resolution));
+        let res = find_mapping(&resolution, &m.resolutions, |r| (&r.resolution, &r.aliases))
+            .map(|r| r.resolution_id)
+            .or_else(|| default_resolution_id(&resolution));
 
         require_mapping("category", &raw.torrent_type, cat)?;
         (cat, src, codec, res)
@@ -366,16 +348,11 @@ fn clean_description(descr: &str) -> String {
 /// Translate BBCode dialect differences between sites.
 fn translate_bbcode(content: &str, target_site: &str) -> String {
     let mut result = content.to_string();
-    result = RE_QUOTE_ATTR
-        .replace_all(&result, "[quote]")
-        .into_owned();
+    result = RE_QUOTE_ATTR.replace_all(&result, "[quote]").into_owned();
     result = RE_IMG_SIZED.replace_all(&result, "[img]").into_owned();
 
     let target_lower = target_site.to_ascii_lowercase();
-    if SITES_NO_MEDIAINFO
-        .iter()
-        .any(|&s| target_lower.contains(s))
-    {
+    if SITES_NO_MEDIAINFO.iter().any(|&s| target_lower.contains(s)) {
         result = RE_MEDIAINFO.replace_all(&result, "[code]").into_owned();
         result = RE_MEDIAINFO_CLOSE
             .replace_all(&result, "[/code]")
@@ -467,9 +444,7 @@ fn infer_resolution(title: &str) -> String {
 /// Ref: auto_feed.js `fill_raw_info`:
 ///   var url = raw_info.descr.match(/http(s*):\/\/www.imdb.com\/title\/tt(\d+)/i);
 fn extract_imdb_url(descr: &str) -> Option<String> {
-    RE_IMDB_URL
-        .find(descr)
-        .map(|m| m.as_str().to_string())
+    RE_IMDB_URL.find(descr).map(|m| m.as_str().to_string())
 }
 
 /// Extract Douban URL from description text.
@@ -477,9 +452,7 @@ fn extract_imdb_url(descr: &str) -> Option<String> {
 /// Ref: auto_feed.js `fill_raw_info`:
 ///   var dburl = raw_info.descr.match(/http(s*):\/\/.*?douban.com\/subject\/(\d+)/i);
 fn extract_douban_url(descr: &str) -> Option<String> {
-    RE_DOUBAN_URL
-        .find(descr)
-        .map(|m| m.as_str().to_string())
+    RE_DOUBAN_URL.find(descr).map(|m| m.as_str().to_string())
 }
 
 // ---------------------------------------------------------------------------
@@ -523,10 +496,7 @@ mod tests {
 
     #[test]
     fn subtitle_removes_checked_by() {
-        assert_eq!(
-            format_subtitle("好片推荐 [Checked by admin]"),
-            "好片推荐"
-        );
+        assert_eq!(format_subtitle("好片推荐 [Checked by admin]"), "好片推荐");
     }
 
     #[test]
@@ -551,7 +521,10 @@ mod tests {
 
     #[test]
     fn description_removes_empty_quote() {
-        assert_eq!(clean_description("before [quote][/quote] after"), "before  after");
+        assert_eq!(
+            clean_description("before [quote][/quote] after"),
+            "before  after"
+        );
     }
 
     #[test]

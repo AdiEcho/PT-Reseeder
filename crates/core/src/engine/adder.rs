@@ -58,8 +58,7 @@ pub async fn add_torrent(
         "downloading torrent for reseed"
     );
     // Download .torrent file
-    let torrent_data =
-        download_torrent(http_client, &matched.download_url, rate_limiter).await?;
+    let torrent_data = download_torrent(http_client, &matched.download_url, rate_limiter).await?;
 
     // Parse and verify pieces_hash matches
     let meta = parser::parse_bytes(&torrent_data)?;
@@ -266,11 +265,8 @@ async fn download_torrent(
         .into());
     }
 
-    let (status, _preview, wait_secs) = last_wait.unwrap_or((
-        reqwest::StatusCode::INTERNAL_SERVER_ERROR,
-        String::new(),
-        0,
-    ));
+    let (status, _preview, wait_secs) =
+        last_wait.unwrap_or((reqwest::StatusCode::INTERNAL_SERVER_ERROR, String::new(), 0));
     Err(EngineError::AddFailed(format!(
         "download torrent HTTP {} after {} retries (last wait {}s) from {}",
         status,

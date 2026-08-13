@@ -109,15 +109,7 @@ impl TaskExecutor {
             let starter_json = serde_json::to_string(&starter).ok();
             Some(
                 self.repo
-                    .insert_task_log(
-                        task_id,
-                        "running",
-                        0,
-                        0,
-                        0,
-                        None,
-                        starter_json.as_deref(),
-                    )
+                    .insert_task_log(task_id, "running", 0, 0, 0, None, starter_json.as_deref())
                     .await?,
             )
         } else {
@@ -172,17 +164,13 @@ impl TaskExecutor {
         match &result {
             Ok((matched, succeeded, failed, preview)) => {
                 let (status, log_text, succeeded_count) = if dry_run {
-                    let text = preview
-                        .as_ref()
-                        .and_then(|p| serde_json::to_string(p).ok());
+                    let text = preview.as_ref().and_then(|p| serde_json::to_string(p).ok());
                     ("dry_run", text, 0i64)
                 } else {
                     // Persist the matched-item list for real runs too so the
                     // reseeding results page can show title/path/size/link.
                     let status = if *failed > 0 { "partial" } else { "success" };
-                    let text = preview
-                        .as_ref()
-                        .and_then(|p| serde_json::to_string(p).ok());
+                    let text = preview.as_ref().and_then(|p| serde_json::to_string(p).ok());
                     (status, text, *succeeded)
                 };
                 // Persist the completion log before flipping task status/run_count so
@@ -325,7 +313,10 @@ impl TaskExecutor {
                 )))
             })?;
             if !row.enabled {
-                warn!(downloader_id = row.id, "source downloader disabled, skipping");
+                warn!(
+                    downloader_id = row.id,
+                    "source downloader disabled, skipping"
+                );
                 continue;
             }
             let downloader = build_downloader(&row, self.vault.as_ref()).await?;
@@ -482,7 +473,10 @@ impl TaskExecutor {
                 let user_info_cap = match handle.user_info.as_ref() {
                     Some(ui) => Arc::clone(ui),
                     None => {
-                        info!(site_id = site_id.0, "site has no user_info capability, skipping");
+                        info!(
+                            site_id = site_id.0,
+                            "site has no user_info capability, skipping"
+                        );
                         return (0, 0);
                     }
                 };
@@ -536,10 +530,7 @@ impl TaskExecutor {
 
         info!(
             task_id = task.id,
-            total,
-            succeeded,
-            failed,
-            "sync_stats task completed"
+            total, succeeded, failed, "sync_stats task completed"
         );
 
         Ok((total, succeeded, failed))

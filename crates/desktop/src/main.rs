@@ -9,7 +9,7 @@ mod webview;
 use pt_reseeder_core::config::AppConfig;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{Manager, AppHandle};
+use tauri::{AppHandle, Manager};
 use tokio_util::sync::CancellationToken;
 
 fn show_main_window(app: &AppHandle) {
@@ -89,8 +89,7 @@ fn main() {
                             .unwrap_or_else(|_| config.log_min_level.clone().into());
                         let file_appender =
                             tracing_appender::rolling::daily(&config.log_dir, "pt-reseeder");
-                        let (non_blocking, guard) =
-                            tracing_appender::non_blocking(file_appender);
+                        let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
                         let (log_tx, _) = tokio::sync::broadcast::channel::<String>(1024);
                         let broadcast_layer =
                             pt_reseeder_server::log::BroadcastLayer::new(log_tx.clone());
@@ -108,9 +107,8 @@ fn main() {
                             .with(broadcast_layer)
                             .try_init()
                         {
-                            let _ = addr_tx.send(Err(format!(
-                                "failed to initialize desktop logging: {err}"
-                            )));
+                            let _ = addr_tx
+                                .send(Err(format!("failed to initialize desktop logging: {err}")));
                             return;
                         }
                         // Keep the non-blocking writer alive for the process lifetime.

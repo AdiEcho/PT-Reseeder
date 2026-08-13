@@ -19,16 +19,12 @@ use crate::state::AppState;
 // Request / Response types
 // ---------------------------------------------------------------------------
 
-
-
 #[derive(Deserialize)]
 pub struct ReviewRequest {
     pub action: ReviewAction,
     pub notes: Option<String>,
     pub mapping: Option<AdapterMapping>,
 }
-
-
 
 #[derive(Serialize)]
 pub struct RepostEntryResponse {
@@ -141,9 +137,6 @@ async fn build_adapted_json(
 // ---------------------------------------------------------------------------
 // Handlers
 // ---------------------------------------------------------------------------
-
-
-
 
 /// POST /repost/queue/:id/review -- approve or reject a pending entry
 async fn review_entry(
@@ -277,9 +270,6 @@ async fn submit_entry(
 
     Ok(Json(entry_to_response(&updated)))
 }
-
-
-
 
 // ---------------------------------------------------------------------------
 // Router

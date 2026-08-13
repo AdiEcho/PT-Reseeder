@@ -370,6 +370,11 @@ where
     } else {
         "正式运行"
     };
+    let skipped_text = if run.history_skipped_count > 0 {
+        format!(" · 已辅过跳过 {}", run.history_skipped_count)
+    } else {
+        String::new()
+    };
 
     view! {
         <div class="stats-table-section">
@@ -386,11 +391,12 @@ where
             </div>
             <div class="text-muted table-subtext">
                 {format!(
-                    "时间 {} · 成功 {} · 失败 {} · 总大小 {} · 耗时 {} · {}",
+                    "时间 {} · 成功 {} · 失败 {} · 总大小 {}{} · 耗时 {} · {}",
                     run.created_at,
                     run.succeeded_count,
                     run.failed_count,
                     size,
+                    skipped_text,
                     duration,
                     mode_text
                 )}
@@ -531,7 +537,7 @@ fn ReseedItemsTable(items: Vec<DryRunPreviewItemInfo>) -> impl IntoView {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_task_id, run_status_label};
+    use super::{item_outcome_label, parse_task_id, run_status_label};
 
     #[test]
     fn parse_task_id_accepts_positive_ids() {
@@ -553,5 +559,11 @@ mod tests {
         assert_eq!(run_status_label("running", false), "运行中");
         assert_eq!(run_status_label("dry_run", true), "试运行");
         assert_eq!(run_status_label("success", false), "成功");
+    }
+
+    #[test]
+    fn skipped_outcome_renders_as_skipped_label() {
+        assert_eq!(item_outcome_label(Some("skipped")).0, "已跳过");
+        assert_eq!(item_outcome_label(None).0, "-");
     }
 }

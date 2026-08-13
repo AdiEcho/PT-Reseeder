@@ -405,9 +405,8 @@ impl RepostCapable for ZhuqueAdapter {
         debug!(site = %self.name, torrent_id, "extracting torrent detail via /api/torrent/");
 
         let path = format!("/api/torrent/{}", torrent_id);
-        let detail: ZhuqueTorrentDetail = self
-            .api_request(reqwest::Method::GET, &path, None)
-            .await?;
+        let detail: ZhuqueTorrentDetail =
+            self.api_request(reqwest::Method::GET, &path, None).await?;
 
         let name = detail.name.clone();
         let small_descr = detail.small_descr.clone().unwrap_or_default();
@@ -499,10 +498,7 @@ impl RepostCapable for ZhuqueAdapter {
             .map_err(SiteError::from)?;
 
         let status = resp.status();
-        let body = resp
-            .text()
-            .await
-            .map_err(SiteError::from)?;
+        let body = resp.text().await.map_err(SiteError::from)?;
 
         // Try to parse response for torrent id
         if let Ok(api_resp) = serde_json::from_str::<ZhuqueApiResponse<serde_json::Value>>(&body) {
@@ -549,9 +545,8 @@ impl SearchCapable for ZhuqueAdapter {
         let path = format!("/api/torrent/search?keyword={}", urlencoding::encode(query));
         debug!(site = %self.name, query, "searching torrents via /api/torrent/search");
 
-        let search_resp: ZhuqueSearchResponse = self
-            .api_request(reqwest::Method::GET, &path, None)
-            .await?;
+        let search_resp: ZhuqueSearchResponse =
+            self.api_request(reqwest::Method::GET, &path, None).await?;
 
         let mut results: Vec<TorrentSearchResult> = search_resp
             .torrents

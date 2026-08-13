@@ -260,7 +260,11 @@ pub fn TasksPage() -> impl IntoView {
                 Err(e) => {
                     // Reopen so the user can correct and resubmit.
                     set_show_form.set(true);
-                    let verb = if edit_id.is_some() { "保存" } else { "创建" };
+                    let verb = if edit_id.is_some() {
+                        "保存"
+                    } else {
+                        "创建"
+                    };
                     show_toast(format!("{verb}失败：{e}"), ToastType::Error);
                     set_form_error.set(Some(format!("{e}")));
                 }

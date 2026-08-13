@@ -78,24 +78,26 @@ impl QBittorrentClient {
     /// Get qBittorrent version string.
     pub async fn get_version(&self) -> Result<String, CoreError> {
         let url = format!("{}/api/v2/app/version", self.base_url());
-        let resp =
-            self.client.get(&url).send().await.map_err(DownloaderError::from)?;
-        let version = resp
-            .text()
+        let resp = self
+            .client
+            .get(&url)
+            .send()
             .await
             .map_err(DownloaderError::from)?;
+        let version = resp.text().await.map_err(DownloaderError::from)?;
         Ok(version)
     }
 
     /// Get total number of torrents.
     pub async fn get_torrent_count(&self) -> Result<u64, CoreError> {
         let url = format!("{}/api/v2/torrents/info", self.base_url());
-        let resp =
-            self.client.get(&url).send().await.map_err(DownloaderError::from)?;
-        let torrents: Vec<QBTorrentInfo> = resp
-            .json()
+        let resp = self
+            .client
+            .get(&url)
+            .send()
             .await
             .map_err(DownloaderError::from)?;
+        let torrents: Vec<QBTorrentInfo> = resp.json().await.map_err(DownloaderError::from)?;
         Ok(torrents.len() as u64)
     }
 
@@ -125,10 +127,7 @@ impl Downloader for QBittorrentClient {
             CoreError::Downloader(DownloaderError::Transport(e))
         })?;
 
-        let body = resp
-            .text()
-            .await
-            .map_err(DownloaderError::from)?;
+        let body = resp.text().await.map_err(DownloaderError::from)?;
 
         if body.trim() != "Ok." {
             warn!(host = %self.host, port = %self.port, "qBittorrent auth failed");
@@ -162,12 +161,13 @@ impl Downloader for QBittorrentClient {
             self.base_url(),
             info_hash
         );
-        let resp =
-            self.client.get(&url).send().await.map_err(DownloaderError::from)?;
-        let torrents: Vec<QBTorrentInfo> = resp
-            .json()
+        let resp = self
+            .client
+            .get(&url)
+            .send()
             .await
             .map_err(DownloaderError::from)?;
+        let torrents: Vec<QBTorrentInfo> = resp.json().await.map_err(DownloaderError::from)?;
 
         Ok(torrents.into_iter().next().map(TorrentInfo::from))
     }
@@ -183,12 +183,13 @@ impl Downloader for QBittorrentClient {
 
     async fn list_torrents(&self) -> Result<Vec<TorrentInfo>, CoreError> {
         let url = format!("{}/api/v2/torrents/info", self.base_url());
-        let resp =
-            self.client.get(&url).send().await.map_err(DownloaderError::from)?;
-        let torrents: Vec<QBTorrentInfo> = resp
-            .json()
+        let resp = self
+            .client
+            .get(&url)
+            .send()
             .await
             .map_err(DownloaderError::from)?;
+        let torrents: Vec<QBTorrentInfo> = resp.json().await.map_err(DownloaderError::from)?;
 
         Ok(torrents.into_iter().map(TorrentInfo::from).collect())
     }
@@ -230,10 +231,7 @@ impl Downloader for QBittorrentClient {
             })?;
 
         let status = resp.status();
-        let body = resp
-            .text()
-            .await
-            .map_err(DownloaderError::from)?;
+        let body = resp.text().await.map_err(DownloaderError::from)?;
 
         if status.is_success() && body.trim() == "Ok." {
             debug!("torrent added successfully");
@@ -283,7 +281,12 @@ impl Downloader for QBittorrentClient {
             self.base_url(),
             info_hash
         );
-        let resp = self.client.get(&url).send().await.map_err(DownloaderError::from)?;
+        let resp = self
+            .client
+            .get(&url)
+            .send()
+            .await
+            .map_err(DownloaderError::from)?;
 
         let status = resp.status();
         if status.as_u16() == 404 {
@@ -318,7 +321,12 @@ impl Downloader for QBittorrentClient {
             self.base_url(),
             info_hash
         );
-        let resp = self.client.get(&url).send().await.map_err(DownloaderError::from)?;
+        let resp = self
+            .client
+            .get(&url)
+            .send()
+            .await
+            .map_err(DownloaderError::from)?;
 
         let status = resp.status();
         if status.as_u16() == 404 || status.as_u16() == 400 {

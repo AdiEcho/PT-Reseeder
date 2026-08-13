@@ -65,9 +65,7 @@ impl TrTorrentInfo {
 impl From<TrTorrentInfo> for TorrentInfo {
     fn from(tr: TrTorrentInfo) -> Self {
         let state = tr.status_string().to_string();
-        let torrent_file = tr
-            .torrent_file
-            .filter(|p| !p.trim().is_empty());
+        let torrent_file = tr.torrent_file.filter(|p| !p.trim().is_empty());
         TorrentInfo {
             info_hash: tr.hash_string,
             name: tr.name,
@@ -194,10 +192,7 @@ impl TransmissionClient {
             )));
         }
 
-        let rpc_resp: RpcResponse = resp
-            .json()
-            .await
-            .map_err(DownloaderError::from)?;
+        let rpc_resp: RpcResponse = resp.json().await.map_err(DownloaderError::from)?;
 
         if rpc_resp.result != "success" {
             return Err(CoreError::Downloader(DownloaderError::ConnectionFailed(

@@ -244,7 +244,16 @@ pub fn SitesPage() -> impl IntoView {
 
     // Update site action
     let update_site_action = Action::new(
-        move |args: &(i64, String, String, String, String, Option<i64>, Option<i64>, Option<i64>)| {
+        move |args: &(
+            i64,
+            String,
+            String,
+            String,
+            String,
+            Option<i64>,
+            Option<i64>,
+            Option<i64>,
+        )| {
             let (id, u, au, c, p, rli, rlb, di) = args.clone();
             async move { crate::server_fns::update_site(id, u, au, c, p, rli, rlb, di).await }
         },

@@ -9,8 +9,7 @@ use std::str::FromStr;
 use crate::error::{CoreError, DbError};
 
 pub async fn init_db(database_url: &str) -> Result<SqlitePool, CoreError> {
-    let options = SqliteConnectOptions::from_str(database_url)
-        ?
+    let options = SqliteConnectOptions::from_str(database_url)?
         .create_if_missing(true)
         .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal)
         .busy_timeout(std::time::Duration::from_millis(5000))

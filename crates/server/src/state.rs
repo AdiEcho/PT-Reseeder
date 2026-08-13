@@ -408,12 +408,7 @@ fn decrypt_token(site: &SiteRow, vault: &Vault) -> Result<Option<String>, CoreEr
 
 fn make_adapter_handle<T>(adapter: Arc<T>, rate_limiter: Arc<SiteRateLimiter>) -> AdapterHandle
 where
-    T: SiteCore
-        + ReseedCapable
-        + RepostCapable
-        + UserInfoCapable
-        + SearchCapable
-        + 'static,
+    T: SiteCore + ReseedCapable + RepostCapable + UserInfoCapable + SearchCapable + 'static,
 {
     AdapterHandle {
         core: adapter.clone() as Arc<dyn SiteCore>,

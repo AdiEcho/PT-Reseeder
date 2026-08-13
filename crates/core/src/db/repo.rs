@@ -528,10 +528,7 @@ impl Repository {
             }
             qb.push(")");
 
-            let rows: Vec<(String,)> = qb
-                .build_query_as()
-                .fetch_all(&self.pool)
-                .await?;
+            let rows: Vec<(String,)> = qb.build_query_as().fetch_all(&self.pool).await?;
             existing.extend(rows.into_iter().map(|r| r.0));
         }
 
@@ -560,10 +557,8 @@ impl Repository {
             }
             qb.push(")");
 
-            let rows: Vec<(String, Option<String>)> = qb
-                .build_query_as()
-                .fetch_all(&self.pool)
-                .await?;
+            let rows: Vec<(String, Option<String>)> =
+                qb.build_query_as().fetch_all(&self.pool).await?;
 
             for (pieces_hash, announce_url) in rows {
                 if let Some(url) = announce_url {
@@ -659,7 +654,8 @@ impl Repository {
             }
             qb.push(") ORDER BY created_at DESC, id DESC");
 
-            let rows: Vec<(String, Option<i64>)> = qb.build_query_as().fetch_all(&self.pool).await?;
+            let rows: Vec<(String, Option<i64>)> =
+                qb.build_query_as().fetch_all(&self.pool).await?;
 
             for (pieces_hash, torrent_id) in rows {
                 let slot = map.entry(pieces_hash).or_insert(None);
@@ -762,15 +758,12 @@ impl Repository {
             // row binds 2 variables.
             for chunk in child_ids.chunks(SQLITE_IN_CHUNK) {
                 // Trailing space matters: push_values appends "VALUES (...)".
-                let mut qb = sqlx::QueryBuilder::new(format!(
-                    "INSERT INTO {table} (task_id, {child_col}) "
-                ));
+                let mut qb =
+                    sqlx::QueryBuilder::new(format!("INSERT INTO {table} (task_id, {child_col}) "));
                 qb.push_values(chunk, |mut b, &child_id| {
                     b.push_bind(task_id).push_bind(child_id);
                 });
-                qb.build()
-                    .execute(&mut *tx)
-                    .await?;
+                qb.build().execute(&mut *tx).await?;
             }
         }
 
@@ -1135,15 +1128,13 @@ impl Repository {
             )
             .bind(status)
             .fetch_all(&self.pool)
-            .await
-            ?
+            .await?
         } else {
             sqlx::query_as::<_, RepostQueueEntry>(
                 "SELECT * FROM repost_queue ORDER BY created_at DESC",
             )
             .fetch_all(&self.pool)
-            .await
-            ?
+            .await?
         };
         Ok(rows)
     }
@@ -1331,7 +1322,9 @@ mod tests {
     async fn delete_site_removes_row() {
         let repo = setup_repo().await;
         let id = repo
-            .create_site("ToDelete", "http://x", None, "np", "cookie", None, None, None)
+            .create_site(
+                "ToDelete", "http://x", None, "np", "cookie", None, None, None,
+            )
             .await
             .unwrap();
         repo.delete_site(id).await.unwrap();
@@ -1592,11 +1585,19 @@ mod tests {
             .create_task("idle", "sync_stats", "manual", None, None, None)
             .await
             .unwrap();
-        repo.update_task_status(running_id, "running").await.unwrap();
+        repo.update_task_status(running_id, "running")
+            .await
+            .unwrap();
 
         assert_eq!(repo.recover_interrupted_tasks().await.unwrap(), 1);
-        assert_eq!(repo.get_task(running_id).await.unwrap().unwrap().status, "error");
-        assert_eq!(repo.get_task(idle_id).await.unwrap().unwrap().status, "idle");
+        assert_eq!(
+            repo.get_task(running_id).await.unwrap().unwrap().status,
+            "error"
+        );
+        assert_eq!(
+            repo.get_task(idle_id).await.unwrap().unwrap().status,
+            "idle"
+        );
     }
 
     #[tokio::test]
@@ -1652,7 +1653,15 @@ mod tests {
             .await
             .unwrap();
         let log_id = repo
-            .insert_task_log(task_id, "running", 0, 0, 0, None, Some(r#"{"version":2,"would_add_count":0,"dry_run":false,"items":[]}"#))
+            .insert_task_log(
+                task_id,
+                "running",
+                0,
+                0,
+                0,
+                None,
+                Some(r#"{"version":2,"would_add_count":0,"dry_run":false,"items":[]}"#),
+            )
             .await
             .unwrap();
 
@@ -1701,7 +1710,10 @@ mod tests {
         assert_eq!(repo.recover_interrupted_tasks().await.unwrap(), 1);
         let log = repo.get_task_log(log_id).await.unwrap().unwrap();
         assert_eq!(log.status, "failed");
-        assert_eq!(repo.get_task(task_id).await.unwrap().unwrap().status, "error");
+        assert_eq!(
+            repo.get_task(task_id).await.unwrap().unwrap().status,
+            "error"
+        );
     }
 
     #[tokio::test]
@@ -1795,7 +1807,6 @@ mod tests {
         assert_eq!(sites, vec![s1, s2]);
     }
 
-
     #[tokio::test]
     async fn set_and_get_task_source_downloaders() {
         let repo = setup_repo().await;
@@ -1848,13 +1859,18 @@ mod tests {
             .await
             .unwrap();
 
-        repo.set_task_source_downloaders(tid, &[d1, d2]).await.unwrap();
+        repo.set_task_source_downloaders(tid, &[d1, d2])
+            .await
+            .unwrap();
         let mut ids = repo.get_task_source_downloaders(tid).await.unwrap();
         ids.sort();
         assert_eq!(ids, vec![d1, d2]);
 
         repo.set_task_source_downloaders(tid, &[d2]).await.unwrap();
-        assert_eq!(repo.get_task_source_downloaders(tid).await.unwrap(), vec![d2]);
+        assert_eq!(
+            repo.get_task_source_downloaders(tid).await.unwrap(),
+            vec![d2]
+        );
     }
 
     #[tokio::test]
@@ -1889,5 +1905,4 @@ mod tests {
         let task = repo.get_task(tid).await.unwrap().unwrap();
         assert_eq!(task.destination_downloader_id, Some(dest_id));
     }
-
 }

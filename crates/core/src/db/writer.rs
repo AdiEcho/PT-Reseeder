@@ -113,14 +113,12 @@ impl DbWriter {
         mut rx: mpsc::Receiver<WriteOp>,
         batch_size: usize,
     ) -> Result<(), CoreError> {
-        let options = SqliteConnectOptions::from_str(database_url)
-            ?
+        let options = SqliteConnectOptions::from_str(database_url)?
             .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal)
             .busy_timeout(std::time::Duration::from_millis(5000))
             .foreign_keys(true);
 
-        let mut conn = SqliteConnection::connect_with(&options)
-            .await?;
+        let mut conn = SqliteConnection::connect_with(&options).await?;
 
         let mut buffer: Vec<WriteOp> = Vec::with_capacity(batch_size);
 
@@ -391,9 +389,7 @@ impl DbWriter {
                              announce_url = excluded.announce_url, \
                              cached_at = datetime('now')",
                         );
-                        qb.build()
-                            .execute(&mut *tx)
-                            .await?;
+                        qb.build().execute(&mut *tx).await?;
                     }
                 }
                 WriteOp::Flush(_) => {

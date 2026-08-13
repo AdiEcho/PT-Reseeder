@@ -165,7 +165,9 @@ impl MTeamAdapter {
         batch_size: usize,
     ) -> Self {
         let client = build_site_client(
-            api_token.as_deref().map_or(SiteAuth::None, SiteAuth::ApiKey),
+            api_token
+                .as_deref()
+                .map_or(SiteAuth::None, SiteAuth::ApiKey),
             true,
         );
 
@@ -426,10 +428,7 @@ impl UserInfoCapable for MTeamAdapter {
             );
         }
 
-        let body = resp
-            .text()
-            .await
-            .map_err(SiteError::from)?;
+        let body = resp.text().await.map_err(SiteError::from)?;
 
         // Try to find passkey in the JSON response
         if let Ok(json) = serde_json::from_str::<serde_json::Value>(&body) {
@@ -475,9 +474,7 @@ impl RepostCapable for MTeamAdapter {
         );
 
         let path = format!("/api/torrent/detail?id={}", torrent_id);
-        let detail: TorrentDetail = self
-            .api_request(reqwest::Method::GET, &path, None)
-            .await?;
+        let detail: TorrentDetail = self.api_request(reqwest::Method::GET, &path, None).await?;
 
         let name = detail.name.unwrap_or_default();
         let small_descr = detail.small_descr.unwrap_or_default();
@@ -607,10 +604,7 @@ impl RepostCapable for MTeamAdapter {
             .into());
         }
 
-        let body = resp
-            .text()
-            .await
-            .map_err(SiteError::from)?;
+        let body = resp.text().await.map_err(SiteError::from)?;
 
         // Parse to check for success
         let api_resp: MTeamApiResponse<UploadResult> = serde_json::from_str(&body)

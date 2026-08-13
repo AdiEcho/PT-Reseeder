@@ -68,12 +68,9 @@ pub fn ResizableTh(
     /// Stable id used for localStorage, e.g. `"reseed-items-title"`.
     #[prop(into)]
     col_key: String,
-    #[prop(default = 140)]
-    default_width: i32,
-    #[prop(default = 64)]
-    min_width: i32,
-    #[prop(optional, into)]
-    class: Option<String>,
+    #[prop(default = 140)] default_width: i32,
+    #[prop(default = 64)] min_width: i32,
+    #[prop(optional, into)] class: Option<String>,
     children: Children,
 ) -> impl IntoView {
     let (width, set_width) = signal(default_width);

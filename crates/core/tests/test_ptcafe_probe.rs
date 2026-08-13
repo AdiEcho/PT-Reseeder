@@ -96,7 +96,10 @@ async fn test_ptcafe_fetch_user_info() {
     // 上传量和下载量是最基本的字段，必须能解析
     assert!(stats.uploaded.is_some(), "uploaded 应该有值");
     assert!(stats.downloaded.is_some(), "downloaded 应该有值");
-    assert!(stats.seeding_size.is_some(), "seeding_size 应该通过做种列表 AJAX 解析成功");
+    assert!(
+        stats.seeding_size.is_some(),
+        "seeding_size 应该通过做种列表 AJAX 解析成功"
+    );
     // ratio: PTCafe 的分享率数值在 <font> 标签外的裸文本节点中，
     // 当前选择器只能取到标签文字 "分享率:"，暂时允许为 None
     if stats.ratio.is_some() {
@@ -243,7 +246,10 @@ async fn test_ptcafe_pieces_hash_raw_response() {
         Ok(parsed) => {
             println!("✅ 解析成功, matches={}", parsed.data.len());
             for (i, m) in parsed.data.iter().take(5).enumerate() {
-                println!("  [{i}] pieces_hash={}, torrent_id={}", m.pieces_hash, m.torrent_id);
+                println!(
+                    "  [{i}] pieces_hash={}, torrent_id={}",
+                    m.pieces_hash, m.torrent_id
+                );
             }
         }
         Err(e) => {
@@ -289,10 +295,7 @@ async fn test_ptcafe_pieces_hash_raw_response() {
             println!("  message={:?}", parsed.message);
             println!("  success={:?}", parsed.success);
             println!("  ret={:?}", parsed.ret);
-            println!(
-                "  extra keys={:?}",
-                parsed.extra.keys().collect::<Vec<_>>()
-            );
+            println!("  extra keys={:?}", parsed.extra.keys().collect::<Vec<_>>());
             match &parsed.data {
                 Some(serde_json::Value::Array(arr)) => {
                     println!("  data: Array(len={})", arr.len());
@@ -371,11 +374,7 @@ async fn test_ptcafe_query_pieces_hash_via_adapter() {
             "api_reachable: success={}, error={:?}",
             api.success, api.error
         );
-        assert!(
-            api.success,
-            "辅种 API 连通应成功，错误: {:?}",
-            api.error
-        );
+        assert!(api.success, "辅种 API 连通应成功，错误: {:?}", api.error);
     } else {
         panic!("api_reachable 不应为 None");
     }

@@ -261,10 +261,7 @@ mod tests {
         assert_eq!(preview.items[0].site_id, 42);
         assert_eq!(preview.items[0].site_name, "42");
         assert_eq!(preview.items[0].torrent_id, Some(7));
-        assert_eq!(
-            preview.items[0].title.as_deref(),
-            Some("Movie.Title.2024")
-        );
+        assert_eq!(preview.items[0].title.as_deref(), Some("Movie.Title.2024"));
         assert_eq!(preview.items[0].save_path, "/downloads/movie");
         assert_eq!(preview.items[0].total_size, Some(1_024_000));
         // No registry handle → no base_url → detail_url omitted (never invent secrets).
@@ -291,5 +288,158 @@ mod tests {
         assert!(!preview.dry_run);
         assert_eq!(preview.items[0].total_size, None);
         assert_eq!(preview.items[0].detail_url, None);
+    }
+
+    struct StubSite {
+        name: String,
+        url: String,
+    }
+
+    impl crate::site::traits::SiteCore for StubSite {
+        fn name(&self) -> &str {
+            &self.name
+        }
+        fn base_url(&self) -> &str {
+            &self.url
+        }
+        fn capabilities(&self) -> HashSet<crate::site::traits::SiteCapability> {
+            HashSet::new()
+        }
+    }
+
+    fn registry_with_site(id: SiteId, name: &str, url: &str) -> SiteRegistry {
+        let mut registry = SiteRegistry::new();
+        registry.register(
+            id,
+            crate::site::registry::AdapterHandle {
+                core: std::sync::Arc::new(StubSite {
+                    name: name.to_string(),
+                    url: url.to_string(),
+                }),
+                reseed: None,
+                repost: None,
+                user_info: None,
+                search: None,
+                rate_limiter: std::sync::Arc::new(crate::site::rate_limiter::SiteRateLimiter::new(
+                    1000, 1,
+                )),
+            },
+        );
+        registry
+    }
+
+    fn scan_with_title(
+        pieces_hash: &str,
+        info_hash: &str,
+        name: &str,
+        total_size: u64,
+    ) -> ScanResult {
+        let mut torrents = HashMap::new();
+        torrents.insert(
+            info_hash.to_string(),
+            sample_meta(name, pieces_hash, info_hash, total_size),
+        );
+        let mut pieces_groups = HashMap::new();
+        pieces_groups.insert(pieces_hash.to_string(), vec![info_hash.to_string()]);
+        ScanResult {
+            torrents,
+            pieces_groups,
+            dest_hashes: HashSet::new(),
+            save_paths: HashMap::new(),
+        }
+    }
+
+    #[test]
+    fn history_skip_item_carries_site_title_path_and_skipped_outcome() {
+        let site_id = SiteId(7);
+        let registry = registry_with_site(site_id, "TestSite", "https://site.example.com");
+        let pieces_hash = "ph-skip";
+        let scan = scan_with_title(pieces_hash, "ih-skip", "Already.Seeded", 4096);
+        let skip = crate::engine::matcher::HistorySkippedTorrent {
+            pieces_hash: pieces_hash.to_string(),
+            site_id,
+            torrent_id: Some(42),
+            save_path: "/downloads/already".to_string(),
+        };
+
+        let item = preview_item_from_history_skip(&skip, &scan, &registry);
+        assert_eq!(item.site_name, "TestSite");
+        assert_eq!(item.title.as_deref(), Some("Already.Seeded"));
+        assert_eq!(item.save_path, "/downloads/already");
+        assert_eq!(item.torrent_id, Some(42));
+        assert_eq!(item.outcome.as_deref(), Some("skipped"));
+        assert_eq!(
+            item.detail_url.as_deref(),
+            Some("https://site.example.com/details.php?id=42")
+        );
+    }
+
+    #[test]
+    fn history_skip_item_without_torrent_id_has_no_detail_url() {
+        let site_id = SiteId(7);
+        let registry = registry_with_site(site_id, "TestSite", "https://site.example.com");
+        let scan = scan_with_title("ph-null", "ih-null", "Pack.Match", 1024);
+        let skip = crate::engine::matcher::HistorySkippedTorrent {
+            pieces_hash: "ph-null".to_string(),
+            site_id,
+            torrent_id: None,
+            save_path: "/downloads".to_string(),
+        };
+
+        let item = preview_item_from_history_skip(&skip, &scan, &registry);
+        assert_eq!(item.outcome.as_deref(), Some("skipped"));
+        assert_eq!(item.torrent_id, None);
+        assert_eq!(item.detail_url, None);
+    }
+
+    #[test]
+    fn would_add_count_excludes_appended_skip_rows() {
+        let pieces_hash = "ph-add";
+        let scan = scan_with_title(pieces_hash, "ih-add", "New.Title", 2048);
+        let matched = vec![MatchedTorrent {
+            pieces_hash: pieces_hash.to_string(),
+            site_id: SiteId(1),
+            torrent_id: Some(9),
+            download_url: "https://example.test/dl".to_string(),
+            save_path: "/downloads/new".to_string(),
+            skip_hash_check: false,
+            tag: None,
+        }];
+        let mut preview = build_preview(&matched, &scan, &SiteRegistry::new(), true);
+        preview.items.push(DryRunPreviewItem {
+            site_id: 1,
+            site_name: "S".into(),
+            pieces_hash: "ph-skip".into(),
+            torrent_id: Some(2),
+            title: Some("Old".into()),
+            save_path: "/downloads".into(),
+            total_size: Some(100),
+            detail_url: None,
+            outcome: Some("skipped".into()),
+        });
+        assert_eq!(preview.would_add_count, 1);
+        assert_eq!(preview.items.len(), 2);
+    }
+
+    #[test]
+    fn v3_json_without_skip_count_still_deserializes() {
+        let json = r#"{
+            "version": 3,
+            "would_add_count": 1,
+            "dry_run": false,
+            "items": [{
+                "site_id": 1,
+                "site_name": "HD",
+                "pieces_hash": "abc",
+                "torrent_id": 9,
+                "title": "T",
+                "save_path": "/d",
+                "outcome": "added"
+            }]
+        }"#;
+        let preview: DryRunPreview = serde_json::from_str(json).unwrap();
+        assert_eq!(preview.version, 3);
+        assert_eq!(preview.history_skipped_count, 0);
+        assert_eq!(preview.would_add_count, 1);
     }
 }

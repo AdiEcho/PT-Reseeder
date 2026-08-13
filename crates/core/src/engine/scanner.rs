@@ -535,10 +535,10 @@ fn collect_torrent_files(dir: &Path) -> Result<Vec<PathBuf>, CoreError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use async_trait::async_trait;
-    use crate::downloader::models::{AddTorrentOpts, TorrentInfo};
     use crate::db::writer::spawn_writer;
+    use crate::downloader::models::{AddTorrentOpts, TorrentInfo};
     use crate::engine::stats::ReseedStats;
+    use async_trait::async_trait;
 
     struct MockDownloader {
         hashes: HashSet<String>,
@@ -622,17 +622,9 @@ mod tests {
         let stats = ReseedStats::new();
         let cancel = CancellationToken::new();
 
-        let result = scan_downloader(
-            &client,
-            None,
-            &repo,
-            &writer,
-            Some(&dest),
-            &stats,
-            &cancel,
-        )
-        .await
-        .unwrap();
+        let result = scan_downloader(&client, None, &repo, &writer, Some(&dest), &stats, &cancel)
+            .await
+            .unwrap();
 
         assert_eq!(result.torrents.len(), 1);
         assert!(result.torrents.contains_key(&meta.info_hash));
@@ -717,17 +709,9 @@ mod tests {
         let stats = ReseedStats::new();
         let cancel = CancellationToken::new();
 
-        let result = scan_downloader(
-            &client,
-            None,
-            &repo,
-            &writer,
-            Some(&dest),
-            &stats,
-            &cancel,
-        )
-        .await
-        .unwrap();
+        let result = scan_downloader(&client, None, &repo, &writer, Some(&dest), &stats, &cancel)
+            .await
+            .unwrap();
 
         assert_eq!(result.torrents.len(), 1);
         let meta = result.torrents.get(&info_hash).unwrap();
@@ -779,25 +763,14 @@ mod tests {
         let stats = ReseedStats::new();
         let cancel = CancellationToken::new();
 
-        let result = scan_downloader(
-            &client,
-            None,
-            &repo,
-            &writer,
-            Some(&dest),
-            &stats,
-            &cancel,
-        )
-        .await
-        .unwrap();
+        let result = scan_downloader(&client, None, &repo, &writer, Some(&dest), &stats, &cancel)
+            .await
+            .unwrap();
 
         assert_eq!(result.torrents.len(), 1);
         assert!(result.torrents.contains_key(&meta.info_hash));
         assert_eq!(
-            result
-                .save_paths
-                .get(&meta.info_hash)
-                .map(String::as_str),
+            result.save_paths.get(&meta.info_hash).map(String::as_str),
             Some("/downloads/from-torrent-file")
         );
     }
@@ -826,17 +799,9 @@ mod tests {
         let stats = ReseedStats::new();
         let cancel = CancellationToken::new();
 
-        let err = scan_downloader(
-            &client,
-            None,
-            &repo,
-            &writer,
-            Some(&dest),
-            &stats,
-            &cancel,
-        )
-        .await
-        .unwrap_err();
+        let err = scan_downloader(&client, None, &repo, &writer, Some(&dest), &stats, &cancel)
+            .await
+            .unwrap_err();
 
         let msg = err.to_string();
         assert!(

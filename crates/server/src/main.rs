@@ -47,7 +47,11 @@ async fn main() {
     tracing_subscriber::registry()
         .with(env_filter)
         .with(tracing_subscriber::fmt::layer().with_writer(std::io::stdout))
-        .with(tracing_subscriber::fmt::layer().with_writer(non_blocking).with_ansi(false))
+        .with(
+            tracing_subscriber::fmt::layer()
+                .with_writer(non_blocking)
+                .with_ansi(false),
+        )
         .with(broadcast_layer)
         .init();
 

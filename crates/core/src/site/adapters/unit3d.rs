@@ -434,10 +434,7 @@ impl RepostCapable for Unit3dAdapter {
             return Err(SiteError::RateLimited.into());
         }
 
-        let body = resp
-            .text()
-            .await
-            .map_err(SiteError::from)?;
+        let body = resp.text().await.map_err(SiteError::from)?;
 
         // Unit3D returns the created torrent resource on success (HTTP 200/201).
         if status.is_success() {

@@ -188,10 +188,7 @@ impl GazelleAdapter {
             return Err(SiteError::HttpError(format!("HTTP {status} from ajax.php")).into());
         }
 
-        let body = resp
-            .text()
-            .await
-            .map_err(SiteError::from)?;
+        let body = resp.text().await.map_err(SiteError::from)?;
 
         let api_resp: GazelleApiResponse<T> = serde_json::from_str(&body)
             .map_err(|e| SiteError::ParseError(format!("failed to parse gazelle response: {e}")))?;
@@ -375,10 +372,7 @@ impl UserInfoCapable for GazelleAdapter {
             );
         }
 
-        let body = resp
-            .text()
-            .await
-            .map_err(SiteError::from)?;
+        let body = resp.text().await.map_err(SiteError::from)?;
 
         // Look for passkey/torrent_pass in the page
         let re = regex_lite::Regex::new(r"torrent_pass=([a-f0-9]{32,64})").ok();
@@ -503,10 +497,7 @@ impl RepostCapable for GazelleAdapter {
 
         let final_url = resp.url().to_string();
         let status = resp.status();
-        let _body = resp
-            .text()
-            .await
-            .map_err(SiteError::from)?;
+        let _body = resp.text().await.map_err(SiteError::from)?;
 
         // Gazelle redirects to the torrent page on success
         if final_url.contains("torrents.php") && final_url.contains("torrentid=") {

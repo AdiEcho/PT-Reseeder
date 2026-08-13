@@ -50,7 +50,11 @@ struct PiecesHashResponse {
 struct PiecesHashMatch {
     #[serde(default, alias = "piecesHash")]
     pieces_hash: String,
-    #[serde(default, alias = "torrentId", deserialize_with = "deserialize_torrent_id")]
+    #[serde(
+        default,
+        alias = "torrentId",
+        deserialize_with = "deserialize_torrent_id"
+    )]
     torrent_id: i64,
 }
 
@@ -93,9 +97,7 @@ where
 /// - 对象 map：`{ "abc...": 123 }`（NexusPHP 主流）
 /// - 空对象 / null：`{}` / `null`
 /// - 数组：`[{ "pieces_hash": "...", "torrent_id": 123 }]`
-fn normalize_pieces_hash_data(
-    data: serde_json::Value,
-) -> Result<Vec<(String, i64)>, String> {
+fn normalize_pieces_hash_data(data: serde_json::Value) -> Result<Vec<(String, i64)>, String> {
     match data {
         serde_json::Value::Null => Ok(Vec::new()),
         serde_json::Value::Object(map) => {
@@ -128,13 +130,10 @@ fn normalize_pieces_hash_data(
         serde_json::Value::Array(items) => {
             let mut out = Vec::with_capacity(items.len());
             for (idx, item) in items.into_iter().enumerate() {
-                let m: PiecesHashMatch = serde_json::from_value(item).map_err(|e| {
-                    format!("invalid pieces_hash array item at index {idx}: {e}")
-                })?;
+                let m: PiecesHashMatch = serde_json::from_value(item)
+                    .map_err(|e| format!("invalid pieces_hash array item at index {idx}: {e}"))?;
                 if m.pieces_hash.is_empty() {
-                    return Err(format!(
-                        "pieces_hash missing in array item at index {idx}"
-                    ));
+                    return Err(format!("pieces_hash missing in array item at index {idx}"));
                 }
                 out.push((m.pieces_hash, m.torrent_id));
             }
@@ -219,10 +218,7 @@ impl NexusPhpAdapter {
                 SiteError::HttpError(format!("HTTP {} resolving user id", resp.status())).into(),
             );
         }
-        let body = resp
-            .text()
-            .await
-            .map_err(SiteError::from)?;
+        let body = resp.text().await.map_err(SiteError::from)?;
         let html = Html::parse_document(&body);
         let uid = extract_user_id(&html, &self.selectors).ok_or_else(|| -> CoreError {
             SiteError::AuthFailed("failed to resolve user_id from cookie session".into()).into()
@@ -264,10 +260,7 @@ impl NexusPhpAdapter {
             .into());
         }
 
-        let body = response
-            .text()
-            .await
-            .map_err(SiteError::from)?;
+        let body = response.text().await.map_err(SiteError::from)?;
         Ok(parse_seeding_size_summary(&body))
     }
 }
@@ -327,10 +320,7 @@ fn extract_text(html: &Html, selector_str: &Option<String>) -> Option<String> {
                 Some((tag, desc)) => (tag.trim(), Some(desc.trim())),
                 None => (sibling_part, None),
             };
-            let expected_tag = sibling_tag
-                .split(['.', '#', '[', ':'])
-                .next()
-                .unwrap_or("");
+            let expected_tag = sibling_tag.split(['.', '#', '[', ':']).next().unwrap_or("");
             // Walk next element siblings via the tree
             let node_id = matched_el.id();
             let node_ref = html.tree.get(node_id)?;
@@ -846,10 +836,7 @@ impl UserInfoCapable for NexusPhpAdapter {
                         .send()
                         .await
                         .map_err(SiteError::from)?;
-                    let body = resp
-                        .text()
-                        .await
-                        .map_err(SiteError::from)?;
+                    let body = resp.text().await.map_err(SiteError::from)?;
                     (uid.clone(), Html::parse_document(&body))
                 } else {
                     self.resolve_user_id_with_index().await?
@@ -892,10 +879,7 @@ impl UserInfoCapable for NexusPhpAdapter {
             );
         }
 
-        let body = resp
-            .text()
-            .await
-            .map_err(SiteError::from)?;
+        let body = resp.text().await.map_err(SiteError::from)?;
         let ajax_user_id = extract_seeding_ajax_user_id(&body);
         let (
             uploaded,
@@ -994,10 +978,7 @@ impl UserInfoCapable for NexusPhpAdapter {
             );
         }
 
-        let body = resp
-            .text()
-            .await
-            .map_err(SiteError::from)?;
+        let body = resp.text().await.map_err(SiteError::from)?;
         let html = Html::parse_document(&body);
 
         // Try input[name='passkey'] first
@@ -1058,10 +1039,7 @@ impl RepostCapable for NexusPhpAdapter {
             .into());
         }
 
-        let body = resp
-            .text()
-            .await
-            .map_err(SiteError::from)?;
+        let body = resp.text().await.map_err(SiteError::from)?;
 
         let (
             name,
@@ -1110,13 +1088,11 @@ impl RepostCapable for NexusPhpAdapter {
             let images = extract_images(&html, "#kdescr img, .bbcodeimage");
 
             // Category fields - extract from select elements or text cells
-            let torrent_type =
-                extract_by_selector(&html, "select[name='type'] option[selected]")
-                    .or_else(|| extract_by_selector(&html, "span#type"))
-                    .unwrap_or_default();
-            let region =
-                extract_by_selector(&html, "select[name='source_sel'] option[selected]")
-                    .unwrap_or_default();
+            let torrent_type = extract_by_selector(&html, "select[name='type'] option[selected]")
+                .or_else(|| extract_by_selector(&html, "span#type"))
+                .unwrap_or_default();
+            let region = extract_by_selector(&html, "select[name='source_sel'] option[selected]")
+                .unwrap_or_default();
             let resolution =
                 extract_by_selector(&html, "select[name='standard_sel'] option[selected]")
                     .unwrap_or_default();
@@ -1126,9 +1102,8 @@ impl RepostCapable for NexusPhpAdapter {
             let audio_codec =
                 extract_by_selector(&html, "select[name='audiocodec_sel'] option[selected]")
                     .unwrap_or_default();
-            let medium =
-                extract_by_selector(&html, "select[name='medium_sel'] option[selected]")
-                    .unwrap_or_default();
+            let medium = extract_by_selector(&html, "select[name='medium_sel'] option[selected]")
+                .unwrap_or_default();
 
             (
                 name,
@@ -1234,10 +1209,7 @@ impl RepostCapable for NexusPhpAdapter {
 
         let final_url = resp.url().to_string();
         let status = resp.status();
-        let body = resp
-            .text()
-            .await
-            .map_err(SiteError::from)?;
+        let body = resp.text().await.map_err(SiteError::from)?;
 
         // Success: redirected to details page or body contains success message
         if final_url.contains("details.php") {
@@ -1292,10 +1264,7 @@ impl SearchCapable for NexusPhpAdapter {
             );
         }
 
-        let body = resp
-            .text()
-            .await
-            .map_err(SiteError::from)?;
+        let body = resp.text().await.map_err(SiteError::from)?;
         let html = Html::parse_document(&body);
 
         let row_sel = Selector::parse("table.torrents tr:not(:first-child)").map_err(|_| {
@@ -1595,14 +1564,8 @@ mod tests {
         assert_eq!(
             matches,
             vec![
-                (
-                    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string(),
-                    1001
-                ),
-                (
-                    "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_string(),
-                    2002
-                ),
+                ("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string(), 1001),
+                ("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_string(), 2002),
             ]
         );
     }
@@ -1620,14 +1583,8 @@ mod tests {
         assert_eq!(
             matches,
             vec![
-                (
-                    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string(),
-                    42
-                ),
-                (
-                    "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_string(),
-                    43
-                ),
+                ("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string(), 42),
+                ("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_string(), 43),
             ]
         );
     }

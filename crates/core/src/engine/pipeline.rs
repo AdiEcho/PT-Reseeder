@@ -16,7 +16,9 @@ use crate::site::models::SiteId;
 use crate::site::registry::SiteRegistry;
 
 use super::adder;
-use super::dry_run::{build_preview, preview_item_from_history_skip, preview_item_from_match, DryRunPreview};
+use super::dry_run::{
+    build_preview, preview_item_from_history_skip, preview_item_from_match, DryRunPreview,
+};
 use super::filter;
 use super::matcher;
 use super::scanner;
@@ -479,22 +481,17 @@ async fn run_pipeline(
                             error = %e,
                             "add_torrent returned unexpected error"
                         );
-                        stats.failed.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        stats
+                            .failed
+                            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                         "failed"
                     }
                 };
 
                 let mut item = pending_item;
                 item.outcome = Some(outcome.to_string());
-                persist_processed_item(
-                    &db_writer,
-                    run_log_id,
-                    stats,
-                    start,
-                    &persist_lock,
-                    item,
-                )
-                .await?;
+                persist_processed_item(&db_writer, run_log_id, stats, start, &persist_lock, item)
+                    .await?;
                 update_progress(progress_tx, "adding", stats, start);
                 Ok::<(), CoreError>(())
             }

@@ -831,11 +831,11 @@ where
                     {if is_reseed {
                         Some(view! {
                             <A
-                                href="/reseed"
+                                href=format!("/reseed?task_id={task_id}")
                                 attr:class="btn btn--sm btn--outline"
                                 on:click=move |ev| ev.stop_propagation()
                             >
-                                "结果"
+                                "详情"
                             </A>
                         })
                     } else {

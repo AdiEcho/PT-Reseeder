@@ -38,13 +38,39 @@ pub struct DryRunPreviewItem {
     /// Public torrent detail page URL (never includes passkey/token).
     #[serde(default)]
     pub detail_url: Option<String>,
+    /// Per-item outcome once this torrent has been processed.
+    ///
+    /// Absent on older logs and on unmatched/pending rows.
+    #[serde(default)]
+    pub outcome: Option<String>,
 }
 
 /// Current schema version written by new runs.
 ///
 /// v1: site/title/hash/torrent_id/save_path
 /// v2: + dry_run envelope flag, total_size, detail_url
-pub const DRY_RUN_PREVIEW_VERSION: u32 = 2;
+/// v3: + per-item outcome
+pub const DRY_RUN_PREVIEW_VERSION: u32 = 3;
+
+pub fn preview_item_from_match(
+    matched: &MatchedTorrent,
+    scan: &ScanResult,
+    registry: &SiteRegistry,
+    outcome: Option<&str>,
+) -> DryRunPreviewItem {
+    let (title, total_size) = meta_from_scan(scan, &matched.pieces_hash);
+    DryRunPreviewItem {
+        site_id: matched.site_id.0,
+        site_name: site_name(registry, matched.site_id),
+        pieces_hash: matched.pieces_hash.clone(),
+        torrent_id: matched.torrent_id,
+        title,
+        save_path: matched.save_path.clone(),
+        total_size,
+        detail_url: detail_url(registry, matched.site_id, matched.torrent_id),
+        outcome: outcome.map(str::to_string),
+    }
+}
 
 /// Build a reseed-run result from post-match candidates.
 ///
@@ -59,19 +85,7 @@ pub fn build_preview(
 ) -> DryRunPreview {
     let items = matched
         .iter()
-        .map(|m| {
-            let (title, total_size) = meta_from_scan(scan, &m.pieces_hash);
-            DryRunPreviewItem {
-                site_id: m.site_id.0,
-                site_name: site_name(registry, m.site_id),
-                pieces_hash: m.pieces_hash.clone(),
-                torrent_id: m.torrent_id,
-                title,
-                save_path: m.save_path.clone(),
-                total_size,
-                detail_url: detail_url(registry, m.site_id, m.torrent_id),
-            }
-        })
+        .map(|m| preview_item_from_match(m, scan, registry, None))
         .collect::<Vec<_>>();
 
     DryRunPreview {
@@ -211,6 +225,7 @@ mod tests {
         assert_eq!(preview.items[0].total_size, Some(1_024_000));
         // No registry handle → no base_url → detail_url omitted (never invent secrets).
         assert_eq!(preview.items[0].detail_url, None);
+        assert_eq!(preview.items[0].outcome, None);
     }
 
     #[test]

@@ -130,7 +130,7 @@ fn IconTasks() -> impl IntoView {
     }
 }
 
-/// 辅种结果：种子发芽（识别到的辅种明细）。
+/// 辅种：种子发芽（识别到的辅种明细）。
 #[component]
 fn IconReseed() -> impl IntoView {
     view! {

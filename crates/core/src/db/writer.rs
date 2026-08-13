@@ -32,6 +32,15 @@ pub enum WriteOp {
         duration_ms: Option<i64>,
         log_text: Option<String>,
     },
+    UpdateTaskLog {
+        id: i64,
+        status: String,
+        matched_count: i64,
+        succeeded_count: i64,
+        failed_count: i64,
+        duration_ms: Option<i64>,
+        log_text: Option<String>,
+    },
     InsertUserStats {
         site_id: i64,
         uploaded: Option<i64>,
@@ -290,6 +299,31 @@ impl DbWriter {
                     .bind(failed_count)
                     .bind(duration_ms)
                     .bind(log_text)
+                    .execute(&mut *tx)
+                    .await?;
+                }
+                WriteOp::UpdateTaskLog {
+                    id,
+                    status,
+                    matched_count,
+                    succeeded_count,
+                    failed_count,
+                    duration_ms,
+                    log_text,
+                } => {
+                    sqlx::query(
+                        "UPDATE task_logs SET \
+                         status = ?, matched_count = ?, succeeded_count = ?, \
+                         failed_count = ?, duration_ms = ?, log_text = ? \
+                         WHERE id = ? AND status = 'running'",
+                    )
+                    .bind(status)
+                    .bind(matched_count)
+                    .bind(succeeded_count)
+                    .bind(failed_count)
+                    .bind(duration_ms)
+                    .bind(log_text)
+                    .bind(id)
                     .execute(&mut *tx)
                     .await?;
                 }

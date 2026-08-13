@@ -883,6 +883,13 @@ impl Repository {
         )
         .execute(&self.pool)
         .await?;
+        sqlx::query(
+            "UPDATE task_logs SET status = 'failed', \
+             log_text = COALESCE(log_text, 'error: interrupted by restart') \
+             WHERE status = 'running'",
+        )
+        .execute(&self.pool)
+        .await?;
         Ok(result.rows_affected())
     }
 
@@ -970,8 +977,8 @@ impl Repository {
 
     // 参数即 task_logs 表的列。与 WriteOp::InsertTaskLog 的字段一一对应。
     #[allow(clippy::too_many_arguments)]
-    // NOTE: 与 DbWriter 的 WriteOp::InsertTaskLog（writer.rs:280）为双写关系。
-    // 生产路径走 writer 通道（executor.rs 的 write_log），本方法仅被测试使用。
+    // NOTE: 辅种任务开始时走这条路径，因为 writer 通道拿不到 last_insert_rowid。
+    // 进度/收尾更新走 WriteOp::UpdateTaskLog。测试也直接调用本方法。
     pub async fn insert_task_log(
         &self,
         task_id: i64,
@@ -1000,6 +1007,36 @@ impl Repository {
         Ok(result.last_insert_rowid())
     }
 
+    /// Update an existing task log in place (used for in-progress reseed runs).
+    #[allow(clippy::too_many_arguments)]
+    pub async fn update_task_log(
+        &self,
+        id: i64,
+        status: &str,
+        matched: i64,
+        succeeded: i64,
+        failed: i64,
+        duration_ms: Option<i64>,
+        log_text: Option<&str>,
+    ) -> Result<(), CoreError> {
+        sqlx::query(
+            "UPDATE task_logs SET \
+             status = ?, matched_count = ?, succeeded_count = ?, \
+             failed_count = ?, duration_ms = ?, log_text = ? \
+             WHERE id = ? AND status = 'running'",
+        )
+        .bind(status)
+        .bind(matched)
+        .bind(succeeded)
+        .bind(failed)
+        .bind(duration_ms)
+        .bind(log_text)
+        .bind(id)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
     pub async fn get_task_logs(&self, task_id: i64, limit: i64) -> Result<Vec<TaskLog>, CoreError> {
         let rows = sqlx::query_as::<_, TaskLog>(
             "SELECT * FROM task_logs WHERE task_id = ? ORDER BY created_at DESC LIMIT ?",
@@ -1019,17 +1056,32 @@ impl Repository {
     pub async fn list_recent_reseed_task_logs(
         &self,
         limit: i64,
+        task_id: Option<i64>,
     ) -> Result<Vec<TaskLog>, CoreError> {
-        let rows = sqlx::query_as::<_, TaskLog>(
-            "SELECT tl.* FROM task_logs tl \
-             INNER JOIN tasks t ON t.id = tl.task_id \
-             WHERE t.task_type = 'reseed' \
-             ORDER BY tl.created_at DESC, tl.id DESC \
-             LIMIT ?",
-        )
-        .bind(limit)
-        .fetch_all(&self.pool)
-        .await?;
+        let rows = if let Some(task_id) = task_id {
+            sqlx::query_as::<_, TaskLog>(
+                "SELECT tl.* FROM task_logs tl \
+                 INNER JOIN tasks t ON t.id = tl.task_id \
+                 WHERE t.task_type = 'reseed' AND tl.task_id = ? \
+                 ORDER BY tl.created_at DESC, tl.id DESC \
+                 LIMIT ?",
+            )
+            .bind(task_id)
+            .bind(limit)
+            .fetch_all(&self.pool)
+            .await?
+        } else {
+            sqlx::query_as::<_, TaskLog>(
+                "SELECT tl.* FROM task_logs tl \
+                 INNER JOIN tasks t ON t.id = tl.task_id \
+                 WHERE t.task_type = 'reseed' \
+                 ORDER BY tl.created_at DESC, tl.id DESC \
+                 LIMIT ?",
+            )
+            .bind(limit)
+            .fetch_all(&self.pool)
+            .await?
+        };
         Ok(rows)
     }
 
@@ -1511,6 +1563,95 @@ mod tests {
         assert_eq!(logs[0].matched_count, Some(10));
         assert_eq!(logs[0].succeeded_count, Some(8));
         assert_eq!(logs[0].failed_count, Some(2));
+    }
+
+    #[tokio::test]
+    async fn update_task_log_keeps_single_row() {
+        let repo = setup_repo().await;
+        let task_id = repo
+            .create_task("live", "reseed", "manual", None, None, None)
+            .await
+            .unwrap();
+        let log_id = repo
+            .insert_task_log(task_id, "running", 0, 0, 0, None, Some(r#"{"version":2,"would_add_count":0,"dry_run":false,"items":[]}"#))
+            .await
+            .unwrap();
+
+        repo.update_task_log(
+            log_id,
+            "success",
+            2,
+            1,
+            1,
+            Some(1200),
+            Some(r#"{"version":2,"would_add_count":2,"dry_run":false,"items":[]}"#),
+        )
+        .await
+        .unwrap();
+
+        let logs = repo.get_task_logs(task_id, 10).await.unwrap();
+        assert_eq!(logs.len(), 1);
+        assert_eq!(logs[0].id, log_id);
+        assert_eq!(logs[0].status, "success");
+        assert_eq!(logs[0].matched_count, Some(2));
+        assert_eq!(logs[0].succeeded_count, Some(1));
+        assert_eq!(logs[0].failed_count, Some(1));
+        assert_eq!(logs[0].duration_ms, Some(1200));
+
+        repo.update_task_log(log_id, "running", 9, 9, 9, Some(1), None)
+            .await
+            .unwrap();
+        let after = repo.get_task_logs(task_id, 10).await.unwrap();
+        assert_eq!(after[0].status, "success");
+        assert_eq!(after[0].matched_count, Some(2));
+    }
+
+    #[tokio::test]
+    async fn recover_interrupted_reseed_logs_marks_running_failed() {
+        let repo = setup_repo().await;
+        let task_id = repo
+            .create_task("live", "reseed", "manual", None, None, None)
+            .await
+            .unwrap();
+        repo.update_task_status(task_id, "running").await.unwrap();
+        let log_id = repo
+            .insert_task_log(task_id, "running", 1, 0, 0, None, None)
+            .await
+            .unwrap();
+
+        assert_eq!(repo.recover_interrupted_tasks().await.unwrap(), 1);
+        let log = repo.get_task_log(log_id).await.unwrap().unwrap();
+        assert_eq!(log.status, "failed");
+        assert_eq!(repo.get_task(task_id).await.unwrap().unwrap().status, "error");
+    }
+
+    #[tokio::test]
+    async fn list_recent_reseed_task_logs_can_filter_by_task() {
+        let repo = setup_repo().await;
+        let a = repo
+            .create_task("a", "reseed", "manual", None, None, None)
+            .await
+            .unwrap();
+        let b = repo
+            .create_task("b", "reseed", "manual", None, None, None)
+            .await
+            .unwrap();
+        repo.insert_task_log(a, "running", 0, 0, 0, None, None)
+            .await
+            .unwrap();
+        repo.insert_task_log(b, "success", 1, 1, 0, Some(10), None)
+            .await
+            .unwrap();
+
+        let all = repo.list_recent_reseed_task_logs(10, None).await.unwrap();
+        assert_eq!(all.len(), 2);
+        let only_a = repo
+            .list_recent_reseed_task_logs(10, Some(a))
+            .await
+            .unwrap();
+        assert_eq!(only_a.len(), 1);
+        assert_eq!(only_a[0].task_id, a);
+        assert_eq!(only_a[0].status, "running");
     }
 
     #[tokio::test]

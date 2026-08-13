@@ -232,6 +232,10 @@ mod log_tests {
             42,
         ));
         assert!(!log_entry_matches_task_id(&entry("task completed"), 42));
+        assert!(log_entry_matches_task_id(
+            &entry("downloading torrent for reseed task_id=42 site_id=1"),
+            42,
+        ));
     }
 
     #[test]

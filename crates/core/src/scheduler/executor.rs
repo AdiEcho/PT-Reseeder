@@ -98,9 +98,34 @@ impl TaskExecutor {
             return Ok(());
         }
 
+        let run_log_id = if task.task_type == "reseed" {
+            let starter = crate::engine::DryRunPreview {
+                version: crate::engine::dry_run::DRY_RUN_PREVIEW_VERSION,
+                would_add_count: 0,
+                dry_run,
+                items: Vec::new(),
+            };
+            let starter_json = serde_json::to_string(&starter).ok();
+            Some(
+                self.repo
+                    .insert_task_log(
+                        task_id,
+                        "running",
+                        0,
+                        0,
+                        0,
+                        None,
+                        starter_json.as_deref(),
+                    )
+                    .await?,
+            )
+        } else {
+            None
+        };
+
         let start = Instant::now();
         let result = match task.task_type.as_str() {
-            "reseed" => self.execute_reseed(&task, dry_run).await,
+            "reseed" => self.execute_reseed(&task, dry_run, run_log_id).await,
             "repost" => self
                 .execute_repost(&task)
                 .await
@@ -121,6 +146,20 @@ impl TaskExecutor {
             match next_run_at_for(task.cron_expression.as_deref()) {
                 Ok(next_run_at) => next_run_at,
                 Err(e) => {
+                    if let Some(log_id) = run_log_id {
+                        let _ = self
+                            .update_log(
+                                log_id,
+                                "failed",
+                                0,
+                                0,
+                                1,
+                                Some(duration_ms),
+                                Some("error: invalid cron expression"),
+                            )
+                            .await;
+                        let _ = self.db_writer.flush().await;
+                    }
                     self.repo.update_task_status(task_id, "error").await?;
                     return Err(e);
                 }
@@ -147,8 +186,20 @@ impl TaskExecutor {
                 };
                 // Persist the completion log before flipping task status/run_count so
                 // dry-run clients polling for idle can already read the preview payload.
-                if let Err(e) = self
-                    .write_log(
+                // Reseed runs already have a `running` row; update it in place.
+                let persist = if let Some(log_id) = run_log_id {
+                    self.update_log(
+                        log_id,
+                        status,
+                        *matched,
+                        succeeded_count,
+                        *failed,
+                        Some(duration_ms),
+                        log_text.as_deref(),
+                    )
+                    .await
+                } else {
+                    self.write_log(
                         task_id,
                         status,
                         *matched,
@@ -158,7 +209,8 @@ impl TaskExecutor {
                         log_text.as_deref(),
                     )
                     .await
-                {
+                };
+                if let Err(e) = persist {
                     error!(task_id, %e, "failed to write task completion log");
                 } else if let Err(e) = self.db_writer.flush().await {
                     error!(task_id, %e, "failed to flush task completion log");
@@ -179,8 +231,19 @@ impl TaskExecutor {
             }
             Err(e) => {
                 let log_text = format!("error: {}", e);
-                if let Err(log_error) = self
-                    .write_log(
+                let persist = if let Some(log_id) = run_log_id {
+                    self.update_log(
+                        log_id,
+                        "failed",
+                        0,
+                        0,
+                        1,
+                        Some(duration_ms),
+                        Some(&log_text),
+                    )
+                    .await
+                } else {
+                    self.write_log(
                         task_id,
                         "failed",
                         0,
@@ -190,7 +253,8 @@ impl TaskExecutor {
                         Some(&log_text),
                     )
                     .await
-                {
+                };
+                if let Err(log_error) = persist {
                     error!(task_id, %log_error, "failed to write task failure log");
                 } else if let Err(log_error) = self.db_writer.flush().await {
                     error!(task_id, %log_error, "failed to flush task failure log");
@@ -212,6 +276,7 @@ impl TaskExecutor {
         &self,
         task: &TaskRow,
         dry_run: bool,
+        run_log_id: Option<i64>,
     ) -> Result<(i64, i64, i64, Option<crate::engine::DryRunPreview>), CoreError> {
         let folder_ids = self.repo.get_task_folders(task.id).await?;
         let site_ids = self.repo.get_task_sites(task.id).await?;
@@ -322,7 +387,7 @@ impl TaskExecutor {
             self.cancel_token.clone(),
         );
         let (stats, preview) = engine
-            .run_sync(config, dest_downloader, dry_run)
+            .run_sync(config, dest_downloader, dry_run, Some(task.id), run_log_id)
             .await?;
 
         Ok((
@@ -523,6 +588,30 @@ impl TaskExecutor {
         self.db_writer
             .send(WriteOp::InsertTaskLog {
                 task_id,
+                status: status.to_string(),
+                matched_count: matched,
+                succeeded_count: succeeded,
+                failed_count: failed,
+                duration_ms,
+                log_text: log_text.map(|s| s.to_string()),
+            })
+            .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn update_log(
+        &self,
+        log_id: i64,
+        status: &str,
+        matched: i64,
+        succeeded: i64,
+        failed: i64,
+        duration_ms: Option<i64>,
+        log_text: Option<&str>,
+    ) -> Result<(), CoreError> {
+        self.db_writer
+            .send(WriteOp::UpdateTaskLog {
+                id: log_id,
                 status: status.to_string(),
                 matched_count: matched,
                 succeeded_count: succeeded,

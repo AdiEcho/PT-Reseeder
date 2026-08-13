@@ -48,7 +48,15 @@ pub async fn add_torrent(
     db_writer: &DbWriterHandle,
     stats: &ReseedStats,
     rate_limiter: Option<&SiteRateLimiter>,
+    task_id: Option<i64>,
 ) -> Result<bool, CoreError> {
+    tracing::info!(
+        task_id,
+        site_id = matched.site_id.0,
+        torrent_id = ?matched.torrent_id,
+        pieces_hash = %matched.pieces_hash,
+        "downloading torrent for reseed"
+    );
     // Download .torrent file
     let torrent_data =
         download_torrent(http_client, &matched.download_url, rate_limiter).await?;
@@ -57,9 +65,10 @@ pub async fn add_torrent(
     let meta = parser::parse_bytes(&torrent_data)?;
     if meta.pieces_hash != matched.pieces_hash {
         tracing::warn!(
+            task_id,
             expected = %matched.pieces_hash,
             got = %meta.pieces_hash,
-            url = %matched.download_url,
+            url = %redact_url(&matched.download_url),
             "pieces_hash mismatch after download, skipping"
         );
         record_history(
@@ -82,6 +91,7 @@ pub async fn add_torrent(
         let mut hashes = dest_hashes.lock().await;
         if !hashes.insert(meta.info_hash.clone()) {
             tracing::debug!(
+                task_id,
                 info_hash = %meta.info_hash,
                 "destination already has this torrent, skipping"
             );
@@ -113,6 +123,7 @@ pub async fn add_torrent(
     match dest_client.add_torrent(opts).await {
         Ok(true) => {
             tracing::info!(
+                task_id,
                 pieces_hash = %matched.pieces_hash,
                 info_hash = %meta.info_hash,
                 site_id = matched.site_id.0,
@@ -133,6 +144,7 @@ pub async fn add_torrent(
             if auto_start {
                 if let Err(e) = dest_client.resume_torrent(&meta.info_hash).await {
                     tracing::warn!(
+                        task_id,
                         info_hash = %meta.info_hash,
                         error = %e,
                         "torrent added but explicit resume failed"
@@ -144,6 +156,7 @@ pub async fn add_torrent(
         Ok(false) => {
             // Keep the claim: downloader already has it (or equivalent).
             tracing::warn!(
+                task_id,
                 info_hash = %meta.info_hash,
                 "downloader rejected torrent (already exists or other reason)"
             );
@@ -164,6 +177,7 @@ pub async fn add_torrent(
             // Release claim so a later retry can re-attempt.
             dest_hashes.lock().await.remove(&meta.info_hash);
             tracing::error!(
+                task_id,
                 info_hash = %meta.info_hash,
                 error = %e,
                 "failed to add torrent to destination"
@@ -227,7 +241,7 @@ async fn download_torrent(
                 status = %status,
                 wait_secs,
                 attempt = attempt + 1,
-                url,
+                url = %redact_url(url),
                 body = %preview,
                 "torrent download rate-limited, waiting before retry"
             );
@@ -245,28 +259,30 @@ async fn download_torrent(
             let _ = limiter.record_error().await;
         }
         return Err(EngineError::AddFailed(format!(
-            "download torrent HTTP {}: {}{}",
+            "download torrent HTTP {} from {}",
             status,
-            url,
-            format_body_suffix(&preview)
+            redact_url(url)
         ))
         .into());
     }
 
-    let (status, preview, wait_secs) = last_wait.unwrap_or((
+    let (status, _preview, wait_secs) = last_wait.unwrap_or((
         reqwest::StatusCode::INTERNAL_SERVER_ERROR,
         String::new(),
         0,
     ));
     Err(EngineError::AddFailed(format!(
-        "download torrent HTTP {} after {} retries (last wait {}s): {}{}",
+        "download torrent HTTP {} after {} retries (last wait {}s) from {}",
         status,
         DOWNLOAD_RATE_LIMIT_RETRIES,
         wait_secs,
-        url,
-        format_body_suffix(&preview)
+        redact_url(url)
     ))
     .into())
+}
+
+fn redact_url(url: &str) -> &str {
+    url.split(['?', '#']).next().unwrap_or(url)
 }
 
 fn preview_body(body: &str) -> String {
@@ -277,14 +293,6 @@ fn preview_body(body: &str) -> String {
         collapsed
     } else {
         collapsed.chars().take(MAX).collect()
-    }
-}
-
-fn format_body_suffix(preview: &str) -> String {
-    if preview.is_empty() {
-        String::new()
-    } else {
-        format!("; body: {preview}")
     }
 }
 

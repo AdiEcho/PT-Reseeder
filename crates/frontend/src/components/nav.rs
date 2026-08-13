@@ -47,7 +47,7 @@ const NAV: &[NavEntry] = &[
         exact: true,
     },
     NavEntry {
-        label: "辅种结果",
+        label: "辅种",
         href: "/reseed",
         icon: NavIcon::Reseed,
         exact: true,

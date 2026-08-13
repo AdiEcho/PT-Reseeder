@@ -9,14 +9,14 @@ use tokio_util::sync::CancellationToken;
 use tracing;
 
 use crate::db::repo::Repository;
-use crate::db::writer::DbWriterHandle;
+use crate::db::writer::{DbWriterHandle, WriteOp};
 use crate::downloader::traits::Downloader;
 use crate::error::{CoreError, EngineError};
 use crate::site::models::SiteId;
 use crate::site::registry::SiteRegistry;
 
 use super::adder;
-use super::dry_run::{build_preview, DryRunPreview};
+use super::dry_run::{build_preview, preview_item_from_match, DryRunPreview};
 use super::filter;
 use super::matcher;
 use super::scanner;
@@ -102,6 +102,8 @@ impl ReseedEngine {
         config: ReseedConfig,
         dest_client: Arc<dyn Downloader>,
         dry_run: bool,
+        task_id: Option<i64>,
+        run_log_id: Option<i64>,
     ) -> Result<(ReseedStatsSnapshot, Option<DryRunPreview>), CoreError> {
         let stats = Arc::new(ReseedStats::new());
         let start = Instant::now();
@@ -123,6 +125,8 @@ impl ReseedEngine {
             &progress_tx,
             start,
             dry_run,
+            task_id,
+            run_log_id,
         )
         .await?;
 
@@ -148,10 +152,13 @@ async fn run_pipeline(
     progress_tx: &watch::Sender<ReseedProgress>,
     start: Instant,
     dry_run: bool,
+    task_id: Option<i64>,
+    run_log_id: Option<i64>,
 ) -> Result<Option<DryRunPreview>, CoreError> {
     // ── Phase 1: Scan ──────────────────────────────────────────────────
     update_progress(progress_tx, "scanning", stats, start);
     tracing::info!(
+        task_id,
         folders = config.scan_folders.len(),
         source_downloaders = config.source_downloaders.len(),
         "phase 1: scan"
@@ -235,8 +242,19 @@ async fn run_pipeline(
     );
 
     if merged_scan.pieces_groups.is_empty() {
-        tracing::info!("no torrents to match, pipeline done");
-        return Ok(Some(build_preview(&[], &merged_scan, registry, dry_run)));
+        tracing::info!(task_id, "no torrents to match, pipeline done");
+        let preview = build_preview(&[], &merged_scan, registry, dry_run);
+        persist_run_progress(
+            db_writer,
+            run_log_id,
+            "running",
+            stats,
+            Some(&preview),
+            start,
+            None,
+        )
+        .await?;
+        return Ok(Some(preview));
     }
 
     // Shared HTTP client for pack detection and add phase.
@@ -331,17 +349,39 @@ async fn run_pipeline(
 
     let match_snapshot = stats.snapshot();
     tracing::info!(
+        task_id,
         matched = match_snapshot.matched,
         skipped_tracker = match_snapshot.skipped_tracker,
         skipped_history = match_snapshot.skipped_history,
         "phase 2 complete"
     );
 
-    // Capture the match result for task-log persistence (dry-run and real runs).
-    let preview = build_preview(&matched_torrents, &merged_scan, registry, dry_run);
+    // Capture the match result for task-log persistence.
+    // Dry-run writes the full candidate list immediately. Real runs start with
+    // an empty item list and append each torrent after it is processed.
+    let preview = if dry_run {
+        build_preview(&matched_torrents, &merged_scan, registry, true)
+    } else {
+        DryRunPreview {
+            version: super::dry_run::DRY_RUN_PREVIEW_VERSION,
+            would_add_count: matched_torrents.len(),
+            dry_run: false,
+            items: Vec::new(),
+        }
+    };
+    persist_run_progress(
+        db_writer,
+        run_log_id,
+        "running",
+        stats,
+        Some(&preview),
+        start,
+        None,
+    )
+    .await?;
 
     if matched_torrents.is_empty() {
-        tracing::info!("no matches found, pipeline done");
+        tracing::info!(task_id, "no matches found, pipeline done");
         return Ok(Some(preview));
     }
 
@@ -349,6 +389,7 @@ async fn run_pipeline(
     if dry_run {
         update_progress(progress_tx, "dry_run_preview", stats, start);
         tracing::info!(
+            task_id,
             would_add = preview.would_add_count,
             "dry-run complete; skipping add phase"
         );
@@ -357,17 +398,23 @@ async fn run_pipeline(
 
     // ── Phase 3: Add ───────────────────────────────────────────────────
     update_progress(progress_tx, "adding", stats, start);
-    tracing::info!(to_add = matched_torrents.len(), "phase 3: add");
+    tracing::info!(task_id, to_add = matched_torrents.len(), "phase 3: add");
 
     let dest_hashes = Arc::new(Mutex::new(std::mem::take(&mut merged_scan.dest_hashes)));
     let auto_start = config.auto_start;
+    let persist_lock = Arc::new(Mutex::new(preview.clone()));
+    let pending_items: Vec<_> = matched_torrents
+        .iter()
+        .map(|matched| preview_item_from_match(matched, &merged_scan, registry, None))
+        .collect();
 
-    stream::iter(matched_torrents.into_iter())
-        .map(|matched| {
+    stream::iter(matched_torrents.into_iter().zip(pending_items))
+        .map(|(matched, pending_item)| {
             let http_client = http_client.clone();
             let dest_hashes = Arc::clone(&dest_hashes);
             let db_writer = db_writer.clone();
             let cancel = cancel.clone();
+            let persist_lock = Arc::clone(&persist_lock);
             async move {
                 if cancel.is_cancelled() {
                     return Err(CoreError::from(EngineError::Cancelled));
@@ -377,7 +424,8 @@ async fn run_pipeline(
                     .get(&matched.site_id)
                     .map(|handle| Arc::clone(&handle.rate_limiter));
 
-                if let Err(e) = adder::add_torrent(
+                let failed_before = stats.failed.load(std::sync::atomic::Ordering::Relaxed);
+                let outcome = match adder::add_torrent(
                     &matched,
                     &http_client,
                     dest_client,
@@ -386,19 +434,42 @@ async fn run_pipeline(
                     &db_writer,
                     stats,
                     limiter.as_deref(),
+                    task_id,
                 )
                 .await
                 {
-                    // add_torrent already records per-torrent failures as Ok(false);
-                    // unexpected errors are logged and counted without aborting siblings.
-                    tracing::error!(
-                        site_id = matched.site_id.0,
-                        error = %e,
-                        "add_torrent returned unexpected error"
-                    );
-                    stats.failed.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                }
+                    Ok(true) => "added",
+                    Ok(false) => {
+                        let failed_after = stats.failed.load(std::sync::atomic::Ordering::Relaxed);
+                        if failed_after > failed_before {
+                            "failed"
+                        } else {
+                            "skipped"
+                        }
+                    }
+                    Err(e) => {
+                        tracing::error!(
+                            task_id,
+                            site_id = matched.site_id.0,
+                            error = %e,
+                            "add_torrent returned unexpected error"
+                        );
+                        stats.failed.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        "failed"
+                    }
+                };
 
+                let mut item = pending_item;
+                item.outcome = Some(outcome.to_string());
+                persist_processed_item(
+                    &db_writer,
+                    run_log_id,
+                    stats,
+                    start,
+                    &persist_lock,
+                    item,
+                )
+                .await?;
                 update_progress(progress_tx, "adding", stats, start);
                 Ok::<(), CoreError>(())
             }
@@ -414,6 +485,7 @@ async fn run_pipeline(
 
     let final_snapshot = stats.snapshot();
     tracing::info!(
+        task_id,
         added = final_snapshot.added,
         failed = final_snapshot.failed,
         skipped_exists = final_snapshot.skipped_exists,
@@ -421,6 +493,7 @@ async fn run_pipeline(
         "pipeline complete"
     );
 
+    let preview = persist_lock.lock().await.clone();
     Ok(Some(preview))
 }
 
@@ -456,6 +529,68 @@ fn update_progress(
         elapsed_secs: start.elapsed().as_secs(),
         finished: false,
     });
+}
+
+async fn persist_run_progress(
+    db_writer: &DbWriterHandle,
+    run_log_id: Option<i64>,
+    status: &str,
+    stats: &ReseedStats,
+    preview: Option<&DryRunPreview>,
+    start: Instant,
+    persist_lock: Option<&Mutex<()>>,
+) -> Result<(), CoreError> {
+    let Some(id) = run_log_id else {
+        return Ok(());
+    };
+    let _guard = match persist_lock {
+        Some(lock) => Some(lock.lock().await),
+        None => None,
+    };
+    let snapshot = stats.snapshot();
+    let log_text = preview.and_then(|p| serde_json::to_string(p).ok());
+    db_writer
+        .send(WriteOp::UpdateTaskLog {
+            id,
+            status: status.to_string(),
+            matched_count: snapshot.matched as i64,
+            succeeded_count: snapshot.added as i64,
+            failed_count: snapshot.failed as i64,
+            duration_ms: Some(start.elapsed().as_millis() as i64),
+            log_text,
+        })
+        .await?;
+    db_writer.flush().await
+}
+
+async fn persist_processed_item(
+    db_writer: &DbWriterHandle,
+    run_log_id: Option<i64>,
+    stats: &ReseedStats,
+    start: Instant,
+    persist_lock: &Mutex<DryRunPreview>,
+    item: super::dry_run::DryRunPreviewItem,
+) -> Result<(), CoreError> {
+    let mut preview = persist_lock.lock().await;
+    if let Some(existing) = preview
+        .items
+        .iter_mut()
+        .find(|row| row.pieces_hash == item.pieces_hash && row.site_id == item.site_id)
+    {
+        *existing = item;
+    } else {
+        preview.items.push(item);
+    }
+    persist_run_progress(
+        db_writer,
+        run_log_id,
+        "running",
+        stats,
+        Some(&preview),
+        start,
+        None,
+    )
+    .await
 }
 
 #[cfg(test)]

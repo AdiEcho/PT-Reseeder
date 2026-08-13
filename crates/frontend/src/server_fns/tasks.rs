@@ -54,6 +54,8 @@ pub struct DryRunPreviewItemInfo {
     /// Public torrent detail page URL (no credentials).
     #[serde(default)]
     pub detail_url: Option<String>,
+    #[serde(default)]
+    pub outcome: Option<String>,
 }
 
 /// One reseed task run shown on the reseeding results page.
@@ -285,14 +287,17 @@ pub async fn get_latest_dry_run_preview(
 
 /// List recent reseed runs (dry-run + real) across all reseed tasks.
 #[server]
-pub async fn get_reseed_runs(limit: i64) -> Result<Vec<ReseedRunInfo>, ServerFnError> {
+pub async fn get_reseed_runs(
+    limit: i64,
+    task_id: Option<i64>,
+) -> Result<Vec<ReseedRunInfo>, ServerFnError> {
     use pt_reseeder_core::db::repo::Repository;
     use pt_reseeder_core::engine::DryRunPreview;
     use std::collections::HashMap;
 
     let limit = limit.clamp(1, 200);
     let repo = Repository::new(server_pool()?);
-    let logs = repo.list_recent_reseed_task_logs(limit).await?;
+    let logs = repo.list_recent_reseed_task_logs(limit, task_id).await?;
 
     // Cache task names to avoid N+1 lookups for the same task.
     let mut task_names: HashMap<i64, String> = HashMap::new();
@@ -400,6 +405,7 @@ pub async fn get_reseed_run_detail(log_id: i64) -> Result<Option<ReseedRunDetail
                     save_path: item.save_path.clone(),
                     total_size: item.total_size,
                     detail_url: item.detail_url.clone(),
+                    outcome: item.outcome.clone(),
                 })
                 .collect::<Vec<_>>()
         })
@@ -459,6 +465,7 @@ fn preview_to_info(
                 save_path: item.save_path,
                 total_size: item.total_size,
                 detail_url: item.detail_url,
+                outcome: item.outcome,
             })
             .collect(),
     }

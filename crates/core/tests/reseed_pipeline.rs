@@ -630,6 +630,7 @@ async fn test_adder_downloads_and_adds() {
         &db_writer,
         &stats,
         None,
+        Some(7),
     )
     .await
     .unwrap();
@@ -706,6 +707,7 @@ async fn test_adder_skips_existing_hash() {
         false,
         &db_writer,
         &stats,
+        None,
         None,
     )
     .await
@@ -785,6 +787,7 @@ async fn test_adder_retries_after_too_frequent_http_500() {
         &db_writer,
         &stats,
         Some(&limiter),
+        Some(11),
     )
     .await
     .unwrap();
@@ -938,13 +941,20 @@ async fn test_full_pipeline_e2e() {
     let engine = ReseedEngine::new(Arc::new(registry), repo.clone(), db_writer.clone(), cancel);
 
     let (snapshot, preview) = engine
-        .run_sync(config, dest_client.clone(), false)
+        .run_sync(config, dest_client.clone(), false, None, None)
         .await
         .unwrap();
     let preview = preview.expect("real runs also return a match result for task logs");
     assert!(!preview.dry_run);
     assert_eq!(preview.would_add_count, 2);
     assert_eq!(preview.items.len(), 2);
+    assert!(
+        preview
+            .items
+            .iter()
+            .all(|item| item.outcome.as_deref() == Some("added")),
+        "real-run items should record per-torrent outcome"
+    );
 
     // --- Verify results ---
     // 3 torrents scanned
@@ -960,6 +970,134 @@ async fn test_full_pipeline_e2e() {
     assert_eq!(dest_client.added_count(), 2);
     // With auto_start=true, both should be resumed
     assert_eq!(dest_client.resumed_count(), 2);
+}
+
+/// A live run_log_id is updated in place as torrents are added.
+#[tokio::test]
+async fn test_pipeline_persists_incremental_items_to_running_log() {
+    let (_db_dir, repo, db_writer) = setup_db().await;
+    let cancel = CancellationToken::new();
+    let task_id = repo
+        .create_task("live-reseed", "reseed", "manual", None, None, None)
+        .await
+        .unwrap();
+    let log_id = repo
+        .insert_task_log(
+            task_id,
+            "running",
+            0,
+            0,
+            0,
+            None,
+            Some(r#"{"version":3,"would_add_count":0,"dry_run":false,"items":[]}"#),
+        )
+        .await
+        .unwrap();
+
+    let (dir, meta) = write_torrent_fixtures(&[
+        (
+            "live_movie1",
+            "http://other-tracker.example.com/announce",
+            0x11,
+        ),
+        (
+            "live_movie2",
+            "http://other-tracker.example.com/announce",
+            0x22,
+        ),
+    ]);
+    let pieces_hash_1 = meta[0].1.clone();
+    let pieces_hash_2 = meta[1].1.clone();
+
+    let site_id = SiteId(1);
+    let (torrent_bytes_1, _, _) = build_torrent_bytes(
+        "live_movie1",
+        "http://other-tracker.example.com/announce",
+        0x11,
+    );
+    let (torrent_bytes_2, _, _) = build_torrent_bytes(
+        "live_movie2",
+        "http://other-tracker.example.com/announce",
+        0x22,
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let port = addr.port();
+    let tb1 = torrent_bytes_1.clone();
+    let tb2 = torrent_bytes_2.clone();
+    tokio::spawn(async move {
+        loop {
+            if let Ok((mut stream, _)) = listener.accept().await {
+                use tokio::io::{AsyncReadExt, AsyncWriteExt};
+                let mut buf = [0u8; 1024];
+                let n = stream.read(&mut buf).await.unwrap_or(0);
+                let request = String::from_utf8_lossy(&buf[..n]);
+                let body = if request.contains("/download/2001") {
+                    &tb1
+                } else {
+                    &tb2
+                };
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nContent-Type: application/x-bittorrent\r\nConnection: close\r\n\r\n",
+                    body.len()
+                );
+                let _ = stream.write_all(response.as_bytes()).await;
+                let _ = stream.write_all(body).await;
+                let _ = stream.flush().await;
+            }
+        }
+    });
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+    let site_local = Arc::new(MockReseedSite {
+        name: "TestSite".to_string(),
+        base_url: format!("http://127.0.0.1:{port}"),
+        known_matches: vec![(pieces_hash_1.clone(), 2001), (pieces_hash_2.clone(), 2002)],
+    });
+    let mut registry = SiteRegistry::new();
+    registry.register(
+        site_id,
+        AdapterHandle {
+            core: site_local.clone() as Arc<dyn SiteCore>,
+            reseed: Some(site_local as Arc<dyn ReseedCapable>),
+            repost: None,
+            user_info: None,
+            search: None,
+            rate_limiter: Arc::new(SiteRateLimiter::new(1, 100)),
+        },
+    );
+
+    let dest_client = Arc::new(MockDownloader::new());
+    let config = ReseedConfig {
+        scan_folders: vec![dir.path().to_path_buf()],
+        source_downloaders: vec![],
+        target_site_ids: vec![site_id],
+        default_save_path: "/downloads".to_string(),
+        skip_hash_check: true,
+        auto_start: false,
+        tag: None,
+        jackett_config: None,
+    };
+    let engine = ReseedEngine::new(Arc::new(registry), repo.clone(), db_writer.clone(), cancel);
+    let (_snapshot, preview) = engine
+        .run_sync(config, dest_client, false, Some(task_id), Some(log_id))
+        .await
+        .unwrap();
+    let preview = preview.expect("preview");
+    db_writer.flush().await.unwrap();
+
+    let log = repo.get_task_log(log_id).await.unwrap().unwrap();
+    assert_eq!(log.status, "running", "pipeline leaves terminal status to executor");
+    let stored: pt_reseeder_core::engine::DryRunPreview =
+        serde_json::from_str(log.log_text.as_deref().unwrap()).unwrap();
+    assert_eq!(stored.items.len(), 2);
+    assert_eq!(preview.items.len(), 2);
+    assert!(stored
+        .items
+        .iter()
+        .all(|item| item.outcome.as_deref() == Some("added")));
+    assert_eq!(log.matched_count, Some(2));
+    assert_eq!(log.succeeded_count, Some(2));
 }
 
 /// Dry-run runs scan+match but never adds to destination or writes reseed history.
@@ -1010,7 +1148,7 @@ async fn test_pipeline_dry_run_skips_add_and_history() {
 
     let engine = ReseedEngine::new(Arc::new(registry), repo.clone(), db_writer.clone(), cancel);
     let (snapshot, preview) = engine
-        .run_sync(config, dest_client.clone(), true)
+        .run_sync(config, dest_client.clone(), true, None, None)
         .await
         .unwrap();
 
@@ -1137,7 +1275,7 @@ async fn test_pipeline_no_matches_completes() {
     let engine = ReseedEngine::new(Arc::new(registry), repo, db_writer, cancel);
 
     let (snapshot, preview) = engine
-        .run_sync(config, dest_client.clone(), false)
+        .run_sync(config, dest_client.clone(), false, None, None)
         .await
         .unwrap();
     let preview = preview.expect("real runs also return a match result for task logs");

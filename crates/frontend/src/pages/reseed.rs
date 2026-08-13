@@ -7,6 +7,13 @@ use crate::server_fns::{
 use crate::utils::format_bytes;
 use leptos::prelude::*;
 use leptos_router::components::A;
+use leptos_router::hooks::use_query_map;
+
+fn parse_task_id(value: Option<String>) -> Option<i64> {
+    value
+        .and_then(|value| value.parse::<i64>().ok())
+        .filter(|task_id| *task_id > 0)
+}
 
 fn truncate_utf8(value: &str, max_bytes: usize) -> &str {
     let mut end = value.len().min(max_bytes);
@@ -29,6 +36,13 @@ fn run_status_class(status: &str) -> &'static str {
 }
 
 fn run_status_label(status: &str, dry_run: bool) -> &'static str {
+    if status == "running" {
+        return if dry_run {
+            "运行中 · 试运行"
+        } else {
+            "运行中"
+        };
+    }
     if dry_run || status == "dry_run" {
         return "试运行";
     }
@@ -36,9 +50,37 @@ fn run_status_label(status: &str, dry_run: bool) -> &'static str {
         "success" => "成功",
         "failed" | "error" => "失败",
         "partial" => "部分成功",
-        "running" => "运行中",
         "skipped" => "已跳过",
         _ => "未知",
+    }
+}
+
+fn poll_while_running(set_version: WriteSignal<u64>, generation: u64, has_running: bool) {
+    #[cfg(target_arch = "wasm32")]
+    if has_running {
+        leptos::task::spawn_local(async move {
+            gloo_timers::future::TimeoutFuture::new(1000).await;
+            set_version.update(|v| {
+                if *v == generation {
+                    *v += 1;
+                }
+            });
+        });
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let _ = (set_version, generation, has_running);
+    }
+}
+
+fn item_outcome_label(outcome: Option<&str>) -> (&'static str, &'static str) {
+    match outcome {
+        Some("added") => ("已添加", "text-green"),
+        Some("skipped") => ("已跳过", "text-muted"),
+        Some("failed") => ("失败", "text-red"),
+        Some("matched") => ("已识别", "text-blue"),
+        _ => ("-", "text-muted"),
     }
 }
 
@@ -51,16 +93,21 @@ fn format_duration_ms(ms: Option<i64>) -> String {
 
 #[component]
 pub fn ReseedPage() -> impl IntoView {
+    let query = use_query_map();
+    let task_id = Memo::new(move |_| parse_task_id(query.read().get("task_id")));
     let (version, set_version) = signal(0u64);
     let (selected_log_id, set_selected_log_id) = signal(None::<i64>);
     // "all" | "dry_run" | "real"
     let (mode_filter, set_mode_filter) = signal("all".to_string());
 
-    let runs = Resource::new(move || version.get(), |_| get_reseed_runs(100));
+    let runs = Resource::new(
+        move || (version.get(), task_id.get()),
+        |(_, filter_task_id)| get_reseed_runs(100, filter_task_id),
+    );
 
     let detail = Resource::new(
-        move || selected_log_id.get(),
-        |log_id| async move {
+        move || (selected_log_id.get(), version.get()),
+        |(log_id, _)| async move {
             match log_id {
                 Some(id) => get_reseed_run_detail(id).await.ok().flatten(),
                 None => None,
@@ -68,10 +115,19 @@ pub fn ReseedPage() -> impl IntoView {
         },
     );
 
+    Effect::new(move |_| {
+        let has_running = runs
+            .get()
+            .and_then(|result| result.ok())
+            .is_some_and(|list| list.iter().any(|run| run.status == "running"));
+        let generation = version.get_untracked();
+        poll_while_running(set_version, generation, has_running);
+    });
+
     view! {
         <div class="dashboard">
             <div class="dashboard-header">
-                <h1>"辅种结果"</h1>
+                <h1>"辅种"</h1>
                 <div class="trend-selector">
                     <button
                         class:active=move || mode_filter.get() == "all"
@@ -108,7 +164,7 @@ pub fn ReseedPage() -> impl IntoView {
                 <h2>"运行记录"</h2>
                 <AsyncView
                     resource=runs
-                    error_label="辅种结果"
+                    error_label="辅种"
                     on_retry=move || set_version.update(|v| *v += 1)
                     render={move |list: Vec<ReseedRunInfo>| {
                         let filter = mode_filter.get();
@@ -366,6 +422,9 @@ fn ReseedItemsTable(items: Vec<DryRunPreviewItemInfo>) -> impl IntoView {
                         <ResizableTh col_key="reseed-items-site" default_width=120>
                             "站点"
                         </ResizableTh>
+                        <ResizableTh col_key="reseed-items-outcome" default_width=80>
+                            "结果"
+                        </ResizableTh>
                         <ResizableTh col_key="reseed-items-title" default_width=240>
                             "识别到的种子"
                         </ResizableTh>
@@ -421,9 +480,11 @@ fn ReseedItemsTable(items: Vec<DryRunPreviewItemInfo>) -> impl IntoView {
                             let detail_url = item.detail_url.clone();
                             let save_path_title = item.save_path.clone();
                             let save_path = item.save_path;
+                            let outcome = item_outcome_label(item.outcome.as_deref());
                             view! {
                                 <tr>
                                     <td>{item.site_name}</td>
+                                    <td class=outcome.1>{outcome.0}</td>
                                     <td title=title_attr>{title}</td>
                                     <td>
                                         {match detail_url {
@@ -466,4 +527,31 @@ fn ReseedItemsTable(items: Vec<DryRunPreviewItemInfo>) -> impl IntoView {
         </div>
     }
     .into_any()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{parse_task_id, run_status_label};
+
+    #[test]
+    fn parse_task_id_accepts_positive_ids() {
+        assert_eq!(parse_task_id(Some("42".into())), Some(42));
+        assert_eq!(parse_task_id(Some("0042".into())), Some(42));
+    }
+
+    #[test]
+    fn parse_task_id_rejects_invalid() {
+        assert_eq!(parse_task_id(None), None);
+        assert_eq!(parse_task_id(Some("0".into())), None);
+        assert_eq!(parse_task_id(Some("-1".into())), None);
+        assert_eq!(parse_task_id(Some("42x".into())), None);
+    }
+
+    #[test]
+    fn running_label_wins_over_dry_run_flag() {
+        assert_eq!(run_status_label("running", true), "运行中 · 试运行");
+        assert_eq!(run_status_label("running", false), "运行中");
+        assert_eq!(run_status_label("dry_run", true), "试运行");
+        assert_eq!(run_status_label("success", false), "成功");
+    }
 }

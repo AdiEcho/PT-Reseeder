@@ -226,9 +226,9 @@ export default function RepostPage() {
             type="button"
             onClick={() => setActiveTab(tab.value)}
             className={[
-              'px-2 py-0.5 rounded-lg text-sm border transition-colors duration-150 cursor-pointer',
+              'px-3 py-1 rounded-lg text-sm border transition-colors duration-150 cursor-pointer',
               activeTab === tab.value
-                ? 'bg-primary text-white border-primary'
+                ? 'bg-accent text-accent-foreground border-accent'
                 : 'bg-card text-foreground/70 border-border hover:bg-muted',
             ].join(' ')}
           >

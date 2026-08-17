@@ -9,6 +9,12 @@ export default defineConfig({
       external: ['@tauri-apps/api/core'],
     },
   },
+  resolve: {
+    alias: {
+      // Stub @tauri-apps/api/core during dev so dynamic import doesn't crash
+      '@tauri-apps/api/core': '/src/tauri-stub.ts',
+    },
+  },
   server: {
     proxy: {
       '/api': {

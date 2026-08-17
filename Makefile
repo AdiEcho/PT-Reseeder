@@ -18,7 +18,7 @@ endif
 
 SERVER_BIN_PATH := target/$(TARGET_PROFILE_DIR)/$(SERVER_BIN)
 WINDOWS_SERVER_BIN_PATH := target/$(WINDOWS_TARGET)/$(TARGET_PROFILE_DIR)/$(SERVER_BIN).exe
-SITE_DIR := target/site
+SITE_DIR := web/dist
 SERVER_DIST_DIR := $(DIST_DIR)/server
 SERVER_WINDOWS_DIST_DIR := $(DIST_DIR)/server-windows
 DESKTOP_DIST_DIR := $(DIST_DIR)/desktop
@@ -29,9 +29,9 @@ help:
 	@echo "PT-Reseeder build targets"
 	@echo ""
 	@echo "Usage:"
-	@echo "  make build                 Build release server and Leptos site"
-	@echo "  make build-server          Build server binary and frontend site"
-	@echo "  make build-server-windows  Cross-compile Windows server .exe (+ site)"
+	@echo "  make build                 Build release server and frontend"
+	@echo "  make build-server          Build server binary and frontend"
+	@echo "  make build-server-windows  Cross-compile Windows server .exe (+ frontend)"
 	@echo "  make build-desktop         Build Tauri desktop bundle"
 	@echo "  make artifacts             Copy build outputs into $(DIST_DIR)/"
 	@echo "  make check                 Run cargo check for the workspace"
@@ -63,17 +63,11 @@ test:
 build: build-server
 
 build-server:
-	command -v cargo-leptos >/dev/null || { echo "cargo-leptos is required. Install with: cargo install cargo-leptos"; exit 1; }
-	$(CARGO) leptos build $(CARGO_PROFILE_FLAGS)
-	cp crates/frontend/index.html "$(SITE_DIR)/index.html"
-	@# wasm-bindgen JS references pt-reseeder_bg.wasm but cargo-leptos
-	@# outputs pt-reseeder.wasm — create a copy so the browser can find it.
-	@if [ -f "$(SITE_DIR)/pkg/$(APP_NAME).wasm" ] && [ ! -f "$(SITE_DIR)/pkg/$(APP_NAME)_bg.wasm" ]; then \
-		cp "$(SITE_DIR)/pkg/$(APP_NAME).wasm" "$(SITE_DIR)/pkg/$(APP_NAME)_bg.wasm"; \
-		echo "Created $(SITE_DIR)/pkg/$(APP_NAME)_bg.wasm"; \
-	fi
+	npm --prefix web ci && npm --prefix web run build
+	$(CARGO) build $(CARGO_PROFILE_FLAGS) --features headless-browser -p pt-reseeder-server
 
-build-server-windows: build-server
+build-server-windows:
+	npm --prefix web ci && npm --prefix web run build
 	command -v cargo-zigbuild >/dev/null || { echo "cargo-zigbuild is required. Install with: cargo install cargo-zigbuild"; exit 1; }
 	command -v zig >/dev/null || { echo "zig is required for cargo-zigbuild. Install zig first."; exit 1; }
 	rustup target list --installed | grep -qx '$(WINDOWS_TARGET)' || rustup target add '$(WINDOWS_TARGET)'
@@ -84,7 +78,8 @@ build-server-windows: build-server
 	cp -R "$(SITE_DIR)" "$(SERVER_WINDOWS_DIST_DIR)/site"
 	@echo "Windows server artifacts written to $(SERVER_WINDOWS_DIST_DIR)/"
 
-build-desktop: build-server
+build-desktop:
+	npm --prefix web ci && npm --prefix web run build
 	command -v cargo-tauri >/dev/null || { echo "cargo-tauri is required. Install with: cargo install tauri-cli --version '^2'"; exit 1; }
 	cd crates/desktop && $(CARGO) tauri build --bundles app
 
@@ -109,7 +104,6 @@ artifacts: build-server
 	fi
 
 install-tools:
-	$(CARGO) install cargo-leptos
 	$(CARGO) install tauri-cli --version '^2'
 	$(CARGO) install cargo-zigbuild
 

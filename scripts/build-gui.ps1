@@ -1,24 +1,19 @@
 # PT-Reseeder Windows GUI build script
 # Run from the repository root:  .\scripts\build-gui.ps1
-# Prerequisites: Rust, cargo, git
+# Prerequisites: Rust, cargo, Node.js, npm, git
 
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot\..
 
-Write-Host "=== Step 1/5: Install build tools ===" -ForegroundColor Cyan
-rustup target add wasm32-unknown-unknown
-$cargoLeptos = cargo install --list | Select-String "cargo-leptos"
-if (-not $cargoLeptos) { cargo install cargo-leptos }
+Write-Host "=== Step 1/4: Install build tools ===" -ForegroundColor Cyan
 $tauriCli = cargo install --list | Select-String "tauri-cli"
 if (-not $tauriCli) { cargo install tauri-cli --version "^2" }
 
-Write-Host "=== Step 2/5: Generate Windows icon ===" -ForegroundColor Cyan
+Write-Host "=== Step 2/4: Generate Windows icon ===" -ForegroundColor Cyan
 $icoPath = "crates\desktop\icons\icon.ico"
 if (-not (Test-Path $icoPath)) {
     Write-Host "icon.ico not found, generating from icon.png..."
     cargo tauri icon crates\desktop\icons\icon.png -o crates\desktop\icons
-    # cargo tauri icon rewrites icon.png and generates android/ios/uwp artifacts.
-    # Restore the original icon.png and keep only the .ico.
     git checkout -- crates\desktop\icons\icon.png 2>$null
     $junk = @(
         "crates\desktop\icons\android",
@@ -37,25 +32,12 @@ if (-not (Test-Path $icoPath)) {
     Write-Host "$icoPath already exists, skip generation" -ForegroundColor Green
 }
 
-Write-Host "=== Step 3/5: Build server + frontend site ===" -ForegroundColor Cyan
-cargo leptos build --release
+Write-Host "=== Step 3/4: Build frontend + server ===" -ForegroundColor Cyan
+npm --prefix web ci
+npm --prefix web run build
+cargo build --release --features headless-browser -p pt-reseeder-server
 
-Write-Host "=== Step 4/5: Copy frontend artifacts ===" -ForegroundColor Cyan
-Copy-Item crates\frontend\index.html target\site\index.html -Force
-
-$pkgDir = "target\site\pkg"
-$wasm = Join-Path $pkgDir "pt-reseeder.wasm"
-$bgWasm = Join-Path $pkgDir "pt-reseeder_bg.wasm"
-if ((Test-Path $wasm) -and -not (Test-Path $bgWasm)) {
-    Copy-Item $wasm $bgWasm -Force
-    Write-Host "Created $bgWasm" -ForegroundColor Green
-} elseif (Test-Path $bgWasm) {
-    Write-Host "$bgWasm already exists, skip copy" -ForegroundColor Green
-} else {
-    Write-Error "$pkgDir missing pt-reseeder.wasm — cargo-leptos build may have failed"
-}
-
-Write-Host "=== Step 5/5: Build Tauri desktop bundle ===" -ForegroundColor Cyan
+Write-Host "=== Step 4/4: Build Tauri desktop bundle ===" -ForegroundColor Cyan
 Push-Location crates\desktop
 try {
     cargo tauri build --bundles nsis

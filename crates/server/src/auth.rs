@@ -8,8 +8,8 @@ use axum::{
 use pt_reseeder_core::db::models::Session;
 use pt_reseeder_core::session::{resolve_session, SessionOutcome};
 
-// Session cookies are minted and cleared exclusively by the Leptos server
-// functions (`server_fns/auth.rs` login / logout), which own the cookie builders.
+// Session cookies are minted and cleared exclusively by the auth handlers
+// (`api/auth.rs` login / logout), which own the cookie builders.
 // This module only *reads* sessions, so it needs no cookie construction of its
 // own — the `build_session_cookie` / `build_removal_cookie` / token-helper
 // re-exports that used to live here lost their last consumer when B3 deleted

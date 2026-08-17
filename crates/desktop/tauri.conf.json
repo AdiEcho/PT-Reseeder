@@ -15,7 +15,7 @@
       "icons/icon.ico"
     ],
     "resources": {
-      "../../target/site/": "site/"
+      "../../web/dist/": "site/"
     },
     "macOS": {
       "minimumSystemVersion": "10.15"

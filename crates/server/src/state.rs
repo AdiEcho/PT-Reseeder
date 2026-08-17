@@ -23,12 +23,6 @@ use pt_reseeder_core::site::traits::{
     RepostCapable, ReseedCapable, SearchCapable, SiteCore, UserInfoCapable,
 };
 use sqlx::SqlitePool;
-
-impl axum::extract::FromRef<AppState> for leptos::config::LeptosOptions {
-    fn from_ref(state: &AppState) -> Self {
-        state.leptos_options()
-    }
-}
 use tokio::sync::{Mutex, RwLock};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
@@ -44,7 +38,6 @@ pub struct AppStateInner {
     pub repo: Repository,
     pub vault: Arc<RwLock<Option<Vault>>>,
     pub config: AppConfig,
-    pub leptos_options: leptos::config::LeptosOptions,
     pub cancel_token: CancellationToken,
     pub start_time: std::time::Instant,
     /// Registry is stored as `Arc` so snapshots only clone the Arc pointer.
@@ -74,12 +67,6 @@ impl AppState {
         log_broadcast: tokio::sync::broadcast::Sender<String>,
     ) -> Self {
         let repo = Repository::new(db_pool.clone());
-        let leptos_options = leptos::config::LeptosOptions::builder()
-            .output_name("pt-reseeder")
-            .site_root(config.leptos_site_root.to_string_lossy().to_string())
-            .site_pkg_dir("pkg")
-            .site_addr(config.server_bind)
-            .build();
         Self {
             inner: Arc::new(AppStateInner {
                 db_pool,
@@ -87,7 +74,6 @@ impl AppState {
                 repo,
                 vault: Arc::new(RwLock::new(None)),
                 config,
-                leptos_options,
                 cancel_token,
                 start_time: std::time::Instant::now(),
                 site_registry: Arc::new(RwLock::new(Arc::new(site_registry))),
@@ -98,58 +84,6 @@ impl AppState {
                 repost_autofiller,
                 repost_autofiller_error,
                 log_broadcast,
-            }),
-        }
-    }
-
-    pub fn leptos_options(&self) -> leptos::config::LeptosOptions {
-        self.inner.leptos_options.clone()
-    }
-
-    /// Build a ServerFnContext for Leptos SSR / server functions.
-    pub fn server_fn_context(&self) -> pt_reseeder_frontend::server_fns::ServerFnContext {
-        let refresh_state = self.clone();
-        let reconfigure_state = self.clone();
-        let remove_state = self.clone();
-        pt_reseeder_frontend::server_fns::ServerFnContext {
-            pool: self.inner.db_pool.clone(),
-            vault: self.inner.vault.clone(),
-            session_ttl_hours: self.inner.config.session_ttl_hours,
-            cookie_secure: self.inner.config.cookie_secure,
-            data_dir: self.inner.config.data_dir.clone(),
-            log_dir: self.inner.config.log_dir.clone(),
-            site_registry: self.inner.site_registry.clone(),
-            refresh_site_registry: std::sync::Arc::new(move || {
-                let state = refresh_state.clone();
-                Box::pin(async move {
-                    state
-                        .refresh_site_registry()
-                        .await
-                        .map_err(|error| error.to_string())
-                })
-            }),
-            fetch_seeding_size: self.inner.fetch_seeding_size.clone(),
-            trigger_task_execution: std::sync::Arc::new({
-                let state = self.clone();
-                move |task_id, dry_run| spawn_task_execution(state.clone(), task_id, dry_run)
-            }),
-            reconfigure_task_runtime: std::sync::Arc::new(move |task_id| {
-                let state = reconfigure_state.clone();
-                Box::pin(async move {
-                    state
-                        .reconfigure_task_runtime(task_id)
-                        .await
-                        .map_err(|error| error.to_string())
-                })
-            }),
-            remove_task_runtime: std::sync::Arc::new(move |task_id| {
-                let state = remove_state.clone();
-                Box::pin(async move {
-                    state
-                        .remove_task_runtime(task_id)
-                        .await
-                        .map_err(|error| error.to_string())
-                })
             }),
         }
     }
@@ -257,6 +191,11 @@ impl AppState {
             self.inner.cancel_token.clone(),
             self.vault_snapshot().await,
         )
+    }
+
+    /// Trigger task execution (spawn in background).
+    pub fn trigger_task_execution(&self, task_id: i64, dry_run: bool) {
+        spawn_task_execution(self.clone(), task_id, dry_run);
     }
 
     pub async fn configure_task_runtime(&self) -> Result<(), CoreError> {

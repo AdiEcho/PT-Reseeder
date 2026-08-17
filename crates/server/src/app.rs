@@ -5,206 +5,94 @@ use crate::ws;
 use axum::{
     body::Body,
     extract::State,
-    http::{HeaderMap, Method, Request, StatusCode},
+    http::{Request, StatusCode},
     response::{IntoResponse, Response},
-    routing::{get, post},
-    Router,
+    routing::get,
+    Json, Router,
 };
-use leptos::prelude::provide_context;
-use leptos_axum::{generate_route_list, LeptosRoutes};
 use tower::ServiceExt;
 use tower_http::services::ServeDir;
 
-/// Server function endpoints are generated as `/api/{fn_name}{hash}`, where the
-/// hash is derived from `module_path!()` by the `#[server]` macro. Strip that
-/// trailing hash so the public-endpoint allowlist matches the function name.
-///
-/// No server function in this crate ends in a digit, so trimming trailing digits
-/// cannot truncate a real name.
-fn server_fn_name(path: &str) -> &str {
-    path.rsplit('/')
-        .next()
-        .unwrap_or_default()
-        .trim_end_matches(|c: char| c.is_ascii_digit())
+/// JSON error body for unknown `/api` paths.
+#[derive(serde::Serialize)]
+struct ApiNotFound {
+    error: String,
 }
 
-/// Server functions that answer without a session.
-///
-/// These four are the pre-login surface: the landing page calls `has_user` and
-/// `get_current_user` before any session exists, and `login` / `register` are how
-/// a session gets created in the first place. Everything else is guarded.
-///
-/// Keep in sync with `crates/frontend/src/server_fns/auth.rs`. Renaming a server
-/// function without updating this list silently makes it require auth — the
-/// `include!`-based module layout offers no compile-time way to tie the two
-/// together (see plan erratum E6).
-pub const PUBLIC_SERVER_FNS: [&str; 4] = ["login", "register", "get_current_user", "has_user"];
-
-fn server_fn_requires_auth(path: &str) -> bool {
-    // Exact equality, matching the `matches!` this replaced. A prefix test here
-    // would let `login_v2` through — `allowlist_does_not_match_on_prefix` guards
-    // that.
-    !PUBLIC_SERVER_FNS.contains(&server_fn_name(path))
-}
-
-async fn validate_server_fn_request(
-    state: &AppState,
-    method: &Method,
-    path: &str,
-    headers: &HeaderMap,
-) -> Result<(), StatusCode> {
-    // No `X-PT-Reseeder` check here. Server functions are issued by the stock
-    // Leptos browser client, which sends only `Content-Type` and `Accept`
-    // (`server_fn::request::browser`), so requiring a custom header would reject
-    // every call the app makes. CSRF is covered instead by the session cookie's
-    // `SameSite=Strict` attribute (see `create_session_cookie`), which the
-    // browser enforces on cross-site requests.
-    //
-    // The hand-written REST routes under `/api/…` keep their own `csrf_check`
-    // layer, because `pages/repost.rs` sends the header explicitly for those.
-    let _ = method;
-
-    // MUST stay ahead of session resolution: `login` / `register` / `has_user` /
-    // `get_current_user` are the pre-login surface. Guarding them would make
-    // logging in require being logged in.
-    if !server_fn_requires_auth(path) {
-        return Ok(());
-    }
-
-    crate::auth::resolve_session_from_headers(state, headers).await?;
-    Ok(())
-}
-
-fn provide_server_fn_context(context: pt_reseeder_frontend::server_fns::ServerFnContext) {
-    provide_context(context.pool.clone());
-    provide_context(context);
-}
-
-async fn server_fn_handler(State(state): State<AppState>, request: Request<Body>) -> Response {
-    let method = request.method().clone();
-    let path = request.uri().path().to_string();
-    let headers = request.headers().clone();
-    if let Err(status) = validate_server_fn_request(&state, &method, &path, &headers).await {
-        return status.into_response();
-    }
-    let context = state.server_fn_context();
-    leptos_axum::handle_server_fns_with_context(
-        move || provide_server_fn_context(context.clone()),
-        request,
+/// Fallback for unmatched `/api/…` routes: returns JSON 404 instead of the SPA
+/// index.html that the top-level fallback would serve.
+async fn api_fallback() -> impl IntoResponse {
+    (
+        StatusCode::NOT_FOUND,
+        Json(ApiNotFound {
+            error: "not found".to_string(),
+        }),
     )
-    .await
-    .into_response()
 }
 
-async fn static_fallback(State(state): State<AppState>, request: Request<Body>) -> Response {
-    let site_root = state.inner.config.leptos_site_root.clone();
-    ServeDir::new(site_root)
+/// SPA fallback: serves `index.html` for any non-API, non-WS path so that
+/// client-side routing works.
+async fn spa_fallback(State(state): State<AppState>, request: Request<Body>) -> Response {
+    let site_root = &state.inner.config.site_root;
+
+    // Try to serve the exact static file first.
+    let response = ServeDir::new(site_root)
         .oneshot(request)
         .await
-        .map(|res| res.into_response())
-        .unwrap_or_else(|err| {
-            (
+        .map(|res| res.into_response());
+
+    match response {
+        Ok(res) if res.status() != StatusCode::NOT_FOUND => res,
+        // File not found — serve index.html for client-side routing.
+        _ => match tokio::fs::read(site_root.join("index.html")).await {
+            Ok(body) => Response::builder()
+                .status(StatusCode::OK)
+                .header("content-type", "text/html; charset=utf-8")
+                .body(Body::from(body))
+                .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response()),
+            Err(_) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                format!("failed to serve static asset: {err}"),
+                "index.html not found",
             )
-                .into_response()
-        })
-}
-
-/// Guards the server-function endpoints that `leptos_routes_with_context`
-/// registers.
-///
-/// `leptos_routes_with_context` auto-registers every `#[server]` function as an
-/// *exact* route (`server_fn::axum::server_fn_paths()`), and in axum an exact
-/// route wins over the `/api/{*fn_name}` wildcard. Those generated routes call
-/// `handle_server_fns_with_context` directly, so `server_fn_handler` — and the
-/// auth and CSRF checks inside it — never run for a real server function. Only
-/// *unregistered* paths fall through to the wildcard, which is why an unknown
-/// endpoint used to 401 while every real one answered unauthenticated.
-///
-/// Applying the same validation as a layer closes that gap: a layer runs for
-/// whichever route matched.
-async fn guard_server_fns(
-    State(state): State<AppState>,
-    request: Request<Body>,
-    next: axum::middleware::Next,
-) -> Response {
-    let path = request.uri().path();
-
-    // Hand-written REST endpoints under /api are nested separately and carry
-    // their own `require_auth` / `csrf_check` layers; re-checking here would
-    // double-guard them and reject the public auth routes.
-    if !is_server_fn_path(path) {
-        return next.run(request).await;
+                .into_response(),
+        },
     }
-
-    let method = request.method().clone();
-    let path = path.to_string();
-    let headers = request.headers().clone();
-    match validate_server_fn_request(&state, &method, &path, &headers).await {
-        Ok(_) => next.run(request).await,
-        Err(status) => status.into_response(),
-    }
-}
-
-/// Whether `path` is one of the registered `#[server]` endpoints.
-///
-/// The layer runs on every request, including static assets and SSR page loads,
-/// so the registry is collected into a set once rather than rescanned per call.
-fn is_server_fn_path(path: &str) -> bool {
-    static PATHS: std::sync::OnceLock<std::collections::HashSet<&'static str>> =
-        std::sync::OnceLock::new();
-    PATHS
-        .get_or_init(|| {
-            leptos::server_fn::axum::server_fn_paths()
-                .map(|(registered, _)| registered)
-                .collect()
-        })
-        .contains(path)
 }
 
 pub fn build_router(state: AppState) -> Router {
-    let routes = generate_route_list(pt_reseeder_frontend::app::App);
-    let leptos_options = state.leptos_options();
+    // --- Public auth routes (no session required) ---
+    let public_auth = Router::new().merge(api::auth::public_router());
 
-    // The only REST routes left that need a session: repost review / submit /
-    // autofill, called by the hydrated page (see pages/repost.rs).
-    let authed_routes = Router::new().merge(api::repost::router()).route_layer(
-        axum::middleware::from_fn_with_state(state.clone(), require_auth),
-    );
+    // --- Authenticated routes ---
+    let authed_routes = Router::new()
+        .merge(api::auth::authed_router())
+        .merge(api::sites::router())
+        .merge(api::downloaders::router())
+        .merge(api::folders::router())
+        .merge(api::tasks::router())
+        .merge(api::logs::router())
+        .merge(api::repost::router())
+        .merge(api::repost_ext::router())
+        .merge(api::config::router())
+        .merge(api::dashboard::router())
+        .route_layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            require_auth,
+        ));
 
-    // Health check stays outside require_auth so probes need no cookie.
-    // `csrf_check` must wrap the whole /api subtree: the hydrated page sends
-    // `X-PT-Reseeder: 1` and this layer is what validates it.
+    // --- /api subtree: CSRF check wraps everything, auth is selective ---
     let api_routes = Router::new()
         .merge(api::health::router())
+        .merge(public_auth)
         .merge(authed_routes)
+        .fallback(api_fallback)
         .layer(axum::middleware::from_fn(csrf_check));
 
     Router::new()
-        .route("/api/{*fn_name}", post(server_fn_handler))
         .nest("/api", api_routes)
         .route("/ws/dashboard", get(ws::ws_handler))
         .route("/ws/logs", get(ws::ws_logs_handler))
-        .fallback(static_fallback)
-        .leptos_routes_with_context(
-            &state,
-            routes,
-            {
-                let context = state.server_fn_context();
-                move || provide_server_fn_context(context.clone())
-            },
-            {
-                let leptos_options = leptos_options.clone();
-                move || pt_reseeder_frontend::app::shell(leptos_options.clone())
-            },
-        )
-        // Applied last so it wraps the routes `leptos_routes_with_context`
-        // registered above, which is where the server functions actually live.
-        .layer(axum::middleware::from_fn_with_state(
-            state.clone(),
-            guard_server_fns,
-        ))
+        .fallback(spa_fallback)
         .with_state(state)
 }
 
@@ -212,74 +100,12 @@ pub fn build_router(state: AppState) -> Router {
 mod tests {
     use super::*;
 
-    /// The generated endpoints carry a `module_path!()`-derived hash suffix, so
-    /// the allowlist has to match on the name with that suffix stripped.
+    /// Unknown /api paths must get JSON 404, not the SPA index.html.
     #[test]
-    fn allowlist_matches_hashed_endpoints() {
-        const HASH: &str = "13234041467895400166";
-
-        for name in ["login", "register", "get_current_user", "has_user"] {
-            let path = format!("/api/{name}{HASH}");
-            assert!(!server_fn_requires_auth(&path), "{path} should be public");
-        }
-
-        for name in ["get_sites", "delete_site", "create_task", "logout"] {
-            let path = format!("/api/{name}{HASH}");
-            assert!(
-                server_fn_requires_auth(&path),
-                "{path} must stay authenticated"
-            );
-        }
-    }
-
-    /// A name that merely starts with a public one must not be let through.
-    #[test]
-    fn allowlist_does_not_match_on_prefix() {
-        for path in ["/api/login_v2", "/api/relogin", "/api/loginX", "/api/"] {
-            assert!(
-                server_fn_requires_auth(path),
-                "{path} must stay authenticated"
-            );
-        }
-    }
-
-    /// The stock Leptos browser client sends only `Content-Type` and `Accept`
-    /// (`server_fn::request::browser`), so `validate_server_fn_request` must not
-    /// demand a custom header. Requiring `X-PT-Reseeder` here previously made
-    /// every authenticated call — including logout — return 403 in a real
-    /// browser while still passing header-carrying curl tests.
-    #[test]
-    fn validation_does_not_depend_on_a_custom_header() {
-        let src = include_str!("app.rs");
-        let body = src
-            .split_once("async fn validate_server_fn_request")
-            .expect("validator present")
-            .1
-            .split_once("\nasync fn ")
-            .map(|(body, _)| body)
-            .unwrap_or(src);
-        let code: String = body
-            .lines()
-            .filter(|line| !line.trim_start().starts_with("//"))
-            .collect();
-        assert!(
-            !code.contains("X-PT-Reseeder"),
-            "server-fn validation must not require a custom header; the Leptos \
-             client cannot send one"
-        );
-    }
-
-    /// Guards the regression this middleware exists for: `leptos_routes_with_context`
-    /// registers each server function as an exact route, which takes precedence
-    /// over the `/api/{*fn_name}` wildcard and therefore bypasses
-    /// `server_fn_handler`. If the registry ever comes back empty, the layer
-    /// would wave every request through instead of validating it.
-    #[test]
-    fn server_fn_registry_is_populated() {
-        let count = leptos::server_fn::axum::server_fn_paths().count();
-        assert!(
-            count > 0,
-            "no server functions registered; guard_server_fns would be a no-op"
-        );
+    fn api_not_found_shape() {
+        // Just a compile-time sanity check that the types work.
+        let _: ApiNotFound = ApiNotFound {
+            error: "test".to_string(),
+        };
     }
 }

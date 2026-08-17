@@ -57,12 +57,12 @@ function probeStatusLabel(status: string): { text: string; className: string } {
   switch (status) {
     case '成功':
     case 'success':
-      return { text: '成功', className: 'text-[var(--color-success)]' }
+      return { text: '成功', className: 'text-success' }
     case '失败':
     case 'failed':
-      return { text: '失败', className: 'text-[var(--color-error)]' }
+      return { text: '失败', className: 'text-destructive' }
     default:
-      return { text: '未探测', className: 'text-[var(--color-text-muted)]' }
+      return { text: '未探测', className: 'text-muted-foreground' }
   }
 }
 
@@ -245,16 +245,16 @@ export default function SitesPage() {
         }
       />
 
-      <p className="text-[var(--text-sm)] text-[var(--color-text-muted)] mb-[var(--space-5)]">
+      <p className="text-sm text-muted-foreground mb-4">
         管理 PT 站点的连接信息与凭据，支持探测验证站点可用性。
       </p>
 
       {showForm && (
         <form
           onSubmit={handleSubmit}
-          className="mb-[var(--space-6)] p-[var(--space-5)] border border-[var(--color-border)] rounded-[var(--radius-md)] bg-[var(--color-bg-elevated)]"
+          className="mb-5 p-5 border border-border rounded-lg bg-card"
         >
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-[var(--space-5)]">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
             <Select
               label="站点模板"
               options={defOptions}
@@ -340,15 +340,15 @@ export default function SitesPage() {
 
           {validateResult && (
             <p
-              className={`mt-[var(--space-3)] mb-0 text-[var(--text-sm)] ${
-                validateResult.ok ? 'text-[var(--color-success)]' : 'text-[var(--color-error)]'
+              className={`mt-2 mb-0 text-sm ${
+                validateResult.ok ? 'text-success' : 'text-destructive'
               }`}
             >
               {validateResult.message}
             </p>
           )}
 
-          <div className="flex justify-end gap-[var(--space-3)] mt-[var(--space-5)]">
+          <div className="flex justify-end gap-2 mt-4">
             <Button
               variant="secondary"
               type="button"
@@ -367,8 +367,8 @@ export default function SitesPage() {
       {sites.isLoading && <LoadingSkeleton variant="table" rows={5} />}
 
       {sites.isError && (
-        <div className="flex flex-col items-center justify-center py-[var(--space-8)] gap-[var(--space-4)]">
-          <p className="text-[var(--text-sm)] text-[var(--color-error)] m-0">
+        <div className="flex flex-col items-center justify-center py-6 gap-3">
+          <p className="text-sm text-destructive m-0">
             加载站点失败：{formatApiError(sites.error, '未知错误')}
           </p>
           <Button variant="secondary" size="sm" onClick={() => sites.refetch()}>
@@ -387,14 +387,14 @@ export default function SitesPage() {
       )}
 
       {!sites.isLoading && !sites.isError && list.length > 0 && (
-        <div className="overflow-x-auto border border-[var(--color-border)] rounded-[var(--radius-md)]">
-          <table className="w-full border-collapse text-[var(--text-sm)]">
+        <div className="overflow-x-auto border border-border rounded-lg">
+          <table className="w-full border-collapse text-sm">
             <thead>
-              <tr className="bg-[var(--color-bg-subtle)] border-b border-[var(--color-border)]">
+              <tr className="bg-muted border-b border-border">
                 {['名称', 'URL', '适配器', '凭据类型', '探测状态', '启用', '操作'].map((header) => (
                   <th
                     key={header}
-                    className="text-left px-[var(--space-4)] h-7 text-[var(--text-xs)] font-medium text-[var(--color-text-secondary)] whitespace-nowrap"
+                    className="text-left px-4 h-7 text-xs font-medium text-foreground/70 whitespace-nowrap"
                   >
                     {header}
                   </th>
@@ -407,36 +407,36 @@ export default function SitesPage() {
                 return (
                   <tr
                     key={site.id}
-                    className="border-b border-[var(--color-border-subtle)] last:border-b-0 hover:bg-[var(--color-bg-subtle)] transition-colors duration-[var(--transition-fast)] cursor-pointer"
+                    className="border-b border-border last:border-b-0 hover:bg-muted transition-colors duration-150 cursor-pointer"
                     onClick={() => navigate(`/sites/${site.id}`)}
                   >
-                    <td className="px-[var(--space-4)] h-7 text-[var(--color-text)] whitespace-nowrap">
+                    <td className="px-4 h-7 text-foreground whitespace-nowrap">
                       {site.name}
                     </td>
-                    <td className="px-[var(--space-4)] h-7 text-[var(--color-text)] whitespace-nowrap max-w-[200px] truncate">
+                    <td className="px-4 h-7 text-foreground whitespace-nowrap max-w-[200px] truncate">
                       {site.url}
                     </td>
-                    <td className="px-[var(--space-4)] h-7 text-[var(--color-text)] whitespace-nowrap">
+                    <td className="px-4 h-7 text-foreground whitespace-nowrap">
                       {site.adapter_type}
                     </td>
-                    <td className="px-[var(--space-4)] h-7 text-[var(--color-text)] whitespace-nowrap">
+                    <td className="px-4 h-7 text-foreground whitespace-nowrap">
                       {site.auth_type}
                     </td>
-                    <td className={`px-[var(--space-4)] h-7 whitespace-nowrap ${probe.className}`}>
+                    <td className={`px-4 h-7 whitespace-nowrap ${probe.className}`}>
                       {probe.text}
                     </td>
                     <td
-                      className={`px-[var(--space-4)] h-7 whitespace-nowrap ${
+                      className={`px-4 h-7 whitespace-nowrap ${
                         site.enabled
-                          ? 'text-[var(--color-success)]'
-                          : 'text-[var(--color-error)]'
+                          ? 'text-success'
+                          : 'text-destructive'
                       }`}
                     >
                       {site.enabled ? '是' : '否'}
                     </td>
-                    <td className="px-[var(--space-4)] py-[var(--space-2)]">
+                    <td className="px-4 py-1">
                       <div
-                        className="flex items-center gap-[var(--space-2)]"
+                        className="flex items-center gap-1"
                         onClick={(e) => e.stopPropagation()}
                       >
                         <Button

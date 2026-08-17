@@ -15,11 +15,11 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
     const selectId = id || (label ? label.toLowerCase().replace(/\s+/g, '-') : undefined)
 
     return (
-      <div className="flex flex-col gap-[var(--space-1)]">
+      <div className="flex flex-col gap-1.5">
         {label && (
           <label
             htmlFor={selectId}
-            className="text-[var(--text-xs)] text-[var(--color-text-secondary)] font-medium"
+            className="text-sm font-medium text-foreground"
           >
             {label}
           </label>
@@ -28,12 +28,12 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
           ref={ref}
           id={selectId}
           className={[
-            'h-7 px-[var(--space-3)] py-[var(--space-1)]',
-            'text-[var(--text-sm)] text-[var(--color-text)]',
-            'bg-[var(--color-bg)] border border-[var(--color-border)]',
-            'rounded-[var(--radius-sm)]',
-            'transition-all duration-[var(--transition-fast)]',
-            'focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] focus:ring-offset-2',
+            'h-9 px-3 py-1.5',
+            'text-sm text-foreground font-body',
+            'bg-background border border-border',
+            'rounded-md',
+            'transition-colors duration-150',
+            'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1',
             'disabled:opacity-50 disabled:cursor-not-allowed',
             'cursor-pointer',
             className,

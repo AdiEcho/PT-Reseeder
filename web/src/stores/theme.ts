@@ -33,7 +33,6 @@ function applyTheme(theme: Theme) {
 
 export const useThemeStore = create<ThemeState>((set) => {
   const initial = getInitialTheme()
-  // Apply on store creation
   applyTheme(initial)
 
   return {

@@ -263,16 +263,16 @@ export default function DownloadersPage() {
         }
       />
 
-      <p className="text-[var(--text-sm)] text-[var(--color-text-muted)] mb-[var(--space-5)]">
+      <p className="text-sm text-muted-foreground mb-4">
         管理 qBittorrent / Transmission 等下载器实例的连接信息。
       </p>
 
       {showForm && (
         <form
           onSubmit={handleSubmit}
-          className="mb-[var(--space-6)] p-[var(--space-5)] border border-[var(--color-border)] rounded-[var(--radius-md)] bg-[var(--color-bg-elevated)]"
+          className="mb-5 p-5 border border-border rounded-lg bg-card"
         >
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-[var(--space-5)]">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
             <Input
               label="名称 *"
               placeholder="我的 qBittorrent"
@@ -326,8 +326,8 @@ export default function DownloadersPage() {
               value={form.role}
               onChange={(event) => updateField('role', event.target.value as DownloaderRole)}
             />
-            <div className="flex flex-col justify-end gap-[var(--space-1)]">
-              <label className="inline-flex items-center gap-[var(--space-2)] text-[var(--text-sm)] text-[var(--color-text)] cursor-pointer">
+            <div className="flex flex-col justify-end gap-0.5">
+              <label className="inline-flex items-center gap-1 text-sm text-foreground cursor-pointer">
                 <input
                   type="checkbox"
                   checked={form.auto_start}
@@ -335,13 +335,13 @@ export default function DownloadersPage() {
                 />
                 添加后自动开始
               </label>
-              <p className="text-[var(--text-xs)] text-[var(--color-text-muted)] m-0">
+              <p className="text-xs text-muted-foreground m-0">
                 关闭时，辅种写入目标下载器的种子会保持暂停，需手动开始。
               </p>
             </div>
           </div>
 
-          <div className="flex justify-end mt-[var(--space-5)]">
+          <div className="flex justify-end mt-4">
             <Button type="submit" loading={createDownloader.isPending}>
               {createDownloader.isPending ? '创建中...' : '创建'}
             </Button>
@@ -352,8 +352,8 @@ export default function DownloadersPage() {
       {downloaders.isLoading && <LoadingSkeleton variant="table" rows={5} />}
 
       {downloaders.isError && (
-        <div className="flex flex-col items-center justify-center py-[var(--space-8)] gap-[var(--space-4)]">
-          <p className="text-[var(--text-sm)] text-[var(--color-error)] m-0">
+        <div className="flex flex-col items-center justify-center py-6 gap-3">
+          <p className="text-sm text-destructive m-0">
             加载下载器失败：{formatApiError(downloaders.error, '未知错误')}
           </p>
           <Button variant="secondary" size="sm" onClick={() => downloaders.refetch()}>
@@ -372,14 +372,14 @@ export default function DownloadersPage() {
       )}
 
       {!downloaders.isLoading && !downloaders.isError && list.length > 0 && (
-        <div className="overflow-x-auto border border-[var(--color-border)] rounded-[var(--radius-md)]">
-          <table className="w-full border-collapse text-[var(--text-sm)]">
+        <div className="overflow-x-auto border border-border rounded-lg">
+          <table className="w-full border-collapse text-sm">
             <thead>
-              <tr className="bg-[var(--color-bg-subtle)] border-b border-[var(--color-border)]">
+              <tr className="bg-muted border-b border-border">
                 {['名称', '类型', '主机:端口', '用途', '自动开始', '启用', '操作'].map((header) => (
                   <th
                     key={header}
-                    className="text-left px-[var(--space-4)] h-7 text-[var(--text-xs)] font-medium text-[var(--color-text-secondary)] whitespace-nowrap"
+                    className="text-left px-4 h-7 text-xs font-medium text-foreground/70 whitespace-nowrap"
                   >
                     {header}
                   </th>
@@ -395,22 +395,22 @@ export default function DownloadersPage() {
                 return (
                   <tr
                     key={dl.id}
-                    className="border-b border-[var(--color-border-subtle)] last:border-b-0 hover:bg-[var(--color-bg-subtle)] transition-colors duration-[var(--transition-fast)]"
+                    className="border-b border-border last:border-b-0 hover:bg-muted transition-colors duration-150"
                   >
-                    <td className="px-[var(--space-4)] h-7 text-[var(--color-text)] whitespace-nowrap">
+                    <td className="px-4 h-7 text-foreground whitespace-nowrap">
                       {dl.name}
                     </td>
-                    <td className="px-[var(--space-4)] h-7 text-[var(--color-text)] whitespace-nowrap">
+                    <td className="px-4 h-7 text-foreground whitespace-nowrap">
                       {typeLabel(dl.dl_type)}
                     </td>
-                    <td className="px-[var(--space-4)] h-7 text-[var(--color-text)] whitespace-nowrap">
+                    <td className="px-4 h-7 text-foreground whitespace-nowrap">
                       {dl.host}:{dl.port}
                     </td>
-                    <td className="px-[var(--space-4)] h-7 text-[var(--color-text)] whitespace-nowrap">
+                    <td className="px-4 h-7 text-foreground whitespace-nowrap">
                       {roleLabel(dl.role)}
                     </td>
-                    <td className="px-[var(--space-4)] h-7 whitespace-nowrap">
-                      <label className="inline-flex items-center gap-[var(--space-2)] cursor-pointer">
+                    <td className="px-4 h-7 whitespace-nowrap">
+                      <label className="inline-flex items-center gap-1 cursor-pointer">
                         <input
                           type="checkbox"
                           checked={autoStartOn}
@@ -420,8 +420,8 @@ export default function DownloadersPage() {
                         <span
                           className={
                             autoStartOn
-                              ? 'text-[var(--color-success)]'
-                              : 'text-[var(--color-text-muted)]'
+                              ? 'text-success'
+                              : 'text-muted-foreground'
                           }
                         >
                           {autoStartOn ? '开' : '关'}
@@ -429,16 +429,16 @@ export default function DownloadersPage() {
                       </label>
                     </td>
                     <td
-                      className={`px-[var(--space-4)] h-7 whitespace-nowrap ${
+                      className={`px-4 h-7 whitespace-nowrap ${
                         dl.enabled
-                          ? 'text-[var(--color-success)]'
-                          : 'text-[var(--color-error)]'
+                          ? 'text-success'
+                          : 'text-destructive'
                       }`}
                     >
                       {dl.enabled ? '是' : '否'}
                     </td>
-                    <td className="px-[var(--space-4)] py-[var(--space-2)]">
-                      <div className="flex items-center gap-[var(--space-2)]">
+                    <td className="px-4 py-1">
+                      <div className="flex items-center gap-1">
                         <Button
                           variant="secondary"
                           size="sm"
@@ -457,10 +457,10 @@ export default function DownloadersPage() {
                       </div>
                       {result && (
                         <p
-                          className={`mt-[var(--space-1)] mb-0 text-[var(--text-xs)] ${
+                          className={`mt-0.5 mb-0 text-xs ${
                             result.ok
-                              ? 'text-[var(--color-success)]'
-                              : 'text-[var(--color-error)]'
+                              ? 'text-success'
+                              : 'text-destructive'
                           }`}
                         >
                           {result.message}

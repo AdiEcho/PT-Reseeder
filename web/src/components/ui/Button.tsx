@@ -2,7 +2,7 @@ import { type ButtonHTMLAttributes, type ReactNode } from 'react'
 import { Spinner } from './Spinner'
 
 type ButtonVariant = 'primary' | 'secondary' | 'danger' | 'ghost'
-type ButtonSize = 'sm' | 'md'
+type ButtonSize = 'sm' | 'md' | 'lg'
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant
@@ -13,18 +13,19 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 const variantClasses: Record<ButtonVariant, string> = {
   primary:
-    'bg-[var(--color-accent)] text-[var(--color-accent-text)] hover:bg-[var(--color-accent-hover)]',
+    'bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm',
   secondary:
-    'bg-[var(--color-bg-muted)] text-[var(--color-text)] border border-[var(--color-border)] hover:bg-[var(--color-bg-subtle)]',
+    'bg-secondary text-secondary-foreground border border-border hover:bg-muted',
   danger:
-    'bg-[var(--color-error)] text-white hover:opacity-90',
+    'bg-destructive text-destructive-foreground hover:bg-destructive/90',
   ghost:
-    'bg-transparent text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-muted)]',
+    'bg-transparent text-muted-foreground hover:bg-secondary hover:text-foreground',
 }
 
 const sizeClasses: Record<ButtonSize, string> = {
-  sm: 'px-[var(--space-3)] py-[var(--space-1)] text-[var(--text-xs)]',
-  md: 'px-[var(--space-4)] py-[var(--space-2)] text-[var(--text-sm)]',
+  sm: 'h-8 px-3 text-xs',
+  md: 'h-9 px-4 text-sm',
+  lg: 'h-11 px-6 text-sm',
 }
 
 export function Button({
@@ -40,11 +41,11 @@ export function Button({
     <button
       disabled={disabled || loading}
       className={[
-        'inline-flex items-center justify-center gap-[var(--space-2)]',
-        'rounded-[var(--radius-sm)] font-medium leading-tight',
-        'transition-all duration-[var(--transition-fast)]',
-        'focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] focus:ring-offset-2',
-        'disabled:opacity-50 disabled:cursor-not-allowed',
+        'inline-flex items-center justify-center gap-2',
+        'rounded-md font-medium font-body',
+        'transition-colors duration-150',
+        'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+        'disabled:opacity-50 disabled:pointer-events-none',
         'cursor-pointer',
         variantClasses[variant],
         sizeClasses[size],

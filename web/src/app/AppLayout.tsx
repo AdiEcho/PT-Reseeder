@@ -56,17 +56,6 @@ const icons = {
       <path d="M13.5 8a5.5 5.5 0 00-.2-1.3l1.3-1-1.2-2-1.5.6a5.5 5.5 0 00-1.2-.7L10.3 2H7.7l-.4 1.6c-.4.2-.8.4-1.2.7l-1.5-.6-1.2 2 1.3 1A5.5 5.5 0 004.5 8c0 .4 0 .9.2 1.3l-1.3 1 1.2 2 1.5-.6c.4.3.8.5 1.2.7l.4 1.6h2.6l.4-1.6c.4-.2.8-.4 1.2-.7l1.5.6 1.2-2-1.3-1c.1-.4.2-.9.2-1.3z" />
     </svg>
   ),
-  sun: (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="8" cy="8" r="3" />
-      <path d="M8 1.5v1M8 13.5v1M3.4 3.4l.7.7M11.9 11.9l.7.7M1.5 8h1M13.5 8h1M3.4 12.6l.7-.7M11.9 4.1l.7-.7" />
-    </svg>
-  ),
-  moon: (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M13.5 8.5a5.5 5.5 0 01-7.5-7.5 6 6 0 107.5 7.5z" />
-    </svg>
-  ),
   logOut: (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
       <path d="M6 14H3.5a1 1 0 01-1-1V3a1 1 0 011-1H6M10.5 11.5L14 8l-3.5-3.5M14 8H6" />
@@ -80,6 +69,17 @@ const icons = {
   chevronRight: (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
       <path d="M6 3l5 5-5 5" />
+    </svg>
+  ),
+  sun: (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="8" cy="8" r="3" />
+      <path d="M8 1.5v1M8 13.5v1M3.4 3.4l.7.7M11.9 11.9l.7.7M1.5 8h1M13.5 8h1M3.4 12.6l.7-.7M11.9 4.1l.7-.7" />
+    </svg>
+  ),
+  moon: (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M13.5 8.5a5.5 5.5 0 01-7.5-7.5 6 6 0 107.5 7.5z" />
     </svg>
   ),
 }
@@ -126,41 +126,22 @@ export default function AppLayout() {
   const themeIcon = theme === 'dark' ? icons.moon : icons.sun
 
   return (
-    <div className="flex h-screen overflow-hidden" style={{ backgroundColor: 'var(--color-bg)' }}>
+    <div className="flex h-screen overflow-hidden bg-background">
       {/* Sidebar */}
       <aside
-        className="flex flex-col shrink-0 overflow-hidden transition-all"
-        style={{
-          width: collapsed ? '48px' : '200px',
-          backgroundColor: 'var(--color-bg-elevated)',
-          borderRight: '1px solid var(--color-border)',
-          transitionDuration: 'var(--transition-normal)',
-        }}
+        className="flex flex-col shrink-0 overflow-hidden border-r border-border bg-card transition-all duration-200"
+        style={{ width: collapsed ? '52px' : '210px' }}
       >
         {/* Header */}
-        <div
-          className="flex items-center justify-between shrink-0"
-          style={{ height: '40px', padding: '0 var(--space-4)' }}
-        >
+        <div className="flex items-center justify-between h-12 px-3 shrink-0">
           {!collapsed && (
-            <span
-              className="font-semibold truncate"
-              style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text)' }}
-            >
-              PT-Reseeder
+            <span className="text-sm font-semibold text-foreground tracking-tight truncate">
+              ✦ PT-Reseeder
             </span>
           )}
           <button
             onClick={() => setCollapsed(!collapsed)}
-            className="flex items-center justify-center shrink-0 rounded cursor-pointer"
-            style={{
-              width: '24px',
-              height: '24px',
-              color: 'var(--color-text-muted)',
-              transition: 'color var(--transition-fast)',
-            }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--color-text)')}
-            onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--color-text-muted)')}
+            className="flex items-center justify-center shrink-0 w-7 h-7 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors duration-150 cursor-pointer"
             title={collapsed ? '展开侧栏' : '收起侧栏'}
           >
             {collapsed ? icons.chevronRight : icons.chevronLeft}
@@ -168,95 +149,38 @@ export default function AppLayout() {
         </div>
 
         {/* Nav */}
-        <nav className="flex-1 overflow-y-auto" style={{ padding: 'var(--space-2)' }}>
+        <nav className="flex-1 overflow-y-auto px-2 py-1">
           {navItems.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
               end={item.end}
-              className="flex items-center gap-2 rounded no-underline"
-              style={({ isActive }) => ({
-                padding: collapsed ? 'var(--space-3)' : 'var(--space-3) var(--space-4)',
-                marginBottom: 'var(--space-1)',
-                fontSize: 'var(--text-sm)',
-                color: isActive ? 'var(--color-accent)' : 'var(--color-text-secondary)',
-                backgroundColor: isActive ? 'var(--color-accent-subtle)' : 'transparent',
-                borderRadius: 'var(--radius-sm)',
-                transition: `background-color var(--transition-fast), color var(--transition-fast)`,
-                justifyContent: collapsed ? 'center' : 'flex-start',
-              })}
-              onMouseEnter={(e) => {
-                if (!e.currentTarget.getAttribute('aria-current')) {
-                  e.currentTarget.style.backgroundColor = 'var(--color-bg-muted)'
-                }
-              }}
-              onMouseLeave={(e) => {
-                const isActive = e.currentTarget.getAttribute('aria-current') === 'page'
-                e.currentTarget.style.backgroundColor = isActive ? 'var(--color-accent-subtle)' : 'transparent'
-              }}
+              className={({ isActive }) => [
+                'flex items-center gap-2.5 rounded-md no-underline mb-0.5 transition-colors duration-150',
+                collapsed ? 'justify-center px-2 py-2' : 'px-3 py-2',
+                isActive
+                  ? 'bg-accent/10 text-accent'
+                  : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+              ].join(' ')}
             >
               <span className="shrink-0 flex items-center">{item.icon}</span>
-              {!collapsed && <span className="truncate">{item.label}</span>}
+              {!collapsed && <span className="text-sm truncate">{item.label}</span>}
             </NavLink>
           ))}
         </nav>
 
         {/* Bottom actions */}
-        <div
-          className="flex shrink-0 border-t"
-          style={{
-            borderColor: 'var(--color-border)',
-            padding: 'var(--space-3)',
-            gap: 'var(--space-2)',
-            justifyContent: collapsed ? 'center' : 'flex-start',
-            flexDirection: collapsed ? 'column' : 'row',
-            alignItems: 'center',
-          }}
-        >
+        <div className="flex shrink-0 border-t border-border p-2 items-center justify-center gap-1">
           <button
             onClick={cycleTheme}
-            className="flex items-center justify-center rounded cursor-pointer"
-            style={{
-              width: '28px',
-              height: '28px',
-              color: 'var(--color-text-muted)',
-              backgroundColor: 'transparent',
-              border: 'none',
-              transition: 'color var(--transition-fast), background-color var(--transition-fast)',
-              borderRadius: 'var(--radius-sm)',
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.color = 'var(--color-text)'
-              e.currentTarget.style.backgroundColor = 'var(--color-bg-muted)'
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.color = 'var(--color-text-muted)'
-              e.currentTarget.style.backgroundColor = 'transparent'
-            }}
+            className="flex items-center justify-center w-8 h-8 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors duration-150 cursor-pointer"
             title={`主题: ${theme === 'dark' ? '深色' : theme === 'light' ? '浅色' : '跟随系统'}`}
           >
             {themeIcon}
           </button>
           <button
             onClick={handleLogout}
-            className="flex items-center justify-center rounded cursor-pointer"
-            style={{
-              width: '28px',
-              height: '28px',
-              color: 'var(--color-text-muted)',
-              backgroundColor: 'transparent',
-              border: 'none',
-              transition: 'color var(--transition-fast), background-color var(--transition-fast)',
-              borderRadius: 'var(--radius-sm)',
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.color = 'var(--color-error)'
-              e.currentTarget.style.backgroundColor = 'var(--color-bg-muted)'
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.color = 'var(--color-text-muted)'
-              e.currentTarget.style.backgroundColor = 'transparent'
-            }}
+            className="flex items-center justify-center w-8 h-8 rounded-md text-muted-foreground hover:text-destructive hover:bg-muted transition-colors duration-150 cursor-pointer"
             title="登出"
           >
             {icons.logOut}
@@ -265,7 +189,7 @@ export default function AppLayout() {
       </aside>
 
       {/* Main content */}
-      <main className="flex-1 overflow-auto" style={{ padding: 'var(--space-6)' }}>
+      <main className="flex-1 overflow-auto p-6">
         <Outlet />
       </main>
     </div>

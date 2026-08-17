@@ -38,17 +38,17 @@ function isTauriDesktop(): boolean {
 function statusBadgeClass(status: string): string {
   switch (status) {
     case 'pending':
-      return 'text-[var(--color-warning)]'
+      return 'text-warning'
     case 'approved':
-      return 'text-[var(--color-info)]'
+      return 'text-accent'
     case 'submitted':
-      return 'text-[var(--color-success)]'
+      return 'text-success'
     case 'failed':
-      return 'text-[var(--color-error)]'
+      return 'text-destructive'
     case 'rejected':
-      return 'text-[var(--color-text-muted)]'
+      return 'text-muted-foreground'
     default:
-      return 'text-[var(--color-text)]'
+      return 'text-foreground'
   }
 }
 
@@ -214,22 +214,22 @@ export default function RepostPage() {
     <div>
       <PageHeader title="转种队列" />
 
-      <p className="text-[var(--text-sm)] text-[var(--color-text-muted)] mb-[var(--space-5)]">
+      <p className="text-sm text-muted-foreground mb-4">
         管理转种条目的审核、自动填充与提交。
       </p>
 
       {/* Status Filter Tabs */}
-      <div className="flex flex-wrap gap-[var(--space-2)] mb-[var(--space-5)]">
+      <div className="flex flex-wrap gap-1 mb-4">
         {STATUS_TABS.map((tab) => (
           <button
             key={tab.value}
             type="button"
             onClick={() => setActiveTab(tab.value)}
             className={[
-              'px-[var(--space-3)] py-[var(--space-1)] rounded-[var(--radius-md)] text-[var(--text-sm)] border transition-colors duration-[var(--transition-fast)] cursor-pointer',
+              'px-2 py-0.5 rounded-lg text-sm border transition-colors duration-150 cursor-pointer',
               activeTab === tab.value
-                ? 'bg-[var(--color-primary)] text-white border-[var(--color-primary)]'
-                : 'bg-[var(--color-bg-elevated)] text-[var(--color-text-secondary)] border-[var(--color-border)] hover:bg-[var(--color-bg-subtle)]',
+                ? 'bg-primary text-white border-primary'
+                : 'bg-card text-foreground/70 border-border hover:bg-muted',
             ].join(' ')}
           >
             {tab.label}
@@ -240,8 +240,8 @@ export default function RepostPage() {
       {queue.isLoading && <LoadingSkeleton variant="table" rows={5} />}
 
       {queue.isError && (
-        <div className="flex flex-col items-center justify-center py-[var(--space-8)] gap-[var(--space-4)]">
-          <p className="text-[var(--text-sm)] text-[var(--color-error)] m-0">
+        <div className="flex flex-col items-center justify-center py-6 gap-3">
+          <p className="text-sm text-destructive m-0">
             加载转种队列失败：{formatApiError(queue.error, '未知错误')}
           </p>
           <Button variant="secondary" size="sm" onClick={() => queue.refetch()}>
@@ -258,14 +258,14 @@ export default function RepostPage() {
       )}
 
       {!queue.isLoading && !queue.isError && list.length > 0 && (
-        <div className="overflow-x-auto border border-[var(--color-border)] rounded-[var(--radius-md)]">
-          <table className="w-full border-collapse text-[var(--text-sm)]">
+        <div className="overflow-x-auto border border-border rounded-lg">
+          <table className="w-full border-collapse text-sm">
             <thead>
-              <tr className="bg-[var(--color-bg-subtle)] border-b border-[var(--color-border)]">
+              <tr className="bg-muted border-b border-border">
                 {['来源站点→目标站点', '种子ID', '状态', '备注', '时间', '操作'].map((header) => (
                   <th
                     key={header}
-                    className="text-left px-[var(--space-4)] h-7 text-[var(--text-xs)] font-medium text-[var(--color-text-secondary)] whitespace-nowrap"
+                    className="text-left px-4 h-7 text-xs font-medium text-foreground/70 whitespace-nowrap"
                   >
                     {header}
                   </th>
@@ -276,25 +276,25 @@ export default function RepostPage() {
               {list.map((entry) => (
                 <tr
                   key={entry.id}
-                  className="border-b border-[var(--color-border-subtle)] last:border-b-0 hover:bg-[var(--color-bg-subtle)] transition-colors duration-[var(--transition-fast)]"
+                  className="border-b border-border last:border-b-0 hover:bg-muted transition-colors duration-150"
                 >
-                  <td className="px-[var(--space-4)] h-7 text-[var(--color-text)] whitespace-nowrap">
+                  <td className="px-4 h-7 text-foreground whitespace-nowrap">
                     {entry.source_site_name} → {entry.target_site_name}
                   </td>
-                  <td className="px-[var(--space-4)] h-7 text-[var(--color-text)] whitespace-nowrap">
+                  <td className="px-4 h-7 text-foreground whitespace-nowrap">
                     {entry.source_torrent_id}
                   </td>
-                  <td className={`px-[var(--space-4)] h-7 whitespace-nowrap font-medium ${statusBadgeClass(entry.status)}`}>
+                  <td className={`px-4 h-7 whitespace-nowrap font-medium ${statusBadgeClass(entry.status)}`}>
                     {statusLabel(entry.status)}
                   </td>
-                  <td className="px-[var(--space-4)] h-7 text-[var(--color-text-muted)] max-w-[200px] truncate">
+                  <td className="px-4 h-7 text-muted-foreground max-w-[200px] truncate">
                     {entry.review_notes || '—'}
                   </td>
-                  <td className="px-[var(--space-4)] h-7 text-[var(--color-text-muted)] whitespace-nowrap">
+                  <td className="px-4 h-7 text-muted-foreground whitespace-nowrap">
                     {formatShortTime(entry.created_at)}
                   </td>
-                  <td className="px-[var(--space-4)] py-[var(--space-2)]">
-                    <div className="flex items-center gap-[var(--space-2)]">
+                  <td className="px-4 py-1">
+                    <div className="flex items-center gap-1">
                       {entry.status === 'pending' && (
                         <>
                           <Button
@@ -388,14 +388,14 @@ export default function RepostPage() {
         }
       >
         {reviewState && (
-          <div className="flex flex-col gap-[var(--space-4)]">
-            <p className="text-[var(--text-sm)] text-[var(--color-text)] m-0">
+          <div className="flex flex-col gap-3">
+            <p className="text-sm text-foreground m-0">
               {reviewState.entry.source_site_name} → {reviewState.entry.target_site_name}（种子 {reviewState.entry.source_torrent_id}）
             </p>
-            <div className="flex flex-col gap-[var(--space-2)]">
-              <label className="text-[var(--text-sm)] text-[var(--color-text-secondary)]">操作</label>
-              <div className="flex gap-[var(--space-3)]">
-                <label className="inline-flex items-center gap-[var(--space-1)] text-[var(--text-sm)] cursor-pointer">
+            <div className="flex flex-col gap-1">
+              <label className="text-sm text-foreground/70">操作</label>
+              <div className="flex gap-2">
+                <label className="inline-flex items-center gap-0.5 text-sm cursor-pointer">
                   <input
                     type="radio"
                     name="review-action"
@@ -404,7 +404,7 @@ export default function RepostPage() {
                   />
                   批准
                 </label>
-                <label className="inline-flex items-center gap-[var(--space-1)] text-[var(--text-sm)] cursor-pointer">
+                <label className="inline-flex items-center gap-0.5 text-sm cursor-pointer">
                   <input
                     type="radio"
                     name="review-action"
@@ -415,10 +415,10 @@ export default function RepostPage() {
                 </label>
               </div>
             </div>
-            <div className="flex flex-col gap-[var(--space-2)]">
-              <label className="text-[var(--text-sm)] text-[var(--color-text-secondary)]">备注</label>
+            <div className="flex flex-col gap-1">
+              <label className="text-sm text-foreground/70">备注</label>
               <textarea
-                className="w-full min-h-[80px] p-[var(--space-3)] rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-bg)] text-[var(--text-sm)] text-[var(--color-text)] resize-y"
+                className="w-full min-h-[80px] p-2 rounded-lg border border-border bg-background text-sm text-foreground resize-y"
                 placeholder="可选备注..."
                 value={reviewState.notes}
                 onChange={(e) => setReviewState((s) => s ? { ...s, notes: e.target.value } : s)}

@@ -64,29 +64,29 @@ function SettingsTable({
 }) {
   return (
     <section>
-      <h2 className="mb-[var(--space-4)] text-[var(--text-lg)] font-semibold text-[var(--color-text)]">
+      <h2 className="mb-3 text-base font-semibold text-foreground">
         应用配置
       </h2>
 
       {entries.length === 0 ? (
-        <div className="border border-[var(--color-border)] rounded-[var(--radius-md)]">
+        <div className="border border-border rounded-lg">
           <EmptyState title="暂无设置项" description="还没有任何配置，可在下方添加。" />
         </div>
       ) : (
-        <div className="overflow-x-auto border border-[var(--color-border)] rounded-[var(--radius-md)]">
-          <table className="w-full border-collapse text-[var(--text-sm)]">
+        <div className="overflow-x-auto border border-border rounded-lg">
+          <table className="w-full border-collapse text-sm">
             <thead>
-              <tr className="bg-[var(--color-bg-subtle)] border-b border-[var(--color-border)]">
-                <th className="text-left px-[var(--space-4)] py-[var(--space-2)] text-[var(--text-xs)] font-medium text-[var(--color-text-secondary)] whitespace-nowrap w-[22%]">
+              <tr className="bg-muted border-b border-border">
+                <th className="text-left px-4 py-1 text-xs font-medium text-foreground/70 whitespace-nowrap w-[22%]">
                   设置项
                 </th>
-                <th className="text-left px-[var(--space-4)] py-[var(--space-2)] text-[var(--text-xs)] font-medium text-[var(--color-text-secondary)]">
+                <th className="text-left px-4 py-1 text-xs font-medium text-foreground/70">
                   值
                 </th>
-                <th className="text-left px-[var(--space-4)] py-[var(--space-2)] text-[var(--text-xs)] font-medium text-[var(--color-text-secondary)] whitespace-nowrap w-[140px]">
+                <th className="text-left px-4 py-1 text-xs font-medium text-foreground/70 whitespace-nowrap w-[140px]">
                   更新时间
                 </th>
-                <th className="text-left px-[var(--space-4)] py-[var(--space-2)] text-[var(--text-xs)] font-medium text-[var(--color-text-secondary)] whitespace-nowrap w-[72px]">
+                <th className="text-left px-4 py-1 text-xs font-medium text-foreground/70 whitespace-nowrap w-[72px]">
                   操作
                 </th>
               </tr>
@@ -140,19 +140,19 @@ function SettingRow({
   }
 
   return (
-    <tr className="border-b border-[var(--color-border-subtle)] last:border-b-0 align-top hover:bg-[var(--color-bg-subtle)]">
-      <td className="px-[var(--space-4)] py-[var(--space-3)]">
-        <div className="font-semibold text-[var(--color-text)] leading-[var(--leading-tight)]">
+    <tr className="border-b border-border last:border-b-0 align-top hover:bg-muted">
+      <td className="px-4 py-2">
+        <div className="font-semibold text-foreground leading-tight">
           {labelForKey(entry.key)}
         </div>
-        <div className="mt-[var(--space-1)] text-[var(--text-xs)] text-[var(--color-text-muted)] font-mono">
+        <div className="mt-0.5 text-xs text-muted-foreground font-mono">
           {entry.key}
         </div>
       </td>
-      <td className="px-[var(--space-4)] py-[var(--space-3)]">
-        <div className="flex items-center gap-[var(--space-2)]">
+      <td className="px-4 py-2">
+        <div className="flex items-center gap-1">
           {isSeedingSize ? (
-            <label className="inline-flex items-center gap-[var(--space-2)] text-[var(--text-sm)] text-[var(--color-text)] cursor-pointer">
+            <label className="inline-flex items-center gap-1 text-sm text-foreground cursor-pointer">
               <input
                 type="checkbox"
                 checked={value === 'true'}
@@ -160,7 +160,7 @@ function SettingRow({
                   setValue(e.target.checked ? 'true' : 'false')
                   setSaveError(null)
                 }}
-                className="accent-[var(--color-accent)]"
+                className="accent-accent"
               />
               <span>{value === 'true' ? '已开启' : '已关闭'}</span>
             </label>
@@ -187,20 +187,20 @@ function SettingRow({
           )}
         </div>
         {isSeedingSize && (
-          <div className="mt-[var(--space-1)] text-[var(--text-xs)] text-[var(--color-text-muted)]">
+          <div className="mt-0.5 text-xs text-muted-foreground">
             开启后，NexusPHP 用户信息刷新会额外请求一次当前做种列表。
           </div>
         )}
         {saveError && (
-          <div className="mt-[var(--space-1)] text-[var(--text-xs)] text-[var(--color-error)]">
+          <div className="mt-0.5 text-xs text-destructive">
             {saveError}
           </div>
         )}
       </td>
-      <td className="px-[var(--space-4)] py-[var(--space-3)] text-[var(--color-text-muted)] whitespace-nowrap">
+      <td className="px-4 py-2 text-muted-foreground whitespace-nowrap">
         {formatShortTime(entry.updated_at)}
       </td>
-      <td className="px-[var(--space-4)] py-[var(--space-3)]">
+      <td className="px-4 py-2">
         <Button type="button" size="sm" loading={saving} onClick={() => void handleSave()}>
           {saving ? '保存中...' : '保存'}
         </Button>
@@ -248,21 +248,21 @@ function AddSettingForm({
   }
 
   return (
-    <div className="mt-[var(--space-6)] pt-[var(--space-5)] border-t border-[var(--color-border-subtle)]">
-      <h3 className="mb-[var(--space-2)] text-[var(--text-base)] font-medium text-[var(--color-text)]">
+    <div className="mt-5 pt-4 border-t border-border">
+      <h3 className="mb-1 text-sm font-medium text-foreground">
         添加设置项
       </h3>
-      <p className="mb-[var(--space-4)] text-[var(--text-xs)] text-[var(--color-text-muted)] leading-[var(--leading-normal)]">
+      <p className="mb-3 text-xs text-muted-foreground leading-normal">
         可自由添加任意键名，但错误的键/值可能导致功能异常。建议仅添加你明确了解的配置项；未知键不会做
         schema 校验。
       </p>
       {addError && (
-        <div className="mb-[var(--space-3)] text-[var(--text-xs)] text-[var(--color-error)]">
+        <div className="mb-2 text-xs text-destructive">
           {addError}
         </div>
       )}
       <form
-        className="flex flex-wrap items-end gap-[var(--space-3)]"
+        className="flex flex-wrap items-end gap-2"
         onSubmit={(e) => {
           e.preventDefault()
           void handleAdd()

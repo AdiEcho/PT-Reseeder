@@ -20,34 +20,34 @@ function formatApiError(err: unknown, fallback: string): string {
 function statusLabel(status: string): { text: string; className: string } {
   switch (status) {
     case 'success':
-      return { text: '成功', className: 'text-[var(--color-success)]' }
+      return { text: '成功', className: 'text-success' }
     case 'dry_run':
-      return { text: '试运行', className: 'text-[var(--color-accent)]' }
+      return { text: '试运行', className: 'text-accent' }
     case 'failed':
-      return { text: '失败', className: 'text-[var(--color-error)]' }
+      return { text: '失败', className: 'text-destructive' }
     case 'running':
-      return { text: '运行中', className: 'text-[var(--color-accent)]' }
+      return { text: '运行中', className: 'text-accent' }
     case 'partial':
-      return { text: '部分成功', className: 'text-[var(--color-warning)]' }
+      return { text: '部分成功', className: 'text-warning' }
     case 'skipped':
-      return { text: '已跳过', className: 'text-[var(--color-text-muted)]' }
+      return { text: '已跳过', className: 'text-muted-foreground' }
     default:
-      return { text: status, className: 'text-[var(--color-text-muted)]' }
+      return { text: status, className: 'text-muted-foreground' }
   }
 }
 
 function outcomeLabel(outcome?: string | null): { text: string; className: string } {
   switch (outcome) {
     case 'added':
-      return { text: '已添加', className: 'text-[var(--color-success)]' }
+      return { text: '已添加', className: 'text-success' }
     case 'skipped':
-      return { text: '已跳过', className: 'text-[var(--color-text-muted)]' }
+      return { text: '已跳过', className: 'text-muted-foreground' }
     case 'failed':
-      return { text: '失败', className: 'text-[var(--color-error)]' }
+      return { text: '失败', className: 'text-destructive' }
     case 'matched':
-      return { text: '已识别', className: 'text-[var(--color-accent)]' }
+      return { text: '已识别', className: 'text-accent' }
     default:
-      return { text: outcome ?? '—', className: 'text-[var(--color-text-muted)]' }
+      return { text: outcome ?? '—', className: 'text-muted-foreground' }
   }
 }
 
@@ -92,22 +92,22 @@ export default function ReseedPage() {
         title="辅种记录"
         actions={
           taskId ? (
-            <span className="text-[var(--text-sm)] text-[var(--color-text-muted)]">
+            <span className="text-sm text-muted-foreground">
               筛选：任务 #{taskId}
             </span>
           ) : undefined
         }
       />
 
-      <p className="text-[var(--text-sm)] text-[var(--color-text-muted)] mb-[var(--space-5)]">
+      <p className="text-sm text-muted-foreground mb-4">
         查看辅种任务的运行历史和每次运行的详细结果。
       </p>
 
       {runsQuery.isLoading && <LoadingSkeleton variant="table" rows={5} />}
 
       {runsQuery.isError && (
-        <div className="flex flex-col items-center justify-center py-[var(--space-8)] gap-[var(--space-4)]">
-          <p className="text-[var(--text-sm)] text-[var(--color-error)] m-0">
+        <div className="flex flex-col items-center justify-center py-6 gap-3">
+          <p className="text-sm text-destructive m-0">
             加载辅种记录失败：{formatApiError(runsQuery.error, '未知错误')}
           </p>
           <Button variant="secondary" size="sm" onClick={() => runsQuery.refetch()}>
@@ -124,16 +124,16 @@ export default function ReseedPage() {
       )}
 
       {!runsQuery.isLoading && !runsQuery.isError && runs.length > 0 && (
-        <div className="flex flex-col gap-[var(--space-5)]">
+        <div className="flex flex-col gap-5">
           {/* Run history table */}
-          <div className="overflow-x-auto border border-[var(--color-border)] rounded-[var(--radius-md)]">
-            <table className="w-full border-collapse text-[var(--text-sm)]">
+          <div className="overflow-x-auto border border-border rounded-lg">
+            <table className="w-full border-collapse text-sm">
               <thead>
-                <tr className="bg-[var(--color-bg-subtle)] border-b border-[var(--color-border)]">
+                <tr className="bg-muted border-b border-border">
                   {['任务', '状态', '匹配', '成功', '失败', '跳过', '耗时', '大小', '时间'].map((header) => (
                     <th
                       key={header}
-                      className="text-left px-[var(--space-4)] h-7 text-[var(--text-xs)] font-medium text-[var(--color-text-secondary)] whitespace-nowrap"
+                      className="text-left px-4 h-7 text-xs font-medium text-foreground/70 whitespace-nowrap"
                     >
                       {header}
                     </th>
@@ -149,37 +149,37 @@ export default function ReseedPage() {
                       key={run.log_id}
                       onClick={() => setSelectedRunId(isSelected ? 0 : run.log_id)}
                       className={[
-                        'border-b border-[var(--color-border-subtle)] last:border-b-0 cursor-pointer transition-colors duration-[var(--transition-fast)]',
+                        'border-b border-border last:border-b-0 cursor-pointer transition-colors duration-150',
                         isSelected
-                          ? 'bg-[var(--color-bg-elevated)]'
-                          : 'hover:bg-[var(--color-bg-subtle)]',
+                          ? 'bg-card'
+                          : 'hover:bg-muted',
                       ].join(' ')}
                     >
-                      <td className="px-[var(--space-4)] h-7 text-[var(--color-text)] whitespace-nowrap">
+                      <td className="px-4 h-7 text-foreground whitespace-nowrap">
                         {run.task_name ?? `任务 #${run.task_id}`}
                       </td>
-                      <td className={`px-[var(--space-4)] h-7 whitespace-nowrap ${status.className}`}>
+                      <td className={`px-4 h-7 whitespace-nowrap ${status.className}`}>
                         {status.text}
                       </td>
-                      <td className="px-[var(--space-4)] h-7 text-[var(--color-text)] whitespace-nowrap">
+                      <td className="px-4 h-7 text-foreground whitespace-nowrap">
                         {run.matched_count}
                       </td>
-                      <td className="px-[var(--space-4)] h-7 text-[var(--color-success)] whitespace-nowrap">
+                      <td className="px-4 h-7 text-success whitespace-nowrap">
                         {run.succeeded_count}
                       </td>
-                      <td className="px-[var(--space-4)] h-7 text-[var(--color-error)] whitespace-nowrap">
+                      <td className="px-4 h-7 text-destructive whitespace-nowrap">
                         {run.failed_count}
                       </td>
-                      <td className="px-[var(--space-4)] h-7 text-[var(--color-text-muted)] whitespace-nowrap">
+                      <td className="px-4 h-7 text-muted-foreground whitespace-nowrap">
                         {run.history_skipped_count}
                       </td>
-                      <td className="px-[var(--space-4)] h-7 text-[var(--color-text)] whitespace-nowrap">
+                      <td className="px-4 h-7 text-foreground whitespace-nowrap">
                         {formatDurationMs(run.duration_ms)}
                       </td>
-                      <td className="px-[var(--space-4)] h-7 text-[var(--color-text)] whitespace-nowrap">
+                      <td className="px-4 h-7 text-foreground whitespace-nowrap">
                         {run.total_size != null ? formatBytes(run.total_size) : '—'}
                       </td>
-                      <td className="px-[var(--space-4)] h-7 text-[var(--color-text-muted)] whitespace-nowrap">
+                      <td className="px-4 h-7 text-muted-foreground whitespace-nowrap">
                         {formatShortTime(run.created_at)}
                       </td>
                     </tr>
@@ -191,28 +191,28 @@ export default function ReseedPage() {
 
           {/* Detail panel */}
           {selectedRunId > 0 && (
-            <div className="border border-[var(--color-border)] rounded-[var(--radius-md)] p-[var(--space-5)] bg-[var(--color-bg-elevated)]">
-              <h3 className="text-[var(--text-base)] font-medium text-[var(--color-text)] m-0 mb-[var(--space-4)]">
+            <div className="border border-border rounded-lg p-5 bg-card">
+              <h3 className="text-sm font-medium text-foreground m-0 mb-3">
                 运行详情 #{selectedRunId}
               </h3>
 
               {detailQuery.isLoading && <LoadingSkeleton variant="table" rows={3} />}
 
               {detailQuery.isError && (
-                <p className="text-[var(--text-sm)] text-[var(--color-error)] m-0">
+                <p className="text-sm text-destructive m-0">
                   加载详情失败：{formatApiError(detailQuery.error, '未知错误')}
                 </p>
               )}
 
               {!detailQuery.isLoading && !detailQuery.isError && detail && (
                 <div className="overflow-x-auto">
-                  <table className="w-full border-collapse text-[var(--text-sm)]">
+                  <table className="w-full border-collapse text-sm">
                     <thead>
-                      <tr className="bg-[var(--color-bg-subtle)] border-b border-[var(--color-border)]">
+                      <tr className="bg-muted border-b border-border">
                         {['站点', '标题', '保存路径', '大小', '结果'].map((header) => (
                           <th
                             key={header}
-                            className="text-left px-[var(--space-4)] h-7 text-[var(--text-xs)] font-medium text-[var(--color-text-secondary)] whitespace-nowrap"
+                            className="text-left px-4 h-7 text-xs font-medium text-foreground/70 whitespace-nowrap"
                           >
                             {header}
                           </th>
@@ -225,21 +225,21 @@ export default function ReseedPage() {
                         return (
                           <tr
                             key={`${item.pieces_hash}-${idx}`}
-                            className="border-b border-[var(--color-border-subtle)] last:border-b-0"
+                            className="border-b border-border last:border-b-0"
                           >
-                            <td className="px-[var(--space-4)] h-7 text-[var(--color-text)] whitespace-nowrap">
+                            <td className="px-4 h-7 text-foreground whitespace-nowrap">
                               {item.site_name}
                             </td>
-                            <td className="px-[var(--space-4)] h-7 text-[var(--color-text)]" title={item.title ?? ''}>
+                            <td className="px-4 h-7 text-foreground" title={item.title ?? ''}>
                               {truncate(item.title, 60)}
                             </td>
-                            <td className="px-[var(--space-4)] h-7 text-[var(--color-text-muted)] whitespace-nowrap">
+                            <td className="px-4 h-7 text-muted-foreground whitespace-nowrap">
                               {item.save_path}
                             </td>
-                            <td className="px-[var(--space-4)] h-7 text-[var(--color-text)] whitespace-nowrap">
+                            <td className="px-4 h-7 text-foreground whitespace-nowrap">
                               {item.total_size != null ? formatBytes(item.total_size) : '—'}
                             </td>
-                            <td className={`px-[var(--space-4)] h-7 whitespace-nowrap ${outcome.className}`}>
+                            <td className={`px-4 h-7 whitespace-nowrap ${outcome.className}`}>
                               {outcome.text}
                             </td>
                           </tr>
@@ -249,7 +249,7 @@ export default function ReseedPage() {
                         <tr>
                           <td
                             colSpan={5}
-                            className="px-[var(--space-4)] py-[var(--space-4)] text-center text-[var(--color-text-muted)]"
+                            className="px-4 py-3 text-center text-muted-foreground"
                           >
                             此次运行无详细条目。
                           </td>

@@ -70,13 +70,13 @@ function formatApiError(err: unknown, fallback: string): string {
 function statusLabel(status: string): { text: string; className: string } {
   switch (status) {
     case 'running':
-      return { text: '运行中', className: 'text-[var(--color-info)]' }
+      return { text: '运行中', className: 'text-accent' }
     case 'paused':
-      return { text: '已暂停', className: 'text-[var(--color-warning)]' }
+      return { text: '已暂停', className: 'text-warning' }
     case 'error':
-      return { text: '错误', className: 'text-[var(--color-error)]' }
+      return { text: '错误', className: 'text-destructive' }
     default:
-      return { text: '空闲', className: 'text-[var(--color-text-muted)]' }
+      return { text: '空闲', className: 'text-muted-foreground' }
   }
 }
 
@@ -103,32 +103,32 @@ function taskTypeLabel(type: string): string {
 function logStatusLabel(status: string): { text: string; className: string } {
   switch (status) {
     case 'success':
-      return { text: '成功', className: 'text-[var(--color-success)]' }
+      return { text: '成功', className: 'text-success' }
     case 'dry_run':
-      return { text: '试运行', className: 'text-[var(--color-info)]' }
+      return { text: '试运行', className: 'text-accent' }
     case 'failed':
-      return { text: '失败', className: 'text-[var(--color-error)]' }
+      return { text: '失败', className: 'text-destructive' }
     case 'running':
-      return { text: '运行中', className: 'text-[var(--color-info)]' }
+      return { text: '运行中', className: 'text-accent' }
     case 'partial':
-      return { text: '部分成功', className: 'text-[var(--color-warning)]' }
+      return { text: '部分成功', className: 'text-warning' }
     default:
-      return { text: status, className: 'text-[var(--color-text-muted)]' }
+      return { text: status, className: 'text-muted-foreground' }
   }
 }
 
 function outcomeLabel(outcome?: string | null): { text: string; className: string } {
   switch (outcome) {
     case 'added':
-      return { text: '已添加', className: 'text-[var(--color-success)]' }
+      return { text: '已添加', className: 'text-success' }
     case 'skipped':
-      return { text: '已跳过', className: 'text-[var(--color-text-muted)]' }
+      return { text: '已跳过', className: 'text-muted-foreground' }
     case 'failed':
-      return { text: '失败', className: 'text-[var(--color-error)]' }
+      return { text: '失败', className: 'text-destructive' }
     case 'matched':
-      return { text: '已识别', className: 'text-[var(--color-info)]' }
+      return { text: '已识别', className: 'text-accent' }
     default:
-      return { text: outcome ?? '—', className: 'text-[var(--color-text-muted)]' }
+      return { text: outcome ?? '—', className: 'text-muted-foreground' }
   }
 }
 
@@ -151,7 +151,7 @@ function TaskLogsPanel({ taskId }: { taskId: number }) {
   if (logs.isLoading) return <LoadingSkeleton variant="table" rows={3} />
   if (logs.isError) {
     return (
-      <p className="text-[var(--text-xs)] text-[var(--color-error)] m-0">
+      <p className="text-xs text-destructive m-0">
         加载日志失败：{formatApiError(logs.error, '未知错误')}
       </p>
     )
@@ -159,18 +159,18 @@ function TaskLogsPanel({ taskId }: { taskId: number }) {
 
   const list = logs.data ?? []
   if (list.length === 0) {
-    return <p className="text-[var(--text-xs)] text-[var(--color-text-muted)] m-0">暂无运行日志。</p>
+    return <p className="text-xs text-muted-foreground m-0">暂无运行日志。</p>
   }
 
   return (
-    <div className="overflow-x-auto border border-[var(--color-border)] rounded-[var(--radius-md)] mt-[var(--space-2)]">
-      <table className="w-full border-collapse text-[var(--text-xs)]">
+    <div className="overflow-x-auto border border-border rounded-lg mt-1">
+      <table className="w-full border-collapse text-xs">
         <thead>
-          <tr className="bg-[var(--color-bg-subtle)] border-b border-[var(--color-border)]">
+          <tr className="bg-muted border-b border-border">
             {['状态', '匹配', '成功', '失败', '耗时', '时间'].map((h) => (
               <th
                 key={h}
-                className="text-left px-[var(--space-3)] h-6 text-[var(--text-xs)] font-medium text-[var(--color-text-secondary)] whitespace-nowrap"
+                className="text-left px-2 h-6 text-xs font-medium text-foreground/70 whitespace-nowrap"
               >
                 {h}
               </th>
@@ -183,24 +183,24 @@ function TaskLogsPanel({ taskId }: { taskId: number }) {
             return (
               <tr
                 key={log.id}
-                className="border-b border-[var(--color-border-subtle)] last:border-b-0"
+                className="border-b border-border last:border-b-0"
               >
-                <td className={`px-[var(--space-3)] h-6 whitespace-nowrap ${st.className}`}>
+                <td className={`px-2 h-6 whitespace-nowrap ${st.className}`}>
                   {st.text}
                 </td>
-                <td className="px-[var(--space-3)] h-6 text-[var(--color-text)] whitespace-nowrap">
+                <td className="px-2 h-6 text-foreground whitespace-nowrap">
                   {log.matched_count}
                 </td>
-                <td className="px-[var(--space-3)] h-6 text-[var(--color-text)] whitespace-nowrap">
+                <td className="px-2 h-6 text-foreground whitespace-nowrap">
                   {log.succeeded_count}
                 </td>
-                <td className="px-[var(--space-3)] h-6 text-[var(--color-text)] whitespace-nowrap">
+                <td className="px-2 h-6 text-foreground whitespace-nowrap">
                   {log.failed_count}
                 </td>
-                <td className="px-[var(--space-3)] h-6 text-[var(--color-text)] whitespace-nowrap">
+                <td className="px-2 h-6 text-foreground whitespace-nowrap">
                   {formatDurationMs(log.duration_ms)}
                 </td>
-                <td className="px-[var(--space-3)] h-6 text-[var(--color-text)] whitespace-nowrap">
+                <td className="px-2 h-6 text-foreground whitespace-nowrap">
                   {formatShortTime(log.created_at)}
                 </td>
               </tr>
@@ -218,7 +218,7 @@ function DryRunPreviewPanel({ taskId }: { taskId: number }) {
   if (preview.isLoading) return <LoadingSkeleton variant="table" rows={3} />
   if (preview.isError) {
     return (
-      <p className="text-[var(--text-xs)] text-[var(--color-error)] m-0">
+      <p className="text-xs text-destructive m-0">
         加载预览失败：{formatApiError(preview.error, '未知错误')}
       </p>
     )
@@ -226,23 +226,23 @@ function DryRunPreviewPanel({ taskId }: { taskId: number }) {
 
   const data = preview.data
   if (!data) {
-    return <p className="text-[var(--text-xs)] text-[var(--color-text-muted)] m-0">暂无试运行数据。</p>
+    return <p className="text-xs text-muted-foreground m-0">暂无试运行数据。</p>
   }
 
   return (
-    <div className="mt-[var(--space-2)]">
-      <p className="text-[var(--text-xs)] text-[var(--color-text-secondary)] m-0 mb-[var(--space-2)]">
-        预计新增：<span className="font-medium text-[var(--color-info)]">{data.would_add_count}</span> 条
+    <div className="mt-1">
+      <p className="text-xs text-foreground/70 m-0 mb-1">
+        预计新增：<span className="font-medium text-accent">{data.would_add_count}</span> 条
       </p>
       {data.items.length > 0 && (
-        <div className="overflow-x-auto border border-[var(--color-border)] rounded-[var(--radius-md)]">
-          <table className="w-full border-collapse text-[var(--text-xs)]">
+        <div className="overflow-x-auto border border-border rounded-lg">
+          <table className="w-full border-collapse text-xs">
             <thead>
-              <tr className="bg-[var(--color-bg-subtle)] border-b border-[var(--color-border)]">
+              <tr className="bg-muted border-b border-border">
                 {['站点', '标题', '保存路径', '大小', '结果'].map((h) => (
                   <th
                     key={h}
-                    className="text-left px-[var(--space-3)] h-6 text-[var(--text-xs)] font-medium text-[var(--color-text-secondary)] whitespace-nowrap"
+                    className="text-left px-2 h-6 text-xs font-medium text-foreground/70 whitespace-nowrap"
                   >
                     {h}
                   </th>
@@ -255,21 +255,21 @@ function DryRunPreviewPanel({ taskId }: { taskId: number }) {
                 return (
                   <tr
                     key={`${item.pieces_hash}-${idx}`}
-                    className="border-b border-[var(--color-border-subtle)] last:border-b-0"
+                    className="border-b border-border last:border-b-0"
                   >
-                    <td className="px-[var(--space-3)] h-6 text-[var(--color-text)] whitespace-nowrap">
+                    <td className="px-2 h-6 text-foreground whitespace-nowrap">
                       {item.site_name}
                     </td>
-                    <td className="px-[var(--space-3)] h-6 text-[var(--color-text)] max-w-[200px] truncate">
+                    <td className="px-2 h-6 text-foreground max-w-[200px] truncate">
                       {item.title ?? '—'}
                     </td>
-                    <td className="px-[var(--space-3)] h-6 text-[var(--color-text)] max-w-[200px] truncate">
+                    <td className="px-2 h-6 text-foreground max-w-[200px] truncate">
                       {item.save_path}
                     </td>
-                    <td className="px-[var(--space-3)] h-6 text-[var(--color-text)] whitespace-nowrap">
+                    <td className="px-2 h-6 text-foreground whitespace-nowrap">
                       {item.total_size != null ? formatBytes(item.total_size) : '—'}
                     </td>
-                    <td className={`px-[var(--space-3)] h-6 whitespace-nowrap ${oc.className}`}>
+                    <td className={`px-2 h-6 whitespace-nowrap ${oc.className}`}>
                       {oc.text}
                     </td>
                   </tr>
@@ -315,9 +315,9 @@ function TaskForm({
   return (
     <form
       onSubmit={onSubmit}
-      className="mb-[var(--space-6)] p-[var(--space-5)] border border-[var(--color-border)] rounded-[var(--radius-md)] bg-[var(--color-bg-elevated)]"
+      className="mb-5 p-5 border border-border rounded-lg bg-card"
     >
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-[var(--space-5)]">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
         <Input
           label="名称 *"
           placeholder="辅种任务"
@@ -351,18 +351,18 @@ function TaskForm({
       </div>
 
       {/* Multi-select: Sites */}
-      <div className="mt-[var(--space-5)]">
-        <p className="text-[var(--text-sm)] font-medium text-[var(--color-text)] mb-[var(--space-2)] m-0">
+      <div className="mt-4">
+        <p className="text-sm font-medium text-foreground mb-1 m-0">
           关联站点
         </p>
         {siteList.length === 0 ? (
-          <p className="text-[var(--text-xs)] text-[var(--color-text-muted)] m-0">暂无可用站点</p>
+          <p className="text-xs text-muted-foreground m-0">暂无可用站点</p>
         ) : (
-          <div className="flex flex-wrap gap-[var(--space-3)]">
+          <div className="flex flex-wrap gap-2">
             {siteList.map((site) => (
               <label
                 key={site.id}
-                className="inline-flex items-center gap-[var(--space-1)] text-[var(--text-sm)] text-[var(--color-text)] cursor-pointer"
+                className="inline-flex items-center gap-0.5 text-sm text-foreground cursor-pointer"
               >
                 <input
                   type="checkbox"
@@ -377,18 +377,18 @@ function TaskForm({
       </div>
 
       {/* Multi-select: Folders */}
-      <div className="mt-[var(--space-4)]">
-        <p className="text-[var(--text-sm)] font-medium text-[var(--color-text)] mb-[var(--space-2)] m-0">
+      <div className="mt-3">
+        <p className="text-sm font-medium text-foreground mb-1 m-0">
           关联文件夹
         </p>
         {folderList.length === 0 ? (
-          <p className="text-[var(--text-xs)] text-[var(--color-text-muted)] m-0">暂无可用文件夹</p>
+          <p className="text-xs text-muted-foreground m-0">暂无可用文件夹</p>
         ) : (
-          <div className="flex flex-wrap gap-[var(--space-3)]">
+          <div className="flex flex-wrap gap-2">
             {folderList.map((folder) => (
               <label
                 key={folder.id}
-                className="inline-flex items-center gap-[var(--space-1)] text-[var(--text-sm)] text-[var(--color-text)] cursor-pointer"
+                className="inline-flex items-center gap-0.5 text-sm text-foreground cursor-pointer"
               >
                 <input
                   type="checkbox"
@@ -403,18 +403,18 @@ function TaskForm({
       </div>
 
       {/* Multi-select: Source Downloaders */}
-      <div className="mt-[var(--space-4)]">
-        <p className="text-[var(--text-sm)] font-medium text-[var(--color-text)] mb-[var(--space-2)] m-0">
+      <div className="mt-3">
+        <p className="text-sm font-medium text-foreground mb-1 m-0">
           源下载器
         </p>
         {sourceDownloaders.length === 0 ? (
-          <p className="text-[var(--text-xs)] text-[var(--color-text-muted)] m-0">暂无可用源下载器</p>
+          <p className="text-xs text-muted-foreground m-0">暂无可用源下载器</p>
         ) : (
-          <div className="flex flex-wrap gap-[var(--space-3)]">
+          <div className="flex flex-wrap gap-2">
             {sourceDownloaders.map((dl) => (
               <label
                 key={dl.id}
-                className="inline-flex items-center gap-[var(--space-1)] text-[var(--text-sm)] text-[var(--color-text)] cursor-pointer"
+                className="inline-flex items-center gap-0.5 text-sm text-foreground cursor-pointer"
               >
                 <input
                   type="checkbox"
@@ -429,12 +429,12 @@ function TaskForm({
       </div>
 
       {/* Single select: Destination Downloader */}
-      <div className="mt-[var(--space-4)]">
-        <p className="text-[var(--text-sm)] font-medium text-[var(--color-text)] mb-[var(--space-2)] m-0">
+      <div className="mt-3">
+        <p className="text-sm font-medium text-foreground mb-1 m-0">
           目标下载器
         </p>
         {destDownloaders.length === 0 ? (
-          <p className="text-[var(--text-xs)] text-[var(--color-text-muted)] m-0">暂无可用目标下载器</p>
+          <p className="text-xs text-muted-foreground m-0">暂无可用目标下载器</p>
         ) : (
           <Select
             label=""
@@ -451,7 +451,7 @@ function TaskForm({
         )}
       </div>
 
-      <div className="flex justify-end mt-[var(--space-5)]">
+      <div className="flex justify-end mt-4">
         <Button type="submit" loading={isPending}>
           {isPending ? (isEditing ? '保存中...' : '创建中...') : isEditing ? '保存' : '创建'}
         </Button>
@@ -660,7 +660,7 @@ export default function TasksPage() {
         }
       />
 
-      <p className="text-[var(--text-sm)] text-[var(--color-text-muted)] mb-[var(--space-5)]">
+      <p className="text-sm text-muted-foreground mb-4">
         管理辅种任务，配置关联站点、下载器和触发方式。
       </p>
 
@@ -683,8 +683,8 @@ export default function TasksPage() {
       {tasks.isLoading && <LoadingSkeleton variant="table" rows={5} />}
 
       {tasks.isError && (
-        <div className="flex flex-col items-center justify-center py-[var(--space-8)] gap-[var(--space-4)]">
-          <p className="text-[var(--text-sm)] text-[var(--color-error)] m-0">
+        <div className="flex flex-col items-center justify-center py-6 gap-3">
+          <p className="text-sm text-destructive m-0">
             加载任务失败：{formatApiError(tasks.error, '未知错误')}
           </p>
           <Button variant="secondary" size="sm" onClick={() => tasks.refetch()}>
@@ -703,15 +703,15 @@ export default function TasksPage() {
       )}
 
       {!tasks.isLoading && !tasks.isError && list.length > 0 && (
-        <div className="overflow-x-auto border border-[var(--color-border)] rounded-[var(--radius-md)]">
-          <table className="w-full border-collapse text-[var(--text-sm)]">
+        <div className="overflow-x-auto border border-border rounded-lg">
+          <table className="w-full border-collapse text-sm">
             <thead>
-              <tr className="bg-[var(--color-bg-subtle)] border-b border-[var(--color-border)]">
+              <tr className="bg-muted border-b border-border">
                 {['名称', '类型', '触发方式', '状态', '关联', '上次运行', '下次运行', '操作'].map(
                   (header) => (
                     <th
                       key={header}
-                      className="text-left px-[var(--space-4)] h-7 text-[var(--text-xs)] font-medium text-[var(--color-text-secondary)] whitespace-nowrap"
+                      className="text-left px-4 h-7 text-xs font-medium text-foreground/70 whitespace-nowrap"
                     >
                       {header}
                     </th>
@@ -727,37 +727,37 @@ export default function TasksPage() {
                 return (
                   <tr
                     key={task.id}
-                    className="border-b border-[var(--color-border-subtle)] last:border-b-0 hover:bg-[var(--color-bg-subtle)] transition-colors duration-[var(--transition-fast)]"
+                    className="border-b border-border last:border-b-0 hover:bg-muted transition-colors duration-150"
                   >
-                    <td className="px-[var(--space-4)] h-7 text-[var(--color-text)] whitespace-nowrap">
+                    <td className="px-4 h-7 text-foreground whitespace-nowrap">
                       {task.name}
                     </td>
-                    <td className="px-[var(--space-4)] h-7 text-[var(--color-text)] whitespace-nowrap">
+                    <td className="px-4 h-7 text-foreground whitespace-nowrap">
                       {taskTypeLabel(task.task_type)}
                     </td>
-                    <td className="px-[var(--space-4)] h-7 text-[var(--color-text)] whitespace-nowrap">
+                    <td className="px-4 h-7 text-foreground whitespace-nowrap">
                       {triggerTypeLabel(task.trigger_type)}
                       {task.cron_expression && (
-                        <span className="ml-[var(--space-1)] text-[var(--text-xs)] text-[var(--color-text-muted)]">
+                        <span className="ml-0.5 text-xs text-muted-foreground">
                           ({task.cron_expression})
                         </span>
                       )}
                     </td>
-                    <td className={`px-[var(--space-4)] h-7 whitespace-nowrap ${st.className}`}>
+                    <td className={`px-4 h-7 whitespace-nowrap ${st.className}`}>
                       {st.text}
                     </td>
-                    <td className="px-[var(--space-4)] h-7 text-[var(--color-text-secondary)] whitespace-nowrap text-[var(--text-xs)]">
+                    <td className="px-4 h-7 text-foreground/70 whitespace-nowrap text-xs">
                       {associationSummary(task)}
                     </td>
-                    <td className="px-[var(--space-4)] h-7 text-[var(--color-text)] whitespace-nowrap text-[var(--text-xs)]">
+                    <td className="px-4 h-7 text-foreground whitespace-nowrap text-xs">
                       {formatShortTime(task.last_run_at)}
                     </td>
-                    <td className="px-[var(--space-4)] h-7 text-[var(--color-text)] whitespace-nowrap text-[var(--text-xs)]">
+                    <td className="px-4 h-7 text-foreground whitespace-nowrap text-xs">
                       {formatShortTime(task.next_run_at)}
                     </td>
-                    <td className="px-[var(--space-4)] py-[var(--space-2)]">
-                      <div className="flex flex-col gap-[var(--space-2)]">
-                        <div className="flex items-center gap-[var(--space-2)] flex-wrap">
+                    <td className="px-4 py-1">
+                      <div className="flex flex-col gap-1">
+                        <div className="flex items-center gap-1 flex-wrap">
                           <Button variant="secondary" size="sm" onClick={() => openEditForm(task)}>
                             编辑
                           </Button>
@@ -781,17 +781,17 @@ export default function TasksPage() {
                             删除
                           </Button>
                         </div>
-                        <div className="flex items-center gap-[var(--space-3)] text-[var(--text-xs)]">
+                        <div className="flex items-center gap-2 text-xs">
                           <button
                             type="button"
-                            className="text-[var(--color-text-secondary)] hover:text-[var(--color-text)] underline cursor-pointer bg-transparent border-none p-0"
+                            className="text-foreground/70 hover:text-foreground underline cursor-pointer bg-transparent border-none p-0"
                             onClick={() => setExpandedLogs(isExpLogs ? null : task.id)}
                           >
                             {isExpLogs ? '收起日志' : '查看日志'}
                           </button>
                           <button
                             type="button"
-                            className="text-[var(--color-text-secondary)] hover:text-[var(--color-text)] underline cursor-pointer bg-transparent border-none p-0"
+                            className="text-foreground/70 hover:text-foreground underline cursor-pointer bg-transparent border-none p-0"
                             onClick={() => setExpandedPreview(isExpPreview ? null : task.id)}
                           >
                             {isExpPreview ? '收起预览' : '试运行预览'}

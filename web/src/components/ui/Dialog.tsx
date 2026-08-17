@@ -38,30 +38,30 @@ export function Dialog({ open, onClose, title, children, footer }: DialogProps) 
     >
       {/* Backdrop */}
       <div
-        className="absolute inset-0 bg-black/50 transition-opacity duration-[var(--transition-normal)]"
+        className="absolute inset-0 bg-foreground/50 transition-opacity duration-200"
         onClick={onClose}
       />
       {/* Panel */}
       <div
         className={[
-          'relative z-10 w-full max-w-md mx-[var(--space-6)]',
-          'bg-[var(--color-bg-elevated)] border border-[var(--color-border)]',
-          'rounded-[var(--radius-lg)] shadow-[var(--shadow-lg)]',
+          'relative z-10 w-full max-w-md mx-6',
+          'bg-card border border-border',
+          'rounded-xl shadow-lg',
           'flex flex-col max-h-[80vh]',
         ].join(' ')}
       >
         {title && (
-          <div className="px-[var(--space-6)] pt-[var(--space-5)] pb-[var(--space-3)] border-b border-[var(--color-border-subtle)]">
-            <h2 className="text-[var(--text-lg)] font-semibold text-[var(--color-text)]">
+          <div className="px-6 pt-5 pb-3 border-b border-border">
+            <h2 className="text-base font-semibold text-card-foreground">
               {title}
             </h2>
           </div>
         )}
-        <div className="px-[var(--space-6)] py-[var(--space-5)] overflow-y-auto flex-1">
+        <div className="px-6 py-5 overflow-y-auto flex-1">
           {children}
         </div>
         {footer && (
-          <div className="px-[var(--space-6)] py-[var(--space-4)] border-t border-[var(--color-border-subtle)] flex justify-end gap-[var(--space-3)]">
+          <div className="px-6 py-4 border-t border-border flex justify-end gap-3">
             {footer}
           </div>
         )}

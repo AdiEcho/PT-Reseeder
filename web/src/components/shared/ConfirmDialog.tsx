@@ -45,7 +45,7 @@ export function ConfirmDialog({
         </>
       }
     >
-      <p className="text-[var(--text-sm)] text-[var(--color-text-secondary)]">
+      <p className="text-sm text-muted-foreground">
         {message}
       </p>
     </Dialog>

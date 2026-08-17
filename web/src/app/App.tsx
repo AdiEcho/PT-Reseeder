@@ -58,8 +58,8 @@ export default function App() {
           richColors
           toastOptions={{
             style: {
-              fontFamily: 'var(--font-sans)',
-              fontSize: 'var(--text-sm)',
+              fontFamily: 'var(--font-body)',
+              fontSize: '0.875rem',
             },
           }}
         />

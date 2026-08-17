@@ -24,7 +24,7 @@ export function DataTable<T extends Record<string, unknown>>({
 }: DataTableProps<T>) {
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-[var(--space-8)]">
+      <div className="flex items-center justify-center py-10">
         <Spinner size="md" />
       </div>
     )
@@ -35,14 +35,14 @@ export function DataTable<T extends Record<string, unknown>>({
   }
 
   return (
-    <div className="overflow-x-auto border border-[var(--color-border)] rounded-[var(--radius-md)]">
-      <table className="w-full border-collapse text-[var(--text-sm)]">
+    <div className="overflow-x-auto border border-border rounded-lg">
+      <table className="w-full border-collapse text-sm font-body">
         <thead>
-          <tr className="bg-[var(--color-bg-subtle)] border-b border-[var(--color-border)]">
+          <tr className="bg-muted border-b border-border">
             {columns.map((col) => (
               <th
                 key={col.key}
-                className="text-left px-[var(--space-4)] h-7 text-[var(--text-xs)] font-medium text-[var(--color-text-secondary)] whitespace-nowrap"
+                className="text-left px-4 h-9 text-xs font-medium text-muted-foreground whitespace-nowrap"
                 style={col.width ? { width: col.width } : undefined}
               >
                 {col.header}
@@ -54,12 +54,12 @@ export function DataTable<T extends Record<string, unknown>>({
           {data.map((row, idx) => (
             <tr
               key={idx}
-              className="border-b border-[var(--color-border-subtle)] last:border-b-0 hover:bg-[var(--color-bg-subtle)] transition-colors duration-[var(--transition-fast)]"
+              className="border-b border-border last:border-b-0 hover:bg-muted/50 transition-colors duration-150"
             >
               {columns.map((col) => (
                 <td
                   key={col.key}
-                  className="px-[var(--space-4)] h-7 text-[var(--color-text)] whitespace-nowrap"
+                  className="px-4 h-9 text-foreground whitespace-nowrap"
                 >
                   {col.render
                     ? col.render(row)

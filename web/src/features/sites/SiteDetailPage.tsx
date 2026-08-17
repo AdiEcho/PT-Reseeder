@@ -173,8 +173,8 @@ export default function SiteDetailPage() {
     return (
       <div>
         <PageHeader title="站点详情" />
-        <div className="flex flex-col items-center justify-center py-[var(--space-8)] gap-[var(--space-4)]">
-          <p className="text-[var(--text-sm)] text-[var(--color-error)] m-0">
+        <div className="flex flex-col items-center justify-center py-6 gap-3">
+          <p className="text-sm text-destructive m-0">
             加载站点详情失败：{detail.error ? formatApiError(detail.error, '未知错误') : '站点不存在'}
           </p>
           <Button variant="secondary" size="sm" onClick={() => navigate('/sites')}>
@@ -190,7 +190,7 @@ export default function SiteDetailPage() {
       <PageHeader
         title={site.name}
         actions={
-          <div className="flex items-center gap-[var(--space-2)]">
+          <div className="flex items-center gap-1">
             <Button variant="secondary" size="sm" onClick={() => navigate('/sites')}>
               返回列表
             </Button>
@@ -228,11 +228,11 @@ export default function SiteDetailPage() {
       />
 
       {/* Site info card */}
-      <div className="mb-[var(--space-6)] p-[var(--space-5)] border border-[var(--color-border)] rounded-[var(--radius-md)] bg-[var(--color-bg-elevated)]">
-        <h3 className="text-[var(--text-base)] font-medium text-[var(--color-text)] mt-0 mb-[var(--space-4)]">
+      <div className="mb-5 p-5 border border-border rounded-lg bg-card">
+        <h3 className="text-sm font-medium text-foreground mt-0 mb-3">
           站点信息
         </h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-[var(--space-4)]">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           <InfoItem label="URL" value={site.url} />
           <InfoItem label="API URL" value={site.api_url ?? '—'} />
           <InfoItem label="适配器" value={site.adapter_type} />
@@ -245,16 +245,16 @@ export default function SiteDetailPage() {
             value={site.probe_status === 'success' || site.probe_status === '成功' ? '成功' : site.probe_status === 'failed' || site.probe_status === '失败' ? '失败' : '未探测'}
             valueClassName={
               site.probe_status === 'success' || site.probe_status === '成功'
-                ? 'text-[var(--color-success)]'
+                ? 'text-success'
                 : site.probe_status === 'failed' || site.probe_status === '失败'
-                  ? 'text-[var(--color-error)]'
-                  : 'text-[var(--color-text-muted)]'
+                  ? 'text-destructive'
+                  : 'text-muted-foreground'
             }
           />
           <InfoItem
             label="启用"
             value={site.enabled ? '是' : '否'}
-            valueClassName={site.enabled ? 'text-[var(--color-success)]' : 'text-[var(--color-error)]'}
+            valueClassName={site.enabled ? 'text-success' : 'text-destructive'}
           />
         </div>
       </div>
@@ -263,12 +263,12 @@ export default function SiteDetailPage() {
       {editing && (
         <form
           onSubmit={handleEditSubmit}
-          className="mb-[var(--space-6)] p-[var(--space-5)] border border-[var(--color-border)] rounded-[var(--radius-md)] bg-[var(--color-bg-elevated)]"
+          className="mb-5 p-5 border border-border rounded-lg bg-card"
         >
-          <h3 className="text-[var(--text-base)] font-medium text-[var(--color-text)] mt-0 mb-[var(--space-4)]">
+          <h3 className="text-sm font-medium text-foreground mt-0 mb-3">
             编辑站点
           </h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-[var(--space-5)]">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
             <Input
               label="URL"
               value={editForm.url}
@@ -312,7 +312,7 @@ export default function SiteDetailPage() {
               onChange={(e) => setEditForm((prev) => ({ ...prev, download_interval_ms: e.target.value }))}
             />
           </div>
-          <div className="flex justify-end mt-[var(--space-5)]">
+          <div className="flex justify-end mt-4">
             <Button type="submit" loading={updateSite.isPending}>
               {updateSite.isPending ? '保存中...' : '保存'}
             </Button>
@@ -322,32 +322,32 @@ export default function SiteDetailPage() {
 
       {/* Probe detail */}
       {probeDetail && (
-        <div className="mb-[var(--space-6)] p-[var(--space-5)] border border-[var(--color-border)] rounded-[var(--radius-md)] bg-[var(--color-bg-elevated)]">
-          <h3 className="text-[var(--text-base)] font-medium text-[var(--color-text)] mt-0 mb-[var(--space-4)]">
+        <div className="mb-5 p-5 border border-border rounded-lg bg-card">
+          <h3 className="text-sm font-medium text-foreground mt-0 mb-3">
             探测详情
           </h3>
 
           {probeDetail.passkey_error && (
-            <p className="text-[var(--text-sm)] text-[var(--color-error)] mb-[var(--space-3)]">
+            <p className="text-sm text-destructive mb-2">
               Passkey 错误：{probeDetail.passkey_error}
             </p>
           )}
 
           {probeDetail.api_reachable && (
-            <div className="mb-[var(--space-3)]">
+            <div className="mb-2">
               <ProbeFieldRow field={probeDetail.api_reachable} />
             </div>
           )}
 
           {probeDetail.user_info_fields.length > 0 && (
-            <div className="overflow-x-auto border border-[var(--color-border)] rounded-[var(--radius-sm)]">
-              <table className="w-full border-collapse text-[var(--text-sm)]">
+            <div className="overflow-x-auto border border-border rounded-md">
+              <table className="w-full border-collapse text-sm">
                 <thead>
-                  <tr className="bg-[var(--color-bg-subtle)] border-b border-[var(--color-border)]">
+                  <tr className="bg-muted border-b border-border">
                     {['字段', '状态', '预览值', '错误'].map((h) => (
                       <th
                         key={h}
-                        className="text-left px-[var(--space-4)] h-7 text-[var(--text-xs)] font-medium text-[var(--color-text-secondary)] whitespace-nowrap"
+                        className="text-left px-4 h-7 text-xs font-medium text-foreground/70 whitespace-nowrap"
                       >
                         {h}
                       </th>
@@ -358,22 +358,22 @@ export default function SiteDetailPage() {
                   {probeDetail.user_info_fields.map((f) => (
                     <tr
                       key={f.field_name}
-                      className="border-b border-[var(--color-border-subtle)] last:border-b-0"
+                      className="border-b border-border last:border-b-0"
                     >
-                      <td className="px-[var(--space-4)] h-7 text-[var(--color-text)] whitespace-nowrap">
+                      <td className="px-4 h-7 text-foreground whitespace-nowrap">
                         {fieldLabel(f.field_name)}
                       </td>
                       <td
-                        className={`px-[var(--space-4)] h-7 whitespace-nowrap ${
-                          f.success ? 'text-[var(--color-success)]' : 'text-[var(--color-error)]'
+                        className={`px-4 h-7 whitespace-nowrap ${
+                          f.success ? 'text-success' : 'text-destructive'
                         }`}
                       >
                         {f.success ? '成功' : '失败'}
                       </td>
-                      <td className="px-[var(--space-4)] h-7 text-[var(--color-text-muted)] whitespace-nowrap">
+                      <td className="px-4 h-7 text-muted-foreground whitespace-nowrap">
                         {f.value_preview ?? '—'}
                       </td>
-                      <td className="px-[var(--space-4)] h-7 text-[var(--color-error)] whitespace-nowrap">
+                      <td className="px-4 h-7 text-destructive whitespace-nowrap">
                         {f.error ?? '—'}
                       </td>
                     </tr>
@@ -387,11 +387,11 @@ export default function SiteDetailPage() {
 
       {/* User stats */}
       {userStats && (
-        <div className="mb-[var(--space-6)] p-[var(--space-5)] border border-[var(--color-border)] rounded-[var(--radius-md)] bg-[var(--color-bg-elevated)]">
-          <h3 className="text-[var(--text-base)] font-medium text-[var(--color-text)] mt-0 mb-[var(--space-4)]">
+        <div className="mb-5 p-5 border border-border rounded-lg bg-card">
+          <h3 className="text-sm font-medium text-foreground mt-0 mb-3">
             用户统计
           </h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-[var(--space-4)]">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {userStats.uploaded != null && (
               <InfoItem label="上传量" value={formatBytes(userStats.uploaded)} />
             )}
@@ -436,11 +436,11 @@ function InfoItem({
   valueClassName?: string
 }) {
   return (
-    <div className="flex flex-col gap-[var(--space-1)]">
-      <span className="text-[var(--text-xs)] text-[var(--color-text-secondary)] font-medium">
+    <div className="flex flex-col gap-0.5">
+      <span className="text-xs text-foreground/70 font-medium">
         {label}
       </span>
-      <span className={`text-[var(--text-sm)] ${valueClassName ?? 'text-[var(--color-text)]'}`}>
+      <span className={`text-sm ${valueClassName ?? 'text-foreground'}`}>
         {value}
       </span>
     </div>
@@ -449,18 +449,18 @@ function InfoItem({
 
 function ProbeFieldRow({ field }: { field: ProbeFieldResult }) {
   return (
-    <div className="flex items-center gap-[var(--space-3)] text-[var(--text-sm)]">
-      <span className="text-[var(--color-text-secondary)] font-medium">
+    <div className="flex items-center gap-2 text-sm">
+      <span className="text-foreground/70 font-medium">
         {fieldLabel(field.field_name)}:
       </span>
-      <span className={field.success ? 'text-[var(--color-success)]' : 'text-[var(--color-error)]'}>
+      <span className={field.success ? 'text-success' : 'text-destructive'}>
         {field.success ? '成功' : '失败'}
       </span>
       {field.value_preview && (
-        <span className="text-[var(--color-text-muted)]">({field.value_preview})</span>
+        <span className="text-muted-foreground">({field.value_preview})</span>
       )}
       {field.error && (
-        <span className="text-[var(--color-error)]">{field.error}</span>
+        <span className="text-destructive">{field.error}</span>
       )}
     </div>
   )

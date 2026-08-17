@@ -155,12 +155,12 @@ export function FoldersPage() {
       />
 
       {showForm && (
-        <section className="mb-[var(--space-6)] border border-[var(--color-border)] rounded-[var(--radius-md)] p-[var(--space-5)]">
-          <h2 className="text-[var(--text-base)] font-medium text-[var(--color-text)] mb-[var(--space-4)]">
+        <section className="mb-5 border border-border rounded-lg p-5">
+          <h2 className="text-sm font-medium text-foreground mb-3">
             添加文件夹
           </h2>
           <form
-            className="flex flex-wrap items-end gap-[var(--space-4)]"
+            className="flex flex-wrap items-end gap-3"
             onSubmit={handleCreate}
           >
             <div className="min-w-[240px] flex-1">
@@ -201,7 +201,7 @@ export function FoldersPage() {
                         setDlError(undefined)
                       }}
                     />
-                    <p className="mt-[var(--space-1)] text-[var(--text-xs)] text-[var(--color-text-muted)]">
+                    <p className="mt-0.5 text-xs text-muted-foreground">
                       {`下载器列表加载失败（${downloadersQuery.error instanceof Error ? downloadersQuery.error.message : String(downloadersQuery.error)}），可临时填写数字 ID。`}
                     </p>
                   </>
@@ -222,11 +222,11 @@ export function FoldersPage() {
                       }}
                     />
                     {dlError && (
-                      <span className="mt-[var(--space-1)] text-[var(--text-xs)] text-[var(--color-error)]">
+                      <span className="mt-0.5 text-xs text-destructive">
                         {dlError}
                       </span>
                     )}
-                    <p className="mt-[var(--space-1)] text-[var(--text-xs)] text-[var(--color-text-muted)]">
+                    <p className="mt-0.5 text-xs text-muted-foreground">
                       从「下载器管理」中已配置的客户端里选择；列表显示名称与 ID。
                     </p>
                   </>
@@ -238,7 +238,7 @@ export function FoldersPage() {
             </Button>
           </form>
           {formError && (
-            <p className="mt-[var(--space-3)] text-[var(--text-xs)] text-[var(--color-error)]">
+            <p className="mt-2 text-xs text-destructive">
               {formError}
             </p>
           )}
@@ -246,14 +246,14 @@ export function FoldersPage() {
       )}
 
       <section>
-        <h2 className="text-[var(--text-base)] font-medium text-[var(--color-text)] mb-[var(--space-4)]">
+        <h2 className="text-sm font-medium text-foreground mb-3">
           种子文件夹
         </h2>
         {foldersQuery.isPending ? (
           <LoadingSkeleton variant="table" rows={5} />
         ) : foldersQuery.isError ? (
-          <div className="flex flex-col items-start gap-[var(--space-3)] py-[var(--space-6)]">
-            <p className="text-[var(--text-sm)] text-[var(--color-error)]">
+          <div className="flex flex-col items-start gap-2 py-5">
+            <p className="text-sm text-destructive">
               文件夹加载失败：
               {foldersQuery.error instanceof Error
                 ? foldersQuery.error.message
@@ -266,14 +266,14 @@ export function FoldersPage() {
         ) : folders.length === 0 ? (
           <EmptyState icon="📁" title="尚未配置任何文件夹。" />
         ) : (
-          <div className="overflow-x-auto border border-[var(--color-border)] rounded-[var(--radius-md)]">
-            <table className="w-full border-collapse text-[var(--text-sm)]">
+          <div className="overflow-x-auto border border-border rounded-lg">
+            <table className="w-full border-collapse text-sm">
               <thead>
-                <tr className="bg-[var(--color-bg-subtle)] border-b border-[var(--color-border)]">
+                <tr className="bg-muted border-b border-border">
                   {['路径', '种子来源', '下载器', '启用', '上次扫描', '操作'].map((header) => (
                     <th
                       key={header}
-                      className="text-left px-[var(--space-4)] h-7 text-[var(--text-xs)] font-medium text-[var(--color-text-secondary)] whitespace-nowrap"
+                      className="text-left px-4 h-7 text-xs font-medium text-foreground/70 whitespace-nowrap"
                     >
                       {header}
                     </th>
@@ -284,31 +284,31 @@ export function FoldersPage() {
                 {folders.map((folder) => (
                   <tr
                     key={folder.id}
-                    className="border-b border-[var(--color-border-subtle)] last:border-b-0 hover:bg-[var(--color-bg-subtle)] transition-colors duration-[var(--transition-fast)]"
+                    className="border-b border-border last:border-b-0 hover:bg-muted transition-colors duration-150"
                   >
-                    <td className="px-[var(--space-4)] h-7 text-[var(--color-text)] whitespace-nowrap">
+                    <td className="px-4 h-7 text-foreground whitespace-nowrap">
                       {folder.path}
                     </td>
-                    <td className="px-[var(--space-4)] h-7 text-[var(--color-text)] whitespace-nowrap">
+                    <td className="px-4 h-7 text-foreground whitespace-nowrap">
                       {scanModeLabel(folder.scan_mode)}
                     </td>
-                    <td className="px-[var(--space-4)] h-7 text-[var(--color-text-muted)] whitespace-nowrap">
+                    <td className="px-4 h-7 text-muted-foreground whitespace-nowrap">
                       {downloaderLabel(folder.downloader_id, downloaderNames)}
                     </td>
                     <td
                       className={[
-                        'px-[var(--space-4)] h-7 whitespace-nowrap',
+                        'px-4 h-7 whitespace-nowrap',
                         folder.enabled
-                          ? 'text-[var(--color-success)]'
-                          : 'text-[var(--color-text-muted)]',
+                          ? 'text-success'
+                          : 'text-muted-foreground',
                       ].join(' ')}
                     >
                       {folder.enabled ? '是' : '否'}
                     </td>
-                    <td className="px-[var(--space-4)] h-7 text-[var(--color-text-muted)] whitespace-nowrap">
+                    <td className="px-4 h-7 text-muted-foreground whitespace-nowrap">
                       {formatShortTime(folder.last_scanned_at)}
                     </td>
-                    <td className="px-[var(--space-4)] h-7 whitespace-nowrap">
+                    <td className="px-4 h-7 whitespace-nowrap">
                       <Button
                         variant="danger"
                         size="sm"

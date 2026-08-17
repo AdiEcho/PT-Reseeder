@@ -35,8 +35,10 @@ export default function LoginPage() {
 
     try {
       const endpoint = isRegister ? '/api/auth/register' : '/api/auth/login'
-      const res = await api.post<{ username: string }>(endpoint, { username, password })
-      setUser({ username: res.username })
+      await api.post(endpoint, { username, password })
+      // Cookie is set; fetch current user to confirm session
+      const me = await api.get<{ username: string } | null>('/api/auth/me')
+      setUser(me ? { username: me.username } : { username })
       queryClient.invalidateQueries({ queryKey: ['auth'] })
       navigate('/', { replace: true })
     } catch (err) {

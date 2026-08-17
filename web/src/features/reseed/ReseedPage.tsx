@@ -36,7 +36,7 @@ function statusLabel(status: string): { text: string; className: string } {
   }
 }
 
-function outcomeLabel(outcome?: string): { text: string; className: string } {
+function outcomeLabel(outcome?: string | null): { text: string; className: string } {
   switch (outcome) {
     case 'added':
       return { text: '已添加', className: 'text-[var(--color-success)]' }

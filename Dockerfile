@@ -1,4 +1,13 @@
-# Stage 1: cargo-leptos produces hydrate-WASM + SSR binary
+# Stage 1a: Build React frontend with Vite
+FROM node:22-bookworm-slim AS frontend-builder
+
+WORKDIR /app/web
+COPY web/package.json web/package-lock.json ./
+RUN npm ci
+COPY web/ ./
+RUN npm run build
+
+# Stage 1b: Build Rust server binary
 FROM rust:1.87-bookworm AS builder
 
 # Build dependencies (SQLite for sqlx compile-time checks)
@@ -9,12 +18,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy cargo config for rsproxy mirror (needed for China network)
 COPY .cargo/config.toml /usr/local/cargo/config.toml
 
-RUN rustup target add wasm32-unknown-unknown
-RUN cargo install cargo-leptos --locked
-
 WORKDIR /app
 COPY . .
-RUN cargo leptos build --release
+RUN cargo build --release --features headless-browser -p pt-reseeder-server
 
 # Stage 2: Runtime — full rustls chain, no libssl needed
 FROM debian:bookworm-slim
@@ -35,13 +41,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         /home/pt-reseeder/.config \
         /home/pt-reseeder/.config/chromium
 
+COPY --from=frontend-builder /app/web/dist /opt/pt-reseeder/site
 COPY --from=builder /app/target/release/pt-reseeder-server /usr/local/bin/
-COPY --from=builder /app/target/site /opt/pt-reseeder/site
-COPY --from=builder /app/crates/frontend/index.html /opt/pt-reseeder/site/index.html
 COPY --from=builder /app/migrations /opt/pt-reseeder/migrations
 
-ENV LEPTOS_SITE_ROOT=/opt/pt-reseeder/site \
-    LEPTOS_SITE_ADDR=0.0.0.0:3000 \
+ENV SITE_ROOT=/opt/pt-reseeder/site \
+    SERVER_BIND=0.0.0.0:3000 \
     DATABASE_URL=sqlite:///data/pt-reseeder.db \
     DATA_DIR=/data \
     LOG_DIR=/data/logs \

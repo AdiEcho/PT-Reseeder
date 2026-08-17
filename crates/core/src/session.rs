@@ -33,7 +33,7 @@ pub fn is_session_expired(expires_at: &str) -> bool {
 }
 
 /// Name of the session cookie. Single source of truth for both the server
-/// middleware and the Leptos server functions — changing this value logs out
+/// middleware and the auth handlers — changing this value logs out
 /// every existing session.
 pub const SESSION_COOKIE_NAME: &str = "pt_reseeder_session";
 
@@ -110,7 +110,7 @@ fn decode_cookie_value(value: &str) -> String {
 ///
 /// Callers map this onto their own transport-level error (HTTP status, an empty
 /// "who am I" answer, …); the resolution logic itself stays transport-agnostic
-/// so the server middleware and the Leptos server functions can share it.
+/// so the server middleware and the API handlers can share it.
 #[derive(Debug)]
 pub enum SessionOutcome {
     /// A live, unexpired session.

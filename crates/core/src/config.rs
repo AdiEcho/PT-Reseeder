@@ -11,7 +11,7 @@ pub struct AppConfig {
     /// Set via env `COOKIE_SECURE=true` behind TLS termination.
     pub cookie_secure: bool,
     pub data_dir: PathBuf,
-    pub leptos_site_root: PathBuf,
+    pub site_root: PathBuf,
     pub log_dir: PathBuf,
     pub log_retention_days: u32,
     pub log_min_level: String,
@@ -32,7 +32,7 @@ impl Default for AppConfig {
             session_ttl_hours: 24,
             cookie_secure: false,
             data_dir: PathBuf::from("data"),
-            leptos_site_root: PathBuf::from("target/site"),
+            site_root: PathBuf::from("web/dist"),
             log_dir: PathBuf::from("logs"),
             log_retention_days: 30,
             log_min_level: "info".to_string(),
@@ -46,7 +46,7 @@ impl AppConfig {
         Self {
             database_url: std::env::var("DATABASE_URL")
                 .unwrap_or_else(|_| Self::default().database_url),
-            server_bind: std::env::var("LEPTOS_SITE_ADDR")
+            server_bind: std::env::var("SERVER_BIND")
                 .ok()
                 .and_then(|s| s.parse().ok())
                 .unwrap_or_else(|| Self::default().server_bind),
@@ -61,9 +61,9 @@ impl AppConfig {
             data_dir: std::env::var("DATA_DIR")
                 .map(PathBuf::from)
                 .unwrap_or_else(|_| Self::default().data_dir),
-            leptos_site_root: std::env::var("LEPTOS_SITE_ROOT")
+            site_root: std::env::var("SITE_ROOT")
                 .map(PathBuf::from)
-                .unwrap_or_else(|_| Self::default().leptos_site_root),
+                .unwrap_or_else(|_| Self::default().site_root),
             log_dir: std::env::var("LOG_DIR")
                 .map(PathBuf::from)
                 .unwrap_or_else(|_| Self::default().log_dir),
@@ -146,7 +146,7 @@ mod tests {
         assert_eq!(deserialized.session_ttl_hours, config.session_ttl_hours);
         assert_eq!(deserialized.cookie_secure, config.cookie_secure);
         assert_eq!(deserialized.data_dir, config.data_dir);
-        assert_eq!(deserialized.leptos_site_root, config.leptos_site_root);
+        assert_eq!(deserialized.site_root, config.site_root);
         assert_eq!(deserialized.log_dir, config.log_dir);
         assert_eq!(deserialized.log_retention_days, config.log_retention_days);
         assert_eq!(deserialized.log_min_level, config.log_min_level);

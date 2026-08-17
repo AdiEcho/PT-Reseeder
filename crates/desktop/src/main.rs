@@ -41,8 +41,10 @@ fn main() {
                 let data_dir = app.path().app_data_dir()?;
                 std::fs::create_dir_all(&data_dir)?;
 
-                let db_path = data_dir.join("pt-reseeder.db");
-                let database_url = format!("sqlite://{}?mode=rwc", db_path.display());
+                let database_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
+                    let db_path = data_dir.join("pt-reseeder.db");
+                    format!("sqlite://{}?mode=rwc", db_path.display())
+                });
                 let server_cancel = cancel_token.clone();
                 let (addr_tx, addr_rx) = std::sync::mpsc::channel();
 
@@ -60,7 +62,7 @@ fn main() {
                     runtime.block_on(async move {
                         let mut config = AppConfig::load();
                         let bind = std::env::var("PT_RESEEDER_GUI_BIND")
-                            .or_else(|_| std::env::var("LEPTOS_SITE_ADDR"))
+                            .or_else(|_| std::env::var("SERVER_BIND"))
                             .unwrap_or_else(|_| "0.0.0.0:3000".to_string());
                         config.server_bind = match bind.parse() {
                             Ok(addr) => addr,
@@ -72,7 +74,7 @@ fn main() {
                         };
                         config.database_url = database_url;
                         config.data_dir = data_dir.clone();
-                        config.leptos_site_root = site_root;
+                        config.site_root = site_root;
                         // Keep historical logs under the app data dir so the
                         // logs page can read them regardless of process cwd.
                         config.log_dir = data_dir.join("logs");

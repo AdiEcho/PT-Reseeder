@@ -11,11 +11,9 @@ name = "pt-reseeder-server"
 path = "src/main.rs"
 
 [dependencies]
-pt-reseeder-frontend = { path = "../frontend", features = ["ssr"] }
 pt-reseeder-core = { path = "../core" }
-leptos = { workspace = true, features = ["ssr"] }
-leptos_axum = { workspace = true }
 axum = { workspace = true }
+axum-extra = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 tower = "0.5"
@@ -27,9 +25,6 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 chrono = { workspace = true }
 sqlx = { workspace = true }
-# rand / sha2 / hex / axum-extra / time dropped across B5-S1 and B5-S7: the
-# session token helpers moved to pt-reseeder-core, and the cookie builders that
-# needed axum-extra + time lost their last consumer when B3 removed api/auth.rs.
 
 [features]
 headless-browser = ["pt-reseeder-core/headless-browser"]

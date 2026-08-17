@@ -1,9 +1,16 @@
-// Hand-written REST endpoints.
+// REST API endpoints.
 //
-// This layer is an internal implementation detail, not a public API: the browser
-// talks to the app through Leptos server functions. Only two modules remain —
-// `health` for liveness checks, and `repost` for the three endpoints the hydrated
-// page calls directly (review / submit / autofill), which have no server-fn
-// equivalent that also writes `adapted_info_json`.
+// Each domain module exports a `pub fn router() -> Router<AppState>` that mounts
+// its routes. The top-level `build_router` in `app.rs` assembles them under the
+// `/api` prefix with auth and CSRF middleware layers.
+pub mod auth;
+pub mod config;
+pub mod dashboard;
+pub mod downloaders;
+pub mod folders;
 pub mod health;
+pub mod logs;
 pub mod repost;
+pub mod repost_ext;
+pub mod sites;
+pub mod tasks;

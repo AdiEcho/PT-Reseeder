@@ -1,0 +1,77 @@
+/*
+ * PT-Reseeder Design Tokens
+ * Dual theme via data-theme="dark|light" on <html>
+ * Font: Instrument Serif (display), Inter (body)
+ */
+
+@theme {
+  --font-display: 'Instrument Serif', serif;
+  --font-body: 'Inter', sans-serif;
+  --color-background: hsl(0 0% 100%);
+  --color-foreground: hsl(210 14% 17%);
+  --color-primary: hsl(210 14% 17%);
+  --color-primary-foreground: hsl(0 0% 100%);
+  --color-secondary: hsl(0 0% 96%);
+  --color-secondary-foreground: hsl(0 0% 9%);
+  --color-muted: hsl(0 0% 96%);
+  --color-muted-foreground: hsl(184 5% 55%);
+  --color-accent: hsl(239 84% 67%);
+  --color-accent-foreground: hsl(0 0% 100%);
+  --color-destructive: hsl(0 72% 51%);
+  --color-destructive-foreground: hsl(0 0% 100%);
+  --color-success: hsl(142 71% 35%);
+  --color-warning: hsl(38 92% 50%);
+  --color-border: hsl(0 0% 90%);
+  --color-ring: hsl(239 84% 67%);
+  --color-card: hsl(0 0% 100%);
+  --color-card-foreground: hsl(210 14% 17%);
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.07), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -4px rgba(0, 0, 0, 0.04);
+  --shadow-dashboard: 0 25px 80px -12px rgba(0, 0, 0, 0.08), 0 0 0 1px rgba(0, 0, 0, 0.06);
+}
+
+/* ===== Dark theme ===== */
+:root[data-theme="dark"] {
+  --color-background: hsl(222 14% 10%);
+  --color-foreground: hsl(210 20% 92%);
+  --color-primary: hsl(210 20% 92%);
+  --color-primary-foreground: hsl(222 14% 10%);
+  --color-secondary: hsl(220 12% 16%);
+  --color-secondary-foreground: hsl(210 20% 88%);
+  --color-muted: hsl(220 12% 16%);
+  --color-muted-foreground: hsl(215 12% 55%);
+  --color-accent: hsl(239 84% 72%);
+  --color-accent-foreground: hsl(0 0% 100%);
+  --color-destructive: hsl(0 62% 58%);
+  --color-destructive-foreground: hsl(0 0% 100%);
+  --color-success: hsl(142 60% 50%);
+  --color-warning: hsl(38 92% 60%);
+  --color-border: hsl(220 10% 22%);
+  --color-ring: hsl(239 84% 72%);
+  --color-card: hsl(222 12% 13%);
+  --color-card-foreground: hsl(210 20% 92%);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -2px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -4px rgba(0, 0, 0, 0.4);
+  --shadow-dashboard: 0 25px 80px -12px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+
+/* ===== Base styles ===== */
+body {
+  font-family: var(--font-body);
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: var(--color-foreground);
+  background-color: var(--color-background);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  border-color: var(--color-border);
+}

@@ -1,7 +1,3 @@
-// SSR instantiates the same deeply nested Leptos view trees as the frontend
-// crate, so it needs the same query depth headroom — see pt-reseeder-frontend.
-#![recursion_limit = "512"]
-
 pub mod api;
 pub mod app;
 pub mod auth;

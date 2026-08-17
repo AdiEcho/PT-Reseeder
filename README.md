@@ -21,10 +21,11 @@
 | 层级 | 技术 |
 |------|------|
 | 桌面壳 | Tauri 2 |
-| 前端 | Leptos 0.8 (SSR + Hydrate WASM) |
-| 后端 | Axum 0.8 |
+| 前端 | React 19 + Vite 8 + TailwindCSS v4 + shadcn/ui |
+| 后端 | Axum 0.8 (REST API) |
 | 数据库 | SQLite (sqlx) |
-| 样式 | SCSS |
+| 状态管理 | TanStack Query + Zustand |
+| 路由 | React Router v7 |
 
 ## 快速开始
 
@@ -46,15 +47,13 @@ docker compose logs -f
 
 启动后访问 http://localhost:3000
 
-默认数据存储在 `./data/` 目录下（SQLite 数据库 + 配置文件）。
+默认数据存储在 Docker named volume 中（SQLite 数据库 + 配置文件）。
 
 ### 桌面客户端（macOS）
 
 ```bash
 # 安装构建工具
-cargo install cargo-leptos
 cargo install tauri-cli --version '^2'
-rustup target add wasm32-unknown-unknown
 
 # 构建桌面应用
 make build-desktop
@@ -67,22 +66,25 @@ make build-desktop
 ### 环境要求
 
 - Rust 1.75+
-- `cargo-leptos`（`cargo install cargo-leptos`）
-- `wasm32-unknown-unknown` target（`rustup target add wasm32-unknown-unknown`）
+- Node.js 22+
+- npm
 
 ### 开发模式
 
 ```bash
-# 启动开发服务器（热重载）
-cargo leptos watch
+# 启动后端（监听 :3000）
+cargo run -p pt-reseeder-server
+
+# 另开终端，启动前端开发服务器（:5173，代理 API 到 :3000）
+cd web && npm run dev
 ```
 
-访问 http://127.0.0.1:3000
+访问 http://localhost:5173（Vite 代理 `/api` 和 `/ws` 到后端）
 
 ### 构建
 
 ```bash
-# 构建服务端（SSR 二进制 + WASM 前端）
+# 构建服务端 + 前端
 make build-server
 
 # 构建桌面客户端
@@ -98,11 +100,10 @@ make artifacts
 PT-Reseeder/
 ├── crates/
 │   ├── core/          # 核心业务逻辑（站点、辅种、任务等）
-│   ├── frontend/      # Leptos 前端（SSR + Hydrate）
-│   ├── server/        # Axum 服务端
+│   ├── server/        # Axum REST API 服务端
 │   └── desktop/       # Tauri 2 桌面壳
+├── web/               # React 前端 (Vite + TailwindCSS + shadcn/ui)
 ├── migrations/        # SQLite 数据库迁移
-├── style/             # SCSS 样式
 ├── Dockerfile         # Docker 多阶段构建
 ├── docker-compose.yml # Docker Compose 部署
 └── Makefile           # 构建任务
@@ -119,7 +120,7 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      - ./data:/data
+      - pt-reseeder-data:/data
     environment:
       - RUST_LOG=info,pt_reseeder=debug
 ```
@@ -128,9 +129,9 @@ services:
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
-| `LEPTOS_SITE_ADDR` | `0.0.0.0:3000` | 监听地址 |
+| `SERVER_BIND` | `0.0.0.0:3000` | 监听地址 |
 | `DATABASE_URL` | `sqlite:///data/pt-reseeder.db` | 数据库路径 |
-| `PT_RESEEDER_DATA_DIR` | `/data` | 数据目录 |
+| `DATA_DIR` | `/data` | 数据目录 |
 | `RUST_LOG` | `info` | 日志级别 |
 
 ### 数据持久化

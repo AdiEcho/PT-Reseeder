@@ -5,7 +5,8 @@ use crate::ws;
 use axum::{
     body::Body,
     extract::State,
-    http::{Request, StatusCode},
+    http::{header, Request, StatusCode},
+    middleware::Next,
     response::{IntoResponse, Response},
     routing::get,
     Json, Router,
@@ -28,6 +29,16 @@ async fn api_fallback() -> impl IntoResponse {
             error: "not found".to_string(),
         }),
     )
+}
+
+/// Prevent browsers from caching API responses that change on every request.
+async fn no_cache(request: Request<Body>, next: Next) -> Response {
+    let mut response = next.run(request).await;
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        "no-cache, no-store, must-revalidate".parse().unwrap(),
+    );
+    response
 }
 
 /// SPA fallback: serves `index.html` for any non-API, non-WS path so that
@@ -86,7 +97,8 @@ pub fn build_router(state: AppState) -> Router {
         .merge(public_auth)
         .merge(authed_routes)
         .fallback(api_fallback)
-        .layer(axum::middleware::from_fn(csrf_check));
+        .layer(axum::middleware::from_fn(csrf_check))
+        .layer(axum::middleware::from_fn(no_cache));
 
     Router::new()
         .nest("/api", api_routes)

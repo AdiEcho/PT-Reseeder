@@ -41,8 +41,10 @@ fn main() {
                 let data_dir = app.path().app_data_dir()?;
                 std::fs::create_dir_all(&data_dir)?;
 
-                let db_path = data_dir.join("pt-reseeder.db");
-                let database_url = format!("sqlite://{}?mode=rwc", db_path.display());
+                let database_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
+                    let db_path = data_dir.join("pt-reseeder.db");
+                    format!("sqlite://{}?mode=rwc", db_path.display())
+                });
                 let server_cancel = cancel_token.clone();
                 let (addr_tx, addr_rx) = std::sync::mpsc::channel();
 

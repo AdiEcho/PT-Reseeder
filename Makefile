@@ -81,7 +81,7 @@ build-server-windows:
 build-desktop:
 	npm --prefix web ci && npm --prefix web run build
 	command -v cargo-tauri >/dev/null || { echo "cargo-tauri is required. Install with: cargo install tauri-cli --version '^2'"; exit 1; }
-	cd crates/desktop && $(CARGO) tauri build --bundles app
+	cd crates/desktop && $(CARGO) tauri build --bundles app -- --features headless-browser
 
 artifacts: build-server
 	rm -rf "$(SERVER_DIST_DIR)"

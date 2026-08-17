@@ -36,7 +36,7 @@ export default function AuthGuard({ children }: { children: ReactNode }) {
             }}
           />
           <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-            Loading...
+            加载中...
           </span>
         </div>
       </div>

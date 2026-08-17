@@ -38,11 +38,14 @@ export default function LoginPage() {
       await api.post(endpoint, { username, password })
       // Cookie is set; fetch current user to confirm session
       const me = await api.get<{ username: string } | null>('/api/auth/me')
-      setUser(me ? { username: me.username } : { username })
-      queryClient.invalidateQueries({ queryKey: ['auth'] })
+      const user = me ? { username: me.username } : { username }
+      setUser(user)
+      // Write directly into query cache so AuthGuard sees it immediately
+      // (invalidate alone would leave stale null → redirect back to /login)
+      queryClient.setQueryData(['auth', 'me'], user)
       navigate('/', { replace: true })
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Authentication failed')
+      setError(err instanceof Error ? err.message : '认证失败')
     } finally {
       setLoading(false)
     }
@@ -84,7 +87,7 @@ export default function LoginPage() {
             PT-Reseeder
           </h1>
           <p style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-muted)', margin: 0 }}>
-            {isRegister ? 'Create your admin account' : 'Sign in to continue'}
+            {isRegister ? '创建管理员账号' : '登录以继续'}
           </p>
         </div>
 
@@ -95,7 +98,7 @@ export default function LoginPage() {
               htmlFor="username"
               style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-secondary)' }}
             >
-              Username
+              用户名
             </label>
             <input
               id="username"
@@ -127,7 +130,7 @@ export default function LoginPage() {
               htmlFor="password"
               style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-secondary)' }}
             >
-              Password
+              密码
             </label>
             <input
               id="password"
@@ -177,7 +180,7 @@ export default function LoginPage() {
             onMouseEnter={(e) => { if (!loading) e.currentTarget.style.backgroundColor = 'var(--color-accent-hover)' }}
             onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'var(--color-accent)')}
           >
-            {loading ? '...' : isRegister ? 'Create Account' : 'Sign In'}
+            {loading ? '...' : isRegister ? '创建账号' : '登录'}
           </button>
         </form>
       </div>

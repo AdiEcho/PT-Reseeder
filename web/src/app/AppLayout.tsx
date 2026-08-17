@@ -85,15 +85,15 @@ const icons = {
 }
 
 const navItems = [
-  { to: '/', label: 'Dashboard', icon: icons.home, end: true },
-  { to: '/sites', label: 'Sites', icon: icons.globe },
-  { to: '/downloaders', label: 'Downloaders', icon: icons.download },
-  { to: '/folders', label: 'Folders', icon: icons.folder },
-  { to: '/tasks', label: 'Tasks', icon: icons.list },
-  { to: '/reseed', label: 'Reseed', icon: icons.refresh },
-  { to: '/repost', label: 'Repost', icon: icons.send },
-  { to: '/logs', label: 'Logs', icon: icons.fileText },
-  { to: '/settings', label: 'Settings', icon: icons.settings },
+  { to: '/', label: '仪表盘', icon: icons.home, end: true },
+  { to: '/sites', label: '站点', icon: icons.globe },
+  { to: '/downloaders', label: '下载器', icon: icons.download },
+  { to: '/folders', label: '文件夹', icon: icons.folder },
+  { to: '/tasks', label: '任务', icon: icons.list },
+  { to: '/reseed', label: '辅种', icon: icons.refresh },
+  { to: '/repost', label: '转种', icon: icons.send },
+  { to: '/logs', label: '日志', icon: icons.fileText },
+  { to: '/settings', label: '设置', icon: icons.settings },
 ]
 
 export default function AppLayout() {
@@ -161,7 +161,7 @@ export default function AppLayout() {
             }}
             onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--color-text)')}
             onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--color-text-muted)')}
-            title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            title={collapsed ? '展开侧栏' : '收起侧栏'}
           >
             {collapsed ? icons.chevronRight : icons.chevronLeft}
           </button>
@@ -233,7 +233,7 @@ export default function AppLayout() {
               e.currentTarget.style.color = 'var(--color-text-muted)'
               e.currentTarget.style.backgroundColor = 'transparent'
             }}
-            title={`Theme: ${theme}`}
+            title={`主题: ${theme === 'dark' ? '深色' : theme === 'light' ? '浅色' : '跟随系统'}`}
           >
             {themeIcon}
           </button>
@@ -257,7 +257,7 @@ export default function AppLayout() {
               e.currentTarget.style.color = 'var(--color-text-muted)'
               e.currentTarget.style.backgroundColor = 'transparent'
             }}
-            title="Logout"
+            title="登出"
           >
             {icons.logOut}
           </button>

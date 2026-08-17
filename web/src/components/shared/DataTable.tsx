@@ -31,7 +31,7 @@ export function DataTable<T extends Record<string, unknown>>({
   }
 
   if (data.length === 0) {
-    return <>{empty || <EmptyState title="No data" />}</>
+    return <>{empty || <EmptyState title="暂无数据" />}</>
   }
 
   return (

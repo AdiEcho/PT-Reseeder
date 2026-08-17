@@ -1,0 +1,126 @@
+/*
+ * PT-Reseeder Theme Tokens
+ * Dual theme via data-theme="dark|light" on <html>
+ * localStorage key: pt-reseeder-theme
+ */
+
+:root {
+  /* System font stack */
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI",
+    Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "SF Mono", "Fira Code", "Fira Mono", "JetBrains Mono",
+    Menlo, Consolas, monospace;
+
+  /* Spacing — high-density tokens for tables/forms */
+  --space-0: 0px;
+  --space-1: 2px;
+  --space-2: 4px;
+  --space-3: 6px;
+  --space-4: 8px;
+  --space-5: 12px;
+  --space-6: 16px;
+  --space-7: 20px;
+  --space-8: 24px;
+  --space-9: 32px;
+  --space-10: 40px;
+
+  /* Border radius */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-full: 9999px;
+
+  /* Font sizes — compact */
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-base: 13px;
+  --text-lg: 14px;
+  --text-xl: 16px;
+  --text-2xl: 18px;
+  --text-3xl: 22px;
+
+  /* Line heights */
+  --leading-tight: 1.25;
+  --leading-normal: 1.5;
+  --leading-relaxed: 1.625;
+
+  /* Transition */
+  --transition-fast: 100ms ease;
+  --transition-normal: 200ms ease;
+}
+
+/* ===== Light theme (default) ===== */
+:root[data-theme="light"] {
+  --color-bg: #ffffff;
+  --color-bg-subtle: #f8f9fa;
+  --color-bg-muted: #f1f3f5;
+  --color-bg-elevated: #ffffff;
+
+  --color-border: #dee2e6;
+  --color-border-subtle: #e9ecef;
+
+  --color-text: #212529;
+  --color-text-secondary: #495057;
+  --color-text-muted: #868e96;
+  --color-text-disabled: #adb5bd;
+
+  /* Single accent — restrained blue */
+  --color-accent: #1971c2;
+  --color-accent-hover: #1864ab;
+  --color-accent-subtle: #d0ebff;
+  --color-accent-text: #ffffff;
+
+  /* Semantic */
+  --color-success: #2b8a3e;
+  --color-warning: #e67700;
+  --color-error: #c92a2a;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 2px 4px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+/* ===== Dark theme ===== */
+:root[data-theme="dark"] {
+  --color-bg: #1a1b1e;
+  --color-bg-subtle: #212226;
+  --color-bg-muted: #2c2e33;
+  --color-bg-elevated: #25262b;
+
+  --color-border: #373a40;
+  --color-border-subtle: #2c2e33;
+
+  --color-text: #e9ecef;
+  --color-text-secondary: #c1c2c5;
+  --color-text-muted: #909296;
+  --color-text-disabled: #5c5f66;
+
+  --color-accent: #4dabf7;
+  --color-accent-hover: #74c0fc;
+  --color-accent-subtle: #1b3a5c;
+  --color-accent-text: #1a1b1e;
+
+  --color-success: #51cf66;
+  --color-warning: #fcc419;
+  --color-error: #ff6b6b;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 2px 4px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 4px 12px rgba(0, 0, 0, 0.5);
+}
+
+/* ===== Base styles ===== */
+body {
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
+  color: var(--color-text);
+  background-color: var(--color-bg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  border-color: var(--color-border);
+}

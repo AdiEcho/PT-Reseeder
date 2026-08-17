@@ -17,6 +17,9 @@
     "sonner": "^2.0.8",
     "zustand": "^5.0.15"
   },
+  "allowScripts": {
+    "fsevents": true
+  },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^24.13.3",

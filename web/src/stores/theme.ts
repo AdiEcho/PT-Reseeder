@@ -31,6 +31,15 @@ function applyTheme(theme: Theme) {
   }
 }
 
+// Listen for OS-level theme changes when in 'system' mode
+const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
+mediaQuery.addEventListener('change', () => {
+  const state = useThemeStore.getState()
+  if (state.theme === 'system') {
+    applyTheme('system')
+  }
+})
+
 export const useThemeStore = create<ThemeState>((set) => {
   const initial = getInitialTheme()
   applyTheme(initial)

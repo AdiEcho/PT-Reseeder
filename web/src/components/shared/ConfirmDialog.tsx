@@ -1,4 +1,4 @@
-import { Dialog } from '../ui/Dialog'
+import { LegacyDialog as Dialog } from '../ui/LegacyDialog'
 import { Button } from '../ui/Button'
 
 interface ConfirmDialogProps {

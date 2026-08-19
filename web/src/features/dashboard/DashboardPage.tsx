@@ -422,3 +422,5 @@ function UserInfoRow({ site }: { site: SiteUserInfo }) {
     </tr>
   )
 }
+
+export default DashboardPage

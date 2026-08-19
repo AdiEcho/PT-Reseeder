@@ -1,29 +1,27 @@
-import { forwardRef, type InputHTMLAttributes } from 'react'
+import { forwardRef, type TextareaHTMLAttributes } from 'react'
 import { cn } from '@/lib/cn'
 
-export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
+export interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElement> {
   label?: string
   error?: string
 }
 
-const Input = forwardRef<HTMLInputElement, InputProps>(
-  ({ className, type, label, error, id, ...props }, ref) => {
-    const inputId = id || (label ? label.toLowerCase().replace(/\s+/g, '-') : undefined)
-    const errorId = error && inputId ? `${inputId}-error` : undefined
+const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
+  ({ className, label, error, id, ...props }, ref) => {
+    const textareaId = id || (label ? label.toLowerCase().replace(/\s+/g, '-') : undefined)
+    const errorId = error && textareaId ? `${textareaId}-error` : undefined
 
     return (
       <div className="flex flex-col gap-1.5">
         {label && (
-          <label htmlFor={inputId} className="text-sm font-medium text-foreground">
+          <label htmlFor={textareaId} className="text-sm font-medium text-foreground">
             {label}
           </label>
         )}
-        <input
-          type={type}
-          id={inputId}
+        <textarea
+          id={textareaId}
           className={cn(
-            'flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors duration-[var(--duration-normal)]',
-            'file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground',
+            'flex min-h-[60px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs',
             'placeholder:text-muted-foreground',
             'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1',
             'disabled:cursor-not-allowed disabled:opacity-50',
@@ -44,6 +42,6 @@ const Input = forwardRef<HTMLInputElement, InputProps>(
     )
   },
 )
-Input.displayName = 'Input'
+Textarea.displayName = 'Textarea'
 
-export { Input }
+export { Textarea }

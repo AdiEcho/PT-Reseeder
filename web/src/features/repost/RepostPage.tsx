@@ -10,7 +10,7 @@ import {
 import type { RepostEntry, AutofillResponse } from '../../api/types'
 import { ConfirmDialog, EmptyState, LoadingSkeleton, PageHeader } from '../../components/shared'
 import { Button } from '../../components/ui'
-import { Dialog } from '../../components/ui'
+import { LegacyDialog as Dialog } from '../../components/ui/LegacyDialog'
 import { formatShortTime } from '../../lib/time'
 
 type StatusFilter = '' | 'pending' | 'approved' | 'submitted' | 'failed' | 'rejected'

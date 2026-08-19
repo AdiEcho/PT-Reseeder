@@ -14,6 +14,7 @@ export function useSites() {
   return useQuery({
     queryKey: ['sites'],
     queryFn: () => api.get<SiteInfo[]>('/api/sites'),
+    staleTime: 60_000,
   })
 }
 
@@ -22,6 +23,7 @@ export function useSiteDetail(id: number) {
     queryKey: ['sites', id],
     queryFn: () => api.get<SiteDetailData>(`/api/sites/${id}`),
     enabled: id > 0,
+    staleTime: 60_000,
   })
 }
 
@@ -91,5 +93,6 @@ export function useSiteDefinitions() {
   return useQuery({
     queryKey: ['site-definitions'],
     queryFn: () => api.get<SiteDefinitionInfo[]>('/api/site-definitions'),
+    staleTime: 60_000,
   })
 }

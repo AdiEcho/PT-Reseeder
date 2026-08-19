@@ -6,6 +6,7 @@ export function useFolders() {
   return useQuery({
     queryKey: ['folders'],
     queryFn: () => api.get<FolderInfo[]>('/api/folders'),
+    staleTime: 60_000,
   })
 }
 

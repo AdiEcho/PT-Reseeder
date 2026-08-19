@@ -11,6 +11,7 @@ export default defineConfig({
   },
   resolve: {
     alias: {
+      '@': import.meta.dirname + '/src',
       // Stub @tauri-apps/api/core during dev so dynamic import doesn't crash
       '@tauri-apps/api/core': '/src/tauri-stub.ts',
     },

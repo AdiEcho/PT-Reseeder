@@ -1,8 +1,18 @@
 import { useEffect, useRef, useState } from 'react'
+import { useVirtualizer } from '@tanstack/react-virtual'
 import { useLogFiles, useLogs } from '../../api/hooks/logs'
 import type { LogQueryParams } from '../../api/types'
 import { EmptyState, LoadingSkeleton, PageHeader } from '../../components/shared'
-import { Button } from '../../components/ui'
+import {
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  Input,
+  Select,
+} from '../../components/ui'
 import { useLogsWs } from '../../ws/useLogsWs'
 import { formatLocalTime } from '../../lib/time'
 
@@ -17,20 +27,20 @@ function formatApiError(err: unknown, fallback: string): string {
   return err.message
 }
 
-function levelBadge(level: string): { className: string } {
+function levelBadgeVariant(level: string): 'destructive' | 'warning' | 'info' | 'muted' | 'secondary' {
   switch (level.toUpperCase()) {
     case 'ERROR':
-      return { className: 'bg-destructive/10 text-destructive border-destructive/20' }
+      return 'destructive'
     case 'WARN':
-      return { className: 'bg-warning/10 text-warning border-warning/20' }
+      return 'warning'
     case 'INFO':
-      return { className: 'bg-accent/10 text-accent border-accent/20' }
+      return 'info'
     case 'DEBUG':
-      return { className: 'bg-muted text-muted-foreground border-border' }
+      return 'muted'
     case 'TRACE':
-      return { className: 'bg-muted text-muted-foreground border-border' }
+      return 'muted'
     default:
-      return { className: 'bg-muted text-foreground border-border' }
+      return 'secondary'
   }
 }
 
@@ -90,13 +100,20 @@ export default function LogsPage() {
 
   const { lines: wsLines, connected, clear: clearWs } = useLogsWs()
 
-  // Auto-scroll for real-time stream
+  // F3: Virtualize the real-time log stream
   const streamRef = useRef<HTMLDivElement>(null)
+  const streamVirtualizer = useVirtualizer({
+    count: wsLines.length,
+    getScrollElement: () => streamRef.current,
+    estimateSize: () => 24, // line-height matching leading-6
+  })
+
+  // Auto-scroll for real-time stream
   useEffect(() => {
     if (streaming && streamRef.current) {
       streamRef.current.scrollTop = streamRef.current.scrollHeight
     }
-  }, [wsLines, streaming])
+  }, [wsLines.length, streaming])
 
   const fileOptions = [
     { value: '', label: '最新日志' },
@@ -107,83 +124,71 @@ export default function LogsPage() {
     <div>
       <PageHeader title="日志查看器" />
 
-      {/* Filter bar — compact inline row */}
-      <div className="mb-6 rounded-xl border border-border bg-card/80 backdrop-blur-sm px-6 py-5 shadow-sm">
-        <div className="flex flex-wrap items-end gap-4">
-          {/* File select */}
-          <div className="flex flex-col gap-1 min-w-[140px]">
-            <span className="text-xs font-medium text-muted-foreground">日志文件</span>
-            <select
-              value={filename}
-              onChange={(e) => { setFilename(e.target.value); setPage(1) }}
-              className="h-9 px-3 text-sm text-foreground bg-background border border-border rounded-lg cursor-pointer transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              {fileOptions.map((opt) => (
-                <option key={opt.value} value={opt.value}>{opt.label}</option>
-              ))}
-            </select>
-          </div>
+      {/* Filter bar */}
+      <Card className="mb-6">
+        <CardContent className="p-5">
+          <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-end gap-2 sm:gap-4">
+            {/* File select */}
+            <div className="min-w-[140px]">
+              <Select
+                label="日志文件"
+                value={filename}
+                onChange={(e) => { setFilename(e.target.value); setPage(1) }}
+                options={fileOptions}
+              />
+            </div>
 
-          {/* Level select */}
-          <div className="flex flex-col gap-1 min-w-[110px]">
-            <span className="text-xs font-medium text-muted-foreground">级别</span>
-            <select
-              value={level}
-              onChange={(e) => { setLevel(e.target.value); setPage(1) }}
-              className="h-9 px-3 text-sm text-foreground bg-background border border-border rounded-lg cursor-pointer transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              {LEVEL_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>{opt.label}</option>
-              ))}
-            </select>
-          </div>
+            {/* Level select */}
+            <div className="min-w-[110px]">
+              <Select
+                label="级别"
+                value={level}
+                onChange={(e) => { setLevel(e.target.value); setPage(1) }}
+                options={LEVEL_OPTIONS}
+              />
+            </div>
 
-          {/* Keyword search */}
-          <div className="flex flex-col gap-1 flex-1 min-w-[160px]">
-            <span className="text-xs font-medium text-muted-foreground">关键字</span>
-            <input
-              type="text"
-              placeholder="搜索日志内容..."
-              value={keyword}
-              onChange={(e) => setKeyword(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') { setPage(1); logsQuery.refetch() } }}
-              className="h-9 px-3 text-sm text-foreground bg-background border border-border rounded-lg transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring placeholder:text-muted-foreground"
-            />
-          </div>
+            {/* Keyword search */}
+            <div className="flex-1 min-w-[160px]">
+              <Input
+                label="关键字"
+                type="text"
+                placeholder="搜索日志内容..."
+                value={keyword}
+                onChange={(e) => setKeyword(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') { setPage(1); logsQuery.refetch() } }}
+              />
+            </div>
 
-          {/* Task ID */}
-          <div className="flex flex-col gap-1 w-[100px]">
-            <span className="text-xs font-medium text-muted-foreground">任务 ID</span>
-            <input
-              type="text"
-              placeholder="可选"
-              value={taskId}
-              onChange={(e) => setTaskId(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') { setPage(1); logsQuery.refetch() } }}
-              className="h-9 px-3 text-sm text-foreground bg-background border border-border rounded-lg transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring placeholder:text-muted-foreground"
-            />
-          </div>
+            {/* Task ID */}
+            <div className="w-[100px]">
+              <Input
+                label="任务 ID"
+                type="text"
+                placeholder="可选"
+                value={taskId}
+                onChange={(e) => setTaskId(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') { setPage(1); logsQuery.refetch() } }}
+              />
+            </div>
 
-          {/* Page size */}
-          <div className="flex flex-col gap-1 w-[90px]">
-            <span className="text-xs font-medium text-muted-foreground">每页</span>
-            <select
-              value={String(pageSize)}
-              onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1) }}
-              className="h-9 px-3 text-sm text-foreground bg-background border border-border rounded-lg cursor-pointer transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              {PAGE_SIZE_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>{opt.label}</option>
-              ))}
-            </select>
-          </div>
+            {/* Page size */}
+            <div className="w-[90px]">
+              <Select
+                label="每页"
+                value={String(pageSize)}
+                onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1) }}
+                options={PAGE_SIZE_OPTIONS}
+              />
+            </div>
 
-          {/* Search button */}
-          <Button size="md" onClick={() => { setPage(1); logsQuery.refetch() }}>
-            搜索
-          </Button>
-        </div>
-      </div>
+            {/* Search button */}
+            <Button size="md" onClick={() => { setPage(1); logsQuery.refetch() }}>
+              搜索
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Logs table */}
       {logsQuery.isLoading && <LoadingSkeleton variant="table" rows={8} />}
@@ -208,28 +213,28 @@ export default function LogsPage() {
 
       {!logsQuery.isLoading && !logsQuery.isError && entries.length > 0 && (
         <>
-          <div className="overflow-x-auto rounded-xl border border-border shadow-sm">
-            <table className="w-full border-collapse text-sm font-body">
-              <thead>
-                <tr className="bg-muted/60">
-                  <th className="text-left px-5 py-3 text-xs font-medium text-muted-foreground whitespace-nowrap w-[180px]">
-                    时间
-                  </th>
-                  <th className="text-left px-5 py-3 text-xs font-medium text-muted-foreground whitespace-nowrap w-[80px]">
-                    级别
-                  </th>
-                  <th className="text-left px-5 py-3 text-xs font-medium text-muted-foreground whitespace-nowrap w-[180px]">
-                    目标
-                  </th>
-                  <th className="text-left px-5 py-3 text-xs font-medium text-muted-foreground">
-                    消息
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {entries.map((entry, idx) => {
-                  const badge = levelBadge(entry.level)
-                  return (
+          <Card>
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse text-sm font-body">
+                <caption className="sr-only">日志记录</caption>
+                <thead>
+                  <tr className="bg-muted/60">
+                    <th scope="col" className="text-left px-5 py-3 text-xs font-medium text-muted-foreground whitespace-nowrap w-[180px]">
+                      时间
+                    </th>
+                    <th scope="col" className="text-left px-5 py-3 text-xs font-medium text-muted-foreground whitespace-nowrap w-[80px]">
+                      级别
+                    </th>
+                    <th scope="col" className="text-left px-5 py-3 text-xs font-medium text-muted-foreground whitespace-nowrap w-[180px]">
+                      目标
+                    </th>
+                    <th scope="col" className="text-left px-5 py-3 text-xs font-medium text-muted-foreground">
+                      消息
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {entries.map((entry, idx) => (
                     <tr
                       key={`${entry.timestamp}-${idx}`}
                       className="border-t border-border hover:bg-muted/30 transition-colors duration-100"
@@ -238,9 +243,9 @@ export default function LogsPage() {
                         {formatLocalTime(entry.timestamp)}
                       </td>
                       <td className="px-5 py-3 whitespace-nowrap">
-                        <span className={`inline-flex items-center px-2 py-0.5 text-[11px] font-semibold rounded-md border ${badge.className}`}>
+                        <Badge variant={levelBadgeVariant(entry.level)}>
                           {entry.level}
-                        </span>
+                        </Badge>
                       </td>
                       <td className="px-5 py-3 whitespace-nowrap text-muted-foreground font-mono text-xs max-w-[180px] truncate">
                         {entry.target}
@@ -249,11 +254,11 @@ export default function LogsPage() {
                         {entry.message}
                       </td>
                     </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
 
           {/* Pagination */}
           <div className="flex items-center justify-between mt-4 py-2 px-1">
@@ -284,12 +289,10 @@ export default function LogsPage() {
       )}
 
       {/* Real-time stream section */}
-      <div className="mt-6 rounded-xl border border-border overflow-hidden shadow-sm">
-        <div className="flex items-center justify-between px-5 py-3 bg-muted/60 border-b border-border">
+      <Card className="mt-6">
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
           <div className="flex items-center gap-2.5">
-            <h3 className="text-sm font-medium text-foreground m-0">
-              实时日志流
-            </h3>
+            <CardTitle>实时日志流</CardTitle>
             <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <span
                 className={`inline-block w-1.5 h-1.5 rounded-full ${
@@ -313,32 +316,45 @@ export default function LogsPage() {
               清空
             </Button>
           </div>
-        </div>
-        <div
-          ref={streamRef}
-          className="h-52 overflow-y-auto bg-background px-5 py-3 font-mono text-xs leading-6"
-        >
-          {wsLines.length === 0 && (
-            <p className="text-muted-foreground m-0 text-center py-8">等待日志...</p>
-          )}
-          {wsLines.map((line, idx) => (
-            <div key={idx} className="flex gap-2 hover:bg-muted/30 px-1 rounded">
-              <span className="text-muted-foreground shrink-0 tabular-nums">
-                {line.timestamp}
-              </span>
-              <span className={`shrink-0 font-semibold w-[50px] ${levelStreamClass(line.level)}`}>
-                {line.level.padEnd(5)}
-              </span>
-              <span className="text-muted-foreground shrink-0 max-w-[200px] truncate">
-                {line.target}
-              </span>
-              <span className="text-foreground">
-                {line.message}
-              </span>
-            </div>
-          ))}
-        </div>
-      </div>
+        </CardHeader>
+        <CardContent className="pt-0">
+          <div
+            ref={streamRef}
+            className="h-52 overflow-y-auto bg-background rounded-lg border border-border px-5 py-3 font-mono text-xs leading-6"
+          >
+            {wsLines.length === 0 && (
+              <EmptyState icon="📡" title="等待日志..." description="实时日志流连接中" />
+            )}
+            {wsLines.length > 0 && (
+              <div style={{ height: streamVirtualizer.getTotalSize(), position: 'relative' }}>
+                {streamVirtualizer.getVirtualItems().map((vItem) => {
+                  const line = wsLines[vItem.index]
+                  return (
+                    <div
+                      key={vItem.index}
+                      style={{ position: 'absolute', top: vItem.start, height: vItem.size, width: '100%' }}
+                      className="flex gap-2 hover:bg-muted/30 px-1 rounded"
+                    >
+                      <span className="text-muted-foreground shrink-0 tabular-nums">
+                        {line.timestamp}
+                      </span>
+                      <span className={`shrink-0 font-semibold w-[50px] ${levelStreamClass(line.level)}`}>
+                        {line.level.padEnd(5)}
+                      </span>
+                      <span className="text-muted-foreground shrink-0 max-w-[200px] truncate">
+                        {line.target}
+                      </span>
+                      <span className="text-foreground">
+                        {line.message}
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
     </div>
   )
 }

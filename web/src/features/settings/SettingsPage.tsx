@@ -3,7 +3,7 @@ import { toast } from 'sonner'
 import { useConfig, useUpdateConfig } from '../../api/hooks'
 import type { ConfigEntry } from '../../api/types'
 import { EmptyState, LoadingSkeleton, PageHeader } from '../../components/shared'
-import { Button, Input } from '../../components/ui'
+import { Button, Card, CardContent, CardHeader, CardTitle, Input, Label, Switch } from '../../components/ui'
 import { formatShortTime } from '../../lib/time'
 
 const FETCH_SEEDING_SIZE_KEY = 'fetch_seeding_size'
@@ -64,41 +64,43 @@ function SettingsTable({
 }) {
   return (
     <section>
-      <h2 className="mb-3 text-base font-semibold text-foreground">
-        应用配置
-      </h2>
-
-      {entries.length === 0 ? (
-        <div className="border border-border rounded-lg">
-          <EmptyState title="暂无设置项" description="还没有任何配置，可在下方添加。" />
-        </div>
-      ) : (
-        <div className="overflow-x-auto border border-border rounded-lg">
-          <table className="w-full border-collapse text-sm">
-            <thead>
-              <tr className="bg-muted border-b border-border">
-                <th className="text-left px-4 py-1 text-xs font-medium text-foreground/70 whitespace-nowrap w-[22%]">
-                  设置项
-                </th>
-                <th className="text-left px-4 py-1 text-xs font-medium text-foreground/70">
-                  值
-                </th>
-                <th className="text-left px-4 py-1 text-xs font-medium text-foreground/70 whitespace-nowrap w-[140px]">
-                  更新时间
-                </th>
-                <th className="text-left px-4 py-1 text-xs font-medium text-foreground/70 whitespace-nowrap w-[72px]">
-                  操作
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {entries.map((entry) => (
-                <SettingRow key={entry.key} entry={entry} onSave={onSave} />
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <Card>
+        <CardHeader>
+          <CardTitle>应用配置</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {entries.length === 0 ? (
+            <EmptyState title="暂无设置项" description="还没有任何配置，可在下方添加。" />
+          ) : (
+            <div className="overflow-x-auto border border-border rounded-lg">
+              <table className="w-full border-collapse text-sm">
+                <caption className="sr-only">应用设置</caption>
+                <thead>
+                  <tr className="bg-muted border-b border-border">
+                    <th scope="col" className="text-left px-4 py-1 text-xs font-medium text-foreground/70 whitespace-nowrap w-[22%]">
+                      设置项
+                    </th>
+                    <th scope="col" className="text-left px-4 py-1 text-xs font-medium text-foreground/70">
+                      值
+                    </th>
+                    <th scope="col" className="text-left px-4 py-1 text-xs font-medium text-foreground/70 whitespace-nowrap w-[140px]">
+                      更新时间
+                    </th>
+                    <th scope="col" className="text-left px-4 py-1 text-xs font-medium text-foreground/70 whitespace-nowrap w-[72px]">
+                      操作
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {entries.map((entry) => (
+                    <SettingRow key={entry.key} entry={entry} onSave={onSave} />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <AddSettingForm onSave={onSave} />
     </section>
@@ -152,18 +154,18 @@ function SettingRow({
       <td className="px-4 py-2">
         <div className="flex items-center gap-1">
           {isSeedingSize ? (
-            <label className="inline-flex items-center gap-1 text-sm text-foreground cursor-pointer">
-              <input
-                type="checkbox"
+            <div className="inline-flex items-center gap-2">
+              <Switch
                 checked={value === 'true'}
-                onChange={(e) => {
-                  setValue(e.target.checked ? 'true' : 'false')
+                onCheckedChange={(checked) => {
+                  setValue(checked ? 'true' : 'false')
                   setSaveError(null)
                 }}
-                className="accent-accent"
               />
-              <span>{value === 'true' ? '已开启' : '已关闭'}</span>
-            </label>
+              <Label className="text-sm cursor-pointer">
+                {value === 'true' ? '已开启' : '已关闭'}
+              </Label>
+            </div>
           ) : (
             <Input
               type={revealed ? 'text' : 'password'}
@@ -248,51 +250,55 @@ function AddSettingForm({
   }
 
   return (
-    <div className="mt-5 pt-4 border-t border-border">
-      <h3 className="mb-1 text-sm font-medium text-foreground">
-        添加设置项
-      </h3>
-      <p className="mb-3 text-xs text-muted-foreground leading-normal">
-        可自由添加任意键名，但错误的键/值可能导致功能异常。建议仅添加你明确了解的配置项；未知键不会做
-        schema 校验。
-      </p>
-      {addError && (
-        <div className="mb-2 text-xs text-destructive">
-          {addError}
-        </div>
-      )}
-      <form
-        className="flex flex-wrap items-end gap-2"
-        onSubmit={(e) => {
-          e.preventDefault()
-          void handleAdd()
-        }}
-      >
-        <div className="min-w-[200px] flex-1">
-          <Input
-            value={newKey}
-            onChange={(e) => {
-              setNewKey(e.target.value)
-              setAddError(null)
-            }}
-            placeholder="设置项名称（如 jackett_url）"
-          />
-        </div>
-        <div className="min-w-[200px] flex-1">
-          <Input
-            value={newValue}
-            onChange={(e) => {
-              setNewValue(e.target.value)
-              setAddError(null)
-            }}
-            placeholder="值"
-          />
-        </div>
-        <Button type="submit" loading={saving} disabled={!newKey.trim()}>
-          {saving ? '添加中...' : '添加'}
-        </Button>
-      </form>
-    </div>
+    <Card className="mt-5">
+      <CardHeader>
+        <CardTitle>添加设置项</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <p className="mb-3 text-xs text-muted-foreground leading-normal">
+          可自由添加任意键名，但错误的键/值可能导致功能异常。建议仅添加你明确了解的配置项；未知键不会做
+          schema 校验。
+        </p>
+        {addError && (
+          <div className="mb-2 text-xs text-destructive">
+            {addError}
+          </div>
+        )}
+        <form
+          className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-end gap-2"
+          onSubmit={(e) => {
+            e.preventDefault()
+            void handleAdd()
+          }}
+        >
+          <div className="min-w-[200px] flex-1">
+            <Input
+              label="设置项名称"
+              value={newKey}
+              onChange={(e) => {
+                setNewKey(e.target.value)
+                setAddError(null)
+              }}
+              placeholder="设置项名称（如 jackett_url）"
+            />
+          </div>
+          <div className="min-w-[200px] flex-1">
+            <Input
+              label="值"
+              value={newValue}
+              onChange={(e) => {
+                setNewValue(e.target.value)
+                setAddError(null)
+              }}
+              placeholder="值"
+            />
+          </div>
+          <Button type="submit" loading={saving} disabled={!newKey.trim()}>
+            {saving ? '添加中...' : '添加'}
+          </Button>
+        </form>
+      </CardContent>
+    </Card>
   )
 }
 

@@ -8,8 +8,21 @@ import {
   useUpdateSite,
 } from '../../api/hooks/sites'
 import type { UpdateSiteInput } from '../../api/types'
-import { LoadingSkeleton, PageHeader } from '../../components/shared'
-import { Button, Input } from '../../components/ui'
+import { EmptyState, LoadingSkeleton, PageHeader } from '../../components/shared'
+import {
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  Input,
+  Separator,
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from '../../components/ui'
 import { formatBytes, formatDuration } from '../../lib/time'
 
 interface ProbeFieldResult {
@@ -173,14 +186,12 @@ export default function SiteDetailPage() {
     return (
       <div>
         <PageHeader title="站点详情" />
-        <div className="flex flex-col items-center justify-center py-6 gap-3">
-          <p className="text-sm text-destructive m-0">
-            加载站点详情失败：{detail.error ? formatApiError(detail.error, '未知错误') : '站点不存在'}
-          </p>
-          <Button variant="secondary" size="sm" onClick={() => navigate('/sites')}>
-            返回列表
-          </Button>
-        </div>
+        <EmptyState
+          title="加载站点详情失败"
+          description={detail.error ? formatApiError(detail.error, '未知错误') : '站点不存在'}
+          actionLabel="返回列表"
+          onAction={() => navigate('/sites')}
+        />
       </div>
     )
   }
@@ -228,199 +239,216 @@ export default function SiteDetailPage() {
       />
 
       {/* Site info card */}
-      <div className="mb-5 p-5 border border-border rounded-lg bg-card">
-        <h3 className="text-sm font-medium text-foreground mt-0 mb-3">
-          站点信息
-        </h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          <InfoItem label="URL" value={site.url} />
-          <InfoItem label="API URL" value={site.api_url ?? '—'} />
-          <InfoItem label="适配器" value={site.adapter_type} />
-          <InfoItem label="凭据类型" value={site.auth_type} />
-          <InfoItem label="速率限制间隔" value={site.rate_limit_interval_ms != null ? `${site.rate_limit_interval_ms} ms` : '—'} />
-          <InfoItem label="速率限制突发" value={site.rate_limit_burst != null ? String(site.rate_limit_burst) : '—'} />
-          <InfoItem label="下载间隔" value={site.download_interval_ms != null ? `${site.download_interval_ms} ms` : '—'} />
-          <InfoItem
-            label="探测状态"
-            value={site.probe_status === 'success' || site.probe_status === '成功' ? '成功' : site.probe_status === 'failed' || site.probe_status === '失败' ? '失败' : '未探测'}
-            valueClassName={
-              site.probe_status === 'success' || site.probe_status === '成功'
-                ? 'text-success'
-                : site.probe_status === 'failed' || site.probe_status === '失败'
-                  ? 'text-destructive'
-                  : 'text-muted-foreground'
-            }
-          />
-          <InfoItem
-            label="启用"
-            value={site.enabled ? '是' : '否'}
-            valueClassName={site.enabled ? 'text-success' : 'text-destructive'}
-          />
-        </div>
-      </div>
+      <Card className="mb-5">
+        <CardHeader>
+          <CardTitle>站点信息</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            <InfoItem label="URL" value={site.url} />
+            <InfoItem label="API URL" value={site.api_url ?? '—'} />
+            <InfoItem label="适配器" value={site.adapter_type} />
+            <InfoItem label="凭据类型" value={site.auth_type} />
+            <InfoItem label="速率限制间隔" value={site.rate_limit_interval_ms != null ? `${site.rate_limit_interval_ms} ms` : '—'} />
+            <InfoItem label="速率限制突发" value={site.rate_limit_burst != null ? String(site.rate_limit_burst) : '—'} />
+            <InfoItem label="下载间隔" value={site.download_interval_ms != null ? `${site.download_interval_ms} ms` : '—'} />
+            <InfoItem label="探测状态">
+              <Badge
+                variant={
+                  site.probe_status === 'success' || site.probe_status === '成功'
+                    ? 'success'
+                    : site.probe_status === 'failed' || site.probe_status === '失败'
+                      ? 'destructive'
+                      : 'muted'
+                }
+              >
+                {site.probe_status === 'success' || site.probe_status === '成功' ? '成功' : site.probe_status === 'failed' || site.probe_status === '失败' ? '失败' : '未探测'}
+              </Badge>
+            </InfoItem>
+            <InfoItem label="启用">
+              <Badge variant={site.enabled ? 'success' : 'destructive'}>
+                {site.enabled ? '是' : '否'}
+              </Badge>
+            </InfoItem>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Edit form */}
       {editing && (
-        <form
-          onSubmit={handleEditSubmit}
-          className="mb-5 p-5 border border-border rounded-lg bg-card"
-        >
-          <h3 className="text-sm font-medium text-foreground mt-0 mb-3">
-            编辑站点
-          </h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-            <Input
-              label="URL"
-              value={editForm.url}
-              onChange={(e) => setEditForm((prev) => ({ ...prev, url: e.target.value }))}
-              autoComplete="off"
-            />
-            <Input
-              label="API URL"
-              value={editForm.api_url}
-              onChange={(e) => setEditForm((prev) => ({ ...prev, api_url: e.target.value }))}
-              autoComplete="off"
-            />
-            <Input
-              label="Cookie（留空不修改）"
-              value={editForm.cookie}
-              onChange={(e) => setEditForm((prev) => ({ ...prev, cookie: e.target.value }))}
-              autoComplete="off"
-            />
-            <Input
-              label="Passkey（留空不修改）"
-              value={editForm.passkey}
-              onChange={(e) => setEditForm((prev) => ({ ...prev, passkey: e.target.value }))}
-              autoComplete="off"
-            />
-            <Input
-              label="速率限制间隔 (ms)"
-              type="number"
-              value={editForm.rate_limit_interval_ms}
-              onChange={(e) => setEditForm((prev) => ({ ...prev, rate_limit_interval_ms: e.target.value }))}
-            />
-            <Input
-              label="速率限制突发"
-              type="number"
-              value={editForm.rate_limit_burst}
-              onChange={(e) => setEditForm((prev) => ({ ...prev, rate_limit_burst: e.target.value }))}
-            />
-            <Input
-              label="下载间隔 (ms)"
-              type="number"
-              value={editForm.download_interval_ms}
-              onChange={(e) => setEditForm((prev) => ({ ...prev, download_interval_ms: e.target.value }))}
-            />
-          </div>
-          <div className="flex justify-end mt-4">
-            <Button type="submit" loading={updateSite.isPending}>
-              {updateSite.isPending ? '保存中...' : '保存'}
-            </Button>
-          </div>
-        </form>
+        <Card className="mb-5">
+          <CardHeader>
+            <CardTitle>编辑站点</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleEditSubmit}>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                <Input
+                  label="URL"
+                  value={editForm.url}
+                  onChange={(e) => setEditForm((prev) => ({ ...prev, url: e.target.value }))}
+                  autoComplete="off"
+                />
+                <Input
+                  label="API URL"
+                  value={editForm.api_url}
+                  onChange={(e) => setEditForm((prev) => ({ ...prev, api_url: e.target.value }))}
+                  autoComplete="off"
+                />
+                <Input
+                  label="Cookie（留空不修改）"
+                  value={editForm.cookie}
+                  onChange={(e) => setEditForm((prev) => ({ ...prev, cookie: e.target.value }))}
+                  autoComplete="off"
+                />
+                <Input
+                  label="Passkey（留空不修改）"
+                  value={editForm.passkey}
+                  onChange={(e) => setEditForm((prev) => ({ ...prev, passkey: e.target.value }))}
+                  autoComplete="off"
+                />
+                <Input
+                  label="速率限制间隔 (ms)"
+                  type="number"
+                  value={editForm.rate_limit_interval_ms}
+                  onChange={(e) => setEditForm((prev) => ({ ...prev, rate_limit_interval_ms: e.target.value }))}
+                />
+                <Input
+                  label="速率限制突发"
+                  type="number"
+                  value={editForm.rate_limit_burst}
+                  onChange={(e) => setEditForm((prev) => ({ ...prev, rate_limit_burst: e.target.value }))}
+                />
+                <Input
+                  label="下载间隔 (ms)"
+                  type="number"
+                  value={editForm.download_interval_ms}
+                  onChange={(e) => setEditForm((prev) => ({ ...prev, download_interval_ms: e.target.value }))}
+                />
+              </div>
+              <div className="flex justify-end mt-4">
+                <Button type="submit" loading={updateSite.isPending}>
+                  {updateSite.isPending ? '保存中...' : '保存'}
+                </Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
       )}
 
-      {/* Probe detail */}
-      {probeDetail && (
-        <div className="mb-5 p-5 border border-border rounded-lg bg-card">
-          <h3 className="text-sm font-medium text-foreground mt-0 mb-3">
-            探测详情
-          </h3>
+      {/* Probe detail and User stats in Tabs */}
+      {(probeDetail || userStats) && (
+        <>
+          <Separator className="my-5" />
+          <Tabs defaultValue={probeDetail ? 'probe' : 'stats'}>
+            <TabsList>
+              {probeDetail && <TabsTrigger value="probe">探测详情</TabsTrigger>}
+              {userStats && <TabsTrigger value="stats">用户统计</TabsTrigger>}
+            </TabsList>
 
-          {probeDetail.passkey_error && (
-            <p className="text-sm text-destructive mb-2">
-              Passkey 错误：{probeDetail.passkey_error}
-            </p>
-          )}
+            {probeDetail && (
+              <TabsContent value="probe">
+                <Card>
+                  <CardContent className="pt-5">
+                    {probeDetail.passkey_error && (
+                      <p className="text-sm text-destructive mb-2">
+                        Passkey 错误：{probeDetail.passkey_error}
+                      </p>
+                    )}
 
-          {probeDetail.api_reachable && (
-            <div className="mb-2">
-              <ProbeFieldRow field={probeDetail.api_reachable} />
-            </div>
-          )}
+                    {probeDetail.api_reachable && (
+                      <div className="mb-2">
+                        <ProbeFieldRow field={probeDetail.api_reachable} />
+                      </div>
+                    )}
 
-          {probeDetail.user_info_fields.length > 0 && (
-            <div className="overflow-x-auto border border-border rounded-md">
-              <table className="w-full border-collapse text-sm">
-                <thead>
-                  <tr className="bg-muted border-b border-border">
-                    {['字段', '状态', '预览值', '错误'].map((h) => (
-                      <th
-                        key={h}
-                        className="text-left px-4 h-7 text-xs font-medium text-foreground/70 whitespace-nowrap"
-                      >
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {probeDetail.user_info_fields.map((f) => (
-                    <tr
-                      key={f.field_name}
-                      className="border-b border-border last:border-b-0"
-                    >
-                      <td className="px-4 h-7 text-foreground whitespace-nowrap">
-                        {fieldLabel(f.field_name)}
-                      </td>
-                      <td
-                        className={`px-4 h-7 whitespace-nowrap ${
-                          f.success ? 'text-success' : 'text-destructive'
-                        }`}
-                      >
-                        {f.success ? '成功' : '失败'}
-                      </td>
-                      <td className="px-4 h-7 text-muted-foreground whitespace-nowrap">
-                        {f.value_preview ?? '—'}
-                      </td>
-                      <td className="px-4 h-7 text-destructive whitespace-nowrap">
-                        {f.error ?? '—'}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      )}
+                    {probeDetail.user_info_fields.length > 0 && (
+                      <div className="overflow-x-auto border border-border rounded-md">
+                        <table className="w-full border-collapse text-sm">
+                          <caption className="sr-only">站点探测详情</caption>
+                          <thead>
+                            <tr className="bg-muted border-b border-border">
+                              {['字段', '状态', '预览值', '错误'].map((h) => (
+                                <th
+                                  key={h}
+                                  scope="col"
+                                  className="text-left px-4 h-7 text-xs font-medium text-foreground/70 whitespace-nowrap"
+                                >
+                                  {h}
+                                </th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {probeDetail.user_info_fields.map((f) => (
+                              <tr
+                                key={f.field_name}
+                                className="border-b border-border last:border-b-0"
+                              >
+                                <td className="px-4 h-7 text-foreground whitespace-nowrap">
+                                  {fieldLabel(f.field_name)}
+                                </td>
+                                <td className="px-4 h-7 whitespace-nowrap">
+                                  <Badge variant={f.success ? 'success' : 'destructive'}>
+                                    {f.success ? '成功' : '失败'}
+                                  </Badge>
+                                </td>
+                                <td className="px-4 h-7 text-muted-foreground whitespace-nowrap">
+                                  {f.value_preview ?? '—'}
+                                </td>
+                                <td className="px-4 h-7 text-destructive whitespace-nowrap">
+                                  {f.error ?? '—'}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </TabsContent>
+            )}
 
-      {/* User stats */}
-      {userStats && (
-        <div className="mb-5 p-5 border border-border rounded-lg bg-card">
-          <h3 className="text-sm font-medium text-foreground mt-0 mb-3">
-            用户统计
-          </h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {userStats.uploaded != null && (
-              <InfoItem label="上传量" value={formatBytes(userStats.uploaded)} />
+            {userStats && (
+              <TabsContent value="stats">
+                <Card>
+                  <CardContent className="pt-5">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {userStats.uploaded != null && (
+                        <InfoItem label="上传量" value={formatBytes(userStats.uploaded)} />
+                      )}
+                      {userStats.downloaded != null && (
+                        <InfoItem label="下载量" value={formatBytes(userStats.downloaded)} />
+                      )}
+                      {userStats.ratio != null && (
+                        <InfoItem label="分享率" value={userStats.ratio.toFixed(3)} />
+                      )}
+                      {userStats.bonus != null && (
+                        <InfoItem label="积分/魔力值" value={userStats.bonus.toLocaleString()} />
+                      )}
+                      {userStats.user_class && (
+                        <InfoItem label="用户等级" value={userStats.user_class} />
+                      )}
+                      {userStats.seeding_count != null && (
+                        <InfoItem label="做种数" value={String(userStats.seeding_count)} />
+                      )}
+                      {userStats.leeching_count != null && (
+                        <InfoItem label="下载中数量" value={String(userStats.leeching_count)} />
+                      )}
+                      {userStats.seeding_size != null && (
+                        <InfoItem label="做种体积" value={formatBytes(userStats.seeding_size)} />
+                      )}
+                      {userStats.upload_time_seconds != null && (
+                        <InfoItem label="做种时间" value={formatDuration(userStats.upload_time_seconds)} />
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              </TabsContent>
             )}
-            {userStats.downloaded != null && (
-              <InfoItem label="下载量" value={formatBytes(userStats.downloaded)} />
-            )}
-            {userStats.ratio != null && (
-              <InfoItem label="分享率" value={userStats.ratio.toFixed(3)} />
-            )}
-            {userStats.bonus != null && (
-              <InfoItem label="积分/魔力值" value={userStats.bonus.toLocaleString()} />
-            )}
-            {userStats.user_class && (
-              <InfoItem label="用户等级" value={userStats.user_class} />
-            )}
-            {userStats.seeding_count != null && (
-              <InfoItem label="做种数" value={String(userStats.seeding_count)} />
-            )}
-            {userStats.leeching_count != null && (
-              <InfoItem label="下载中数量" value={String(userStats.leeching_count)} />
-            )}
-            {userStats.seeding_size != null && (
-              <InfoItem label="做种体积" value={formatBytes(userStats.seeding_size)} />
-            )}
-            {userStats.upload_time_seconds != null && (
-              <InfoItem label="做种时间" value={formatDuration(userStats.upload_time_seconds)} />
-            )}
-          </div>
-        </div>
+          </Tabs>
+        </>
       )}
     </div>
   )
@@ -430,19 +458,23 @@ function InfoItem({
   label,
   value,
   valueClassName,
+  children,
 }: {
   label: string
-  value: string
+  value?: string
   valueClassName?: string
+  children?: React.ReactNode
 }) {
   return (
     <div className="flex flex-col gap-0.5">
       <span className="text-xs text-foreground/70 font-medium">
         {label}
       </span>
-      <span className={`text-sm ${valueClassName ?? 'text-foreground'}`}>
-        {value}
-      </span>
+      {children ?? (
+        <span className={`text-sm ${valueClassName ?? 'text-foreground'}`}>
+          {value}
+        </span>
+      )}
     </div>
   )
 }

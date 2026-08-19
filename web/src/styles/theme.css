@@ -1,64 +1,133 @@
 /*
- * PT-Reseeder Design Tokens
+ * PT-Reseeder Design Tokens — Modern SaaS
  * Dual theme via data-theme="dark|light" on <html>
- * Font: Instrument Serif (display), Inter (body)
+ * Font: Inter (body), system monospace (code/logs)
  */
 
 @theme {
-  --font-display: 'Instrument Serif', serif;
-  --font-body: 'Inter', sans-serif;
-  --color-background: hsl(0 0% 100%);
-  --color-foreground: hsl(210 14% 17%);
-  --color-primary: hsl(210 14% 17%);
+  /* --- Typography --- */
+  --font-body: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'Cascadia Code', 'Fira Code', monospace;
+
+  /* --- Colors: Light (default) --- */
+  --color-background: hsl(0 0% 99%);
+  --color-foreground: hsl(222 14% 16%);
+  --color-primary: hsl(239 84% 67%);
   --color-primary-foreground: hsl(0 0% 100%);
-  --color-secondary: hsl(0 0% 96%);
-  --color-secondary-foreground: hsl(0 0% 9%);
-  --color-muted: hsl(0 0% 96%);
-  --color-muted-foreground: hsl(184 5% 55%);
+  --color-secondary: hsl(220 14% 96%);
+  --color-secondary-foreground: hsl(222 14% 16%);
+  --color-muted: hsl(220 14% 96%);
+  --color-muted-foreground: hsl(215 16% 47%);
   --color-accent: hsl(239 84% 67%);
   --color-accent-foreground: hsl(0 0% 100%);
   --color-destructive: hsl(0 72% 51%);
   --color-destructive-foreground: hsl(0 0% 100%);
   --color-success: hsl(142 71% 35%);
+  --color-success-foreground: hsl(0 0% 100%);
   --color-warning: hsl(38 92% 50%);
-  --color-border: hsl(0 0% 90%);
+  --color-warning-foreground: hsl(38 92% 14%);
+  --color-info: hsl(214 95% 53%);
+  --color-info-foreground: hsl(0 0% 100%);
+  --color-border: hsl(220 13% 91%);
+  --color-input: hsl(220 13% 91%);
   --color-ring: hsl(239 84% 67%);
   --color-card: hsl(0 0% 100%);
-  --color-card-foreground: hsl(210 14% 17%);
+  --color-card-foreground: hsl(222 14% 16%);
+  --color-popover: hsl(0 0% 100%);
+  --color-popover-foreground: hsl(222 14% 16%);
+  --color-surface-0: hsl(0 0% 99%);
+  --color-surface-1: hsl(0 0% 100%);
+  --color-surface-2: hsl(220 14% 97%);
+  --color-surface-3: hsl(220 14% 94%);
+
+  /* --- Chart colors --- */
+  --color-chart-1: hsl(239 84% 67%);
+  --color-chart-2: hsl(173 58% 39%);
+  --color-chart-3: hsl(38 92% 50%);
+  --color-chart-4: hsl(280 68% 58%);
+  --color-chart-5: hsl(346 77% 50%);
+
+  /* --- Radius --- */
   --radius-sm: 0.375rem;
   --radius-md: 0.5rem;
   --radius-lg: 0.75rem;
   --radius-xl: 1rem;
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --radius-2xl: 1.5rem;
+  --radius-full: 9999px;
+
+  /* --- Shadows --- */
+  --shadow-xs: 0 1px 2px 0 rgba(0, 0, 0, 0.03);
+  --shadow-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.06), 0 1px 2px -1px rgba(0, 0, 0, 0.06);
   --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.07), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
   --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -4px rgba(0, 0, 0, 0.04);
-  --shadow-dashboard: 0 25px 80px -12px rgba(0, 0, 0, 0.08), 0 0 0 1px rgba(0, 0, 0, 0.06);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.08), 0 8px 10px -6px rgba(0, 0, 0, 0.04);
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.04), 0 0 0 1px rgba(0, 0, 0, 0.03);
+  --shadow-popover: 0 4px 16px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(0, 0, 0, 0.04);
+
+  /* --- Motion --- */
+  --duration-fast: 100ms;
+  --duration-normal: 150ms;
+  --duration-slow: 250ms;
+  --duration-slower: 350ms;
+  --ease-default: cubic-bezier(0.2, 0, 0, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* --- Density / Spacing --- */
+  --density-row: 2.5rem;
+  --density-row-compact: 2rem;
+  --density-cell-px: 1rem;
+  --density-cell-px-sm: 0.75rem;
+  --spacing-page: 1.5rem;
+  --spacing-section: 1.25rem;
+  --spacing-card: 1.25rem;
+  --spacing-inline: 0.5rem;
 }
 
 /* ===== Dark theme ===== */
 :root[data-theme="dark"] {
-  --color-background: hsl(222 14% 10%);
+  --color-background: hsl(222 14% 8%);
   --color-foreground: hsl(210 20% 92%);
-  --color-primary: hsl(210 20% 92%);
-  --color-primary-foreground: hsl(222 14% 10%);
-  --color-secondary: hsl(220 12% 16%);
+  --color-primary: hsl(239 84% 72%);
+  --color-primary-foreground: hsl(0 0% 100%);
+  --color-secondary: hsl(220 12% 14%);
   --color-secondary-foreground: hsl(210 20% 88%);
-  --color-muted: hsl(220 12% 16%);
+  --color-muted: hsl(220 12% 14%);
   --color-muted-foreground: hsl(215 12% 55%);
   --color-accent: hsl(239 84% 72%);
   --color-accent-foreground: hsl(0 0% 100%);
   --color-destructive: hsl(0 62% 58%);
   --color-destructive-foreground: hsl(0 0% 100%);
   --color-success: hsl(142 60% 50%);
+  --color-success-foreground: hsl(142 60% 10%);
   --color-warning: hsl(38 92% 60%);
-  --color-border: hsl(220 10% 22%);
+  --color-warning-foreground: hsl(38 92% 10%);
+  --color-info: hsl(214 95% 63%);
+  --color-info-foreground: hsl(214 95% 10%);
+  --color-border: hsl(220 10% 20%);
+  --color-input: hsl(220 10% 20%);
   --color-ring: hsl(239 84% 72%);
-  --color-card: hsl(222 12% 13%);
+  --color-card: hsl(222 12% 11%);
   --color-card-foreground: hsl(210 20% 92%);
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --color-popover: hsl(222 12% 11%);
+  --color-popover-foreground: hsl(210 20% 92%);
+  --color-surface-0: hsl(222 14% 8%);
+  --color-surface-1: hsl(222 12% 11%);
+  --color-surface-2: hsl(222 12% 14%);
+  --color-surface-3: hsl(220 12% 18%);
+  --color-chart-1: hsl(239 84% 72%);
+  --color-chart-2: hsl(173 58% 50%);
+  --color-chart-3: hsl(38 92% 60%);
+  --color-chart-4: hsl(280 68% 68%);
+  --color-chart-5: hsl(346 77% 60%);
+  --shadow-xs: 0 1px 2px 0 rgba(0, 0, 0, 0.2);
+  --shadow-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.3), 0 1px 2px -1px rgba(0, 0, 0, 0.2);
   --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -2px rgba(0, 0, 0, 0.3);
   --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -4px rgba(0, 0, 0, 0.4);
-  --shadow-dashboard: 0 25px 80px -12px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.05);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.4);
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(255, 255, 255, 0.04);
+  --shadow-popover: 0 4px 16px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.06);
 }
 
 /* ===== Base styles ===== */
@@ -74,4 +143,16 @@ body {
 
 * {
   border-color: var(--color-border);
+}
+
+/* Respect reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

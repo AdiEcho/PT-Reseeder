@@ -12,6 +12,7 @@ export function useRepostQueue(status?: string) {
   return useQuery({
     queryKey: ['repost-queue', status],
     queryFn: () => api.get<RepostEntry[]>(`/api/repost/queue${qs}`),
+    staleTime: 30_000,
   })
 }
 

@@ -3,7 +3,10 @@
   "productName": "PT-Reseeder",
   "version": "0.1.0",
   "identifier": "com.pt-reseeder.app",
-  "build": {},
+  "build": {
+    "devUrl": "http://localhost:5173",
+    "frontendDist": "../../web/dist/"
+  },
   "app": {
     "withGlobalTauri": true
   },

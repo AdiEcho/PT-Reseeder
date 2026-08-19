@@ -13,6 +13,7 @@ export function useTasks() {
   return useQuery({
     queryKey: ['tasks'],
     queryFn: () => api.get<TaskInfo[]>('/api/tasks'),
+    staleTime: 30_000,
   })
 }
 
@@ -65,6 +66,7 @@ export function useTaskLogs(taskId: number) {
     queryKey: ['tasks', taskId, 'logs'],
     queryFn: () => api.get<TaskLogInfo[]>(`/api/tasks/${taskId}/logs`),
     enabled: taskId > 0,
+    staleTime: 30_000,
   })
 }
 
@@ -73,18 +75,22 @@ export function useDryRunPreview(taskId: number) {
     queryKey: ['tasks', taskId, 'dry-run-preview'],
     queryFn: () => api.get<DryRunPreviewInfo | null>(`/api/tasks/${taskId}/dry-run-preview`),
     enabled: taskId > 0,
+    staleTime: 30_000,
   })
 }
 
-export function useReseedRuns(params?: { limit?: number; taskId?: number }) {
+export function useReseedRuns(params?: { limit?: number; taskId?: number; refetchInterval?: number | false; refetchIntervalInBackground?: boolean }) {
   const searchParams = new URLSearchParams()
   if (params?.limit) searchParams.set('limit', String(params.limit))
   if (params?.taskId) searchParams.set('task_id', String(params.taskId))
   const qs = searchParams.toString()
 
   return useQuery({
-    queryKey: ['reseed-runs', params],
+    queryKey: ['reseed-runs', { limit: params?.limit, taskId: params?.taskId }],
     queryFn: () => api.get<ReseedRunInfo[]>(`/api/reseed-runs${qs ? `?${qs}` : ''}`),
+    staleTime: 15_000,
+    refetchInterval: params?.refetchInterval,
+    refetchIntervalInBackground: params?.refetchIntervalInBackground,
   })
 }
 
@@ -93,5 +99,6 @@ export function useReseedRunDetail(id: number) {
     queryKey: ['reseed-runs', id],
     queryFn: () => api.get<ReseedRunDetail | null>(`/api/reseed-runs/${id}`),
     enabled: id > 0,
+    staleTime: 15_000,
   })
 }

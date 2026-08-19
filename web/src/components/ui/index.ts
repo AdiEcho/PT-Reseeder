@@ -14,7 +14,6 @@ export {
   DialogTitle,
   DialogDescription,
 } from './Dialog'
-export { LegacyDialog as Dialog_Legacy } from './LegacyDialog'
 export { Input, type InputProps } from './Input'
 export { Label } from './Label'
 export { Select, type SelectProps, type SelectOption } from './Select'
@@ -35,3 +34,12 @@ export { Switch } from './Switch'
 export { Tabs, TabsList, TabsTrigger, TabsContent } from './Tabs'
 export { Textarea, type TextareaProps } from './Textarea'
 export { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from './Tooltip'
+export {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from './DropdownMenu'
+export { Alert, alertVariants, type AlertProps } from './Alert'
+export { Pagination, type PaginationProps } from './Pagination'

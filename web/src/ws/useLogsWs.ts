@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useState, useCallback } from 'react'
+import { useWebSocket } from './useWebSocket'
 
 export interface ParsedLogLine {
   timestamp: string
@@ -24,69 +25,25 @@ function parseLine(raw: string): ParsedLogLine {
   return { timestamp: '', level: 'INFO', target: '', message: raw }
 }
 
-function getWsUrl(path: string): string {
-  const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-  return `${proto}//${window.location.host}${path}`
-}
-
 export function useLogsWs() {
   const [lines, setLines] = useState<ParsedLogLine[]>([])
-  const [connected, setConnected] = useState(false)
-  const wsRef = useRef<WebSocket | null>(null)
-  const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const backoffRef = useRef(1000)
-  const unmountedRef = useRef(false)
 
   const clear = useCallback(() => {
     setLines([])
   }, [])
 
-  const connect = useCallback(() => {
-    if (unmountedRef.current) return
-
-    const ws = new WebSocket(getWsUrl('/ws/logs'))
-    wsRef.current = ws
-
-    ws.onopen = () => {
-      setConnected(true)
-      backoffRef.current = 1000
-    }
-
-    ws.onmessage = (event) => {
-      const parsed = parseLine(event.data as string)
-      setLines((prev) => {
-        const next = [...prev, parsed]
-        return next.length > MAX_BUFFER ? next.slice(next.length - MAX_BUFFER) : next
-      })
-    }
-
-    ws.onclose = () => {
-      setConnected(false)
-      if (!unmountedRef.current) {
-        reconnectTimer.current = setTimeout(() => {
-          backoffRef.current = Math.min(backoffRef.current * 2, 30000)
-          connect()
-        }, backoffRef.current)
-      }
-    }
-
-    ws.onerror = () => {
-      ws.close()
-    }
+  const onMessage = useCallback((event: MessageEvent) => {
+    const parsed = parseLine(event.data as string)
+    setLines((prev) => {
+      const next = [...prev, parsed]
+      return next.length > MAX_BUFFER ? next.slice(next.length - MAX_BUFFER) : next
+    })
   }, [])
 
-  useEffect(() => {
-    unmountedRef.current = false
-    connect()
+  const { connected, reconnect } = useWebSocket({
+    path: '/ws/logs',
+    onMessage,
+  })
 
-    return () => {
-      unmountedRef.current = true
-      if (reconnectTimer.current) {
-        clearTimeout(reconnectTimer.current)
-      }
-      wsRef.current?.close()
-    }
-  }, [connect])
-
-  return { lines, connected, clear }
+  return { lines, connected, clear, reconnect }
 }

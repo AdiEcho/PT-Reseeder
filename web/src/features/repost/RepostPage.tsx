@@ -8,9 +8,24 @@ import {
   useDeleteRepost,
 } from '../../api/hooks/repost'
 import type { RepostEntry, AutofillResponse } from '../../api/types'
-import { ConfirmDialog, EmptyState, LoadingSkeleton, PageHeader } from '../../components/shared'
-import { Button } from '../../components/ui'
-import { LegacyDialog as Dialog } from '../../components/ui/LegacyDialog'
+import { ConfirmDialog, EmptyState, PageHeader, StatusBadge } from '../../components/shared'
+import { DataTable, type Column } from '../../components/shared/DataTable'
+import {
+  Button,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  Tabs,
+  TabsList,
+  TabsTrigger,
+  Textarea,
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '../../components/ui'
 import { formatShortTime } from '../../lib/time'
 
 type StatusFilter = '' | 'pending' | 'approved' | 'submitted' | 'failed' | 'rejected'
@@ -33,40 +48,6 @@ const STATUS_TABS: { value: StatusFilter; label: string }[] = [
 function isTauriDesktop(): boolean {
   return typeof window !== 'undefined' &&
     ('__TAURI__' in window || '__TAURI_INTERNALS__' in window)
-}
-
-function statusBadgeClass(status: string): string {
-  switch (status) {
-    case 'pending':
-      return 'text-warning'
-    case 'approved':
-      return 'text-accent'
-    case 'submitted':
-      return 'text-success'
-    case 'failed':
-      return 'text-destructive'
-    case 'rejected':
-      return 'text-muted-foreground'
-    default:
-      return 'text-foreground'
-  }
-}
-
-function statusLabel(status: string): string {
-  switch (status) {
-    case 'pending':
-      return '待审核'
-    case 'approved':
-      return '已批准'
-    case 'submitted':
-      return '已提交'
-    case 'failed':
-      return '失败'
-    case 'rejected':
-      return '已拒绝'
-    default:
-      return status
-  }
 }
 
 function formatApiError(err: unknown, fallback: string): string {
@@ -210,6 +191,137 @@ export default function RepostPage() {
     }
   }
 
+  const columns: Column<RepostEntry>[] = [
+    {
+      key: 'route',
+      header: '来源站点→目标站点',
+      render: (entry) => (
+        <span className="whitespace-nowrap">{entry.source_site_name} → {entry.target_site_name}</span>
+      ),
+    },
+    {
+      key: 'source_torrent_id',
+      header: '种子ID',
+      render: (entry) => <span className="whitespace-nowrap">{entry.source_torrent_id}</span>,
+    },
+    {
+      key: 'status',
+      header: '状态',
+      render: (entry) => <StatusBadge domain="repost" status={entry.status} />,
+    },
+    {
+      key: 'review_notes',
+      header: '备注',
+      render: (entry) => (
+        <span className="text-muted-foreground max-w-[200px] truncate block">
+          {entry.review_notes || '—'}
+        </span>
+      ),
+    },
+    {
+      key: 'created_at',
+      header: '时间',
+      render: (entry) => (
+        <span className="text-muted-foreground whitespace-nowrap">{formatShortTime(entry.created_at)}</span>
+      ),
+    },
+    {
+      key: 'actions',
+      header: '操作',
+      render: (entry) => (
+        <TooltipProvider>
+          <div className="flex items-center gap-1">
+            {entry.status === 'pending' && (
+              <>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={(e) => { e.stopPropagation(); setReviewState({ entry, action: 'approve', notes: '' }) }}
+                    >
+                      审核
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>审核此转种条目</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      loading={autofillRepost.isPending && autofillRepost.variables === entry.id}
+                      onClick={(e) => { e.stopPropagation(); handleAutofill(entry) }}
+                    >
+                      自动填充
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>自动填充转种信息</TooltipContent>
+                </Tooltip>
+              </>
+            )}
+            {entry.status === 'approved' && (
+              <>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      loading={submitRepost.isPending && submitRepost.variables === entry.id}
+                      onClick={(e) => { e.stopPropagation(); handleSubmit(entry) }}
+                    >
+                      提交
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>提交到目标站点</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      loading={autofillRepost.isPending && autofillRepost.variables === entry.id}
+                      onClick={(e) => { e.stopPropagation(); handleAutofill(entry) }}
+                    >
+                      自动填充
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>自动填充转种信息</TooltipContent>
+                </Tooltip>
+              </>
+            )}
+            {entry.status === 'submitted' && isTauriDesktop() && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={(e) => { e.stopPropagation(); handleOpenUploadPage(entry) }}
+                  >
+                    打开上传页
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>在浏览器中打开上传页面</TooltipContent>
+              </Tooltip>
+            )}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={(e) => { e.stopPropagation(); setDeleteTarget(entry) }}
+                >
+                  删除
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>删除此转种条目</TooltipContent>
+            </Tooltip>
+          </div>
+        </TooltipProvider>
+      ),
+    },
+  ]
+
   return (
     <div>
       <PageHeader title="转种队列" />
@@ -219,25 +331,15 @@ export default function RepostPage() {
       </p>
 
       {/* Status Filter Tabs */}
-      <div className="flex flex-wrap gap-1 mb-4">
-        {STATUS_TABS.map((tab) => (
-          <button
-            key={tab.value}
-            type="button"
-            onClick={() => setActiveTab(tab.value)}
-            className={[
-              'px-3 py-1 rounded-lg text-sm border transition-colors duration-150 cursor-pointer',
-              activeTab === tab.value
-                ? 'bg-accent text-accent-foreground border-accent'
-                : 'bg-card text-foreground/70 border-border hover:bg-muted',
-            ].join(' ')}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
-
-      {queue.isLoading && <LoadingSkeleton variant="table" rows={5} />}
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as StatusFilter)} className="mb-4">
+        <TabsList>
+          {STATUS_TABS.map((tab) => (
+            <TabsTrigger key={tab.value} value={tab.value}>
+              {tab.label}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      </Tabs>
 
       {queue.isError && (
         <div className="flex flex-col items-center justify-center py-6 gap-3">
@@ -250,124 +352,65 @@ export default function RepostPage() {
         </div>
       )}
 
-      {!queue.isLoading && !queue.isError && list.length === 0 && (
-        <EmptyState
-          title="暂无转种条目。"
-          description="创建转种任务后，条目将在此处显示。"
+      {!queue.isError && (
+        <DataTable
+          columns={columns}
+          data={list as unknown as Record<string, unknown>[]}
+          loading={queue.isLoading}
+          caption="转种队列"
+          empty={
+            <EmptyState
+              title="暂无转种条目。"
+              description="创建转种任务后，条目将在此处显示。"
+            />
+          }
         />
       )}
 
-      {!queue.isLoading && !queue.isError && list.length > 0 && (
-        <div className="overflow-x-auto border border-border rounded-lg">
-          <table className="w-full border-collapse text-sm">
-            <thead>
-              <tr className="bg-muted border-b border-border">
-                {['来源站点→目标站点', '种子ID', '状态', '备注', '时间', '操作'].map((header) => (
-                  <th
-                    key={header}
-                    className="text-left px-4 h-7 text-xs font-medium text-foreground/70 whitespace-nowrap"
-                  >
-                    {header}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {list.map((entry) => (
-                <tr
-                  key={entry.id}
-                  className="border-b border-border last:border-b-0 hover:bg-muted transition-colors duration-150"
-                >
-                  <td className="px-4 h-7 text-foreground whitespace-nowrap">
-                    {entry.source_site_name} → {entry.target_site_name}
-                  </td>
-                  <td className="px-4 h-7 text-foreground whitespace-nowrap">
-                    {entry.source_torrent_id}
-                  </td>
-                  <td className={`px-4 h-7 whitespace-nowrap font-medium ${statusBadgeClass(entry.status)}`}>
-                    {statusLabel(entry.status)}
-                  </td>
-                  <td className="px-4 h-7 text-muted-foreground max-w-[200px] truncate">
-                    {entry.review_notes || '—'}
-                  </td>
-                  <td className="px-4 h-7 text-muted-foreground whitespace-nowrap">
-                    {formatShortTime(entry.created_at)}
-                  </td>
-                  <td className="px-4 py-1">
-                    <div className="flex items-center gap-1">
-                      {entry.status === 'pending' && (
-                        <>
-                          <Button
-                            variant="secondary"
-                            size="sm"
-                            onClick={() => setReviewState({ entry, action: 'approve', notes: '' })}
-                          >
-                            审核
-                          </Button>
-                          <Button
-                            variant="secondary"
-                            size="sm"
-                            loading={autofillRepost.isPending && autofillRepost.variables === entry.id}
-                            onClick={() => handleAutofill(entry)}
-                          >
-                            自动填充
-                          </Button>
-                        </>
-                      )}
-                      {entry.status === 'approved' && (
-                        <>
-                          <Button
-                            variant="primary"
-                            size="sm"
-                            loading={submitRepost.isPending && submitRepost.variables === entry.id}
-                            onClick={() => handleSubmit(entry)}
-                          >
-                            提交
-                          </Button>
-                          <Button
-                            variant="secondary"
-                            size="sm"
-                            loading={autofillRepost.isPending && autofillRepost.variables === entry.id}
-                            onClick={() => handleAutofill(entry)}
-                          >
-                            自动填充
-                          </Button>
-                        </>
-                      )}
-                      {entry.status === 'submitted' && isTauriDesktop() && (
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          onClick={() => handleOpenUploadPage(entry)}
-                        >
-                          打开上传页
-                        </Button>
-                      )}
-                      <Button
-                        variant="danger"
-                        size="sm"
-                        onClick={() => setDeleteTarget(entry)}
-                      >
-                        删除
-                      </Button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {/* Review Dialog */}
-      <Dialog
-        open={reviewState != null}
-        onClose={() => {
-          if (!reviewRepost.isPending) setReviewState(null)
-        }}
-        title="审核转种条目"
-        footer={
-          <>
+      {/* Review Dialog — uses standard Dialog */}
+      <Dialog open={reviewState != null} onOpenChange={(v) => { if (!v && !reviewRepost.isPending) setReviewState(null) }}>
+        <DialogContent hideClose>
+          <DialogHeader>
+            <DialogTitle>审核转种条目</DialogTitle>
+          </DialogHeader>
+          {reviewState && (
+            <div className="flex flex-col gap-3 overflow-y-auto max-h-[60vh]">
+              <p className="text-sm text-foreground m-0">
+                {reviewState.entry.source_site_name} → {reviewState.entry.target_site_name}（种子 {reviewState.entry.source_torrent_id}）
+              </p>
+              <div className="flex flex-col gap-1">
+                <label className="text-sm text-foreground/70">操作</label>
+                <div className="flex gap-2">
+                  <label className="inline-flex items-center gap-0.5 text-sm cursor-pointer">
+                    <input
+                      type="radio"
+                      name="review-action"
+                      checked={reviewState.action === 'approve'}
+                      onChange={() => setReviewState((s) => s ? { ...s, action: 'approve' } : s)}
+                    />
+                    批准
+                  </label>
+                  <label className="inline-flex items-center gap-0.5 text-sm cursor-pointer">
+                    <input
+                      type="radio"
+                      name="review-action"
+                      checked={reviewState.action === 'reject'}
+                      onChange={() => setReviewState((s) => s ? { ...s, action: 'reject' } : s)}
+                    />
+                    拒绝
+                  </label>
+                </div>
+              </div>
+              <Textarea
+                label="备注"
+                placeholder="可选备注..."
+                value={reviewState.notes}
+                onChange={(e) => setReviewState((s) => s ? { ...s, notes: e.target.value } : s)}
+                className="min-h-[80px] resize-y"
+              />
+            </div>
+          )}
+          <DialogFooter>
             <Button
               variant="secondary"
               size="sm"
@@ -384,48 +427,8 @@ export default function RepostPage() {
             >
               确认
             </Button>
-          </>
-        }
-      >
-        {reviewState && (
-          <div className="flex flex-col gap-3">
-            <p className="text-sm text-foreground m-0">
-              {reviewState.entry.source_site_name} → {reviewState.entry.target_site_name}（种子 {reviewState.entry.source_torrent_id}）
-            </p>
-            <div className="flex flex-col gap-1">
-              <label className="text-sm text-foreground/70">操作</label>
-              <div className="flex gap-2">
-                <label className="inline-flex items-center gap-0.5 text-sm cursor-pointer">
-                  <input
-                    type="radio"
-                    name="review-action"
-                    checked={reviewState.action === 'approve'}
-                    onChange={() => setReviewState((s) => s ? { ...s, action: 'approve' } : s)}
-                  />
-                  批准
-                </label>
-                <label className="inline-flex items-center gap-0.5 text-sm cursor-pointer">
-                  <input
-                    type="radio"
-                    name="review-action"
-                    checked={reviewState.action === 'reject'}
-                    onChange={() => setReviewState((s) => s ? { ...s, action: 'reject' } : s)}
-                  />
-                  拒绝
-                </label>
-              </div>
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-sm text-foreground/70">备注</label>
-              <textarea
-                className="w-full min-h-[80px] p-2 rounded-lg border border-border bg-background text-sm text-foreground resize-y"
-                placeholder="可选备注..."
-                value={reviewState.notes}
-                onChange={(e) => setReviewState((s) => s ? { ...s, notes: e.target.value } : s)}
-              />
-            </div>
-          </div>
-        )}
+          </DialogFooter>
+        </DialogContent>
       </Dialog>
 
       {/* Reject Confirmation */}

@@ -6,6 +6,7 @@ export function useConfig() {
   return useQuery({
     queryKey: ['config'],
     queryFn: () => api.get<ConfigEntry[]>('/api/config'),
+    staleTime: 300_000,
   })
 }
 

@@ -10,8 +10,9 @@ import {
   useValidateSite,
 } from '../../api/hooks/sites'
 import type { SiteDefinitionInfo, SiteInfo } from '../../api/types'
-import { ConfirmDialog, EmptyState, LoadingSkeleton, PageHeader } from '../../components/shared'
-import { Button, Input, Select } from '../../components/ui'
+import { ConfirmDialog, EmptyState, LoadingSkeleton, PageHeader, StatusBadge } from '../../components/shared'
+import { DataTable, type Column } from '../../components/shared/DataTable'
+import { Badge, Button, Input, Select } from '../../components/ui'
 
 type AuthType = 'cookie' | 'passkey'
 
@@ -52,19 +53,6 @@ const AUTH_TYPE_OPTIONS = [
   { value: 'cookie', label: 'Cookie' },
   { value: 'passkey', label: 'Passkey' },
 ]
-
-function probeStatusLabel(status: string): { text: string; className: string } {
-  switch (status) {
-    case '成功':
-    case 'success':
-      return { text: '成功', className: 'text-success' }
-    case '失败':
-    case 'failed':
-      return { text: '失败', className: 'text-destructive' }
-    default:
-      return { text: '未探测', className: 'text-muted-foreground' }
-  }
-}
 
 function formatApiError(err: unknown, fallback: string): string {
   if (!(err instanceof Error) || !err.message) return fallback
@@ -227,6 +215,59 @@ export default function SitesPage() {
   ]
   const probingId = probeSite.isPending ? probeSite.variables : undefined
 
+  const siteColumns: Column<SiteInfo>[] = [
+    { key: 'name', header: '名称' },
+    {
+      key: 'url',
+      header: 'URL',
+      render: (site) => (
+        <span className="max-w-[200px] truncate block">{site.url}</span>
+      ),
+    },
+    { key: 'adapter_type', header: '适配器' },
+    { key: 'auth_type', header: '凭据类型' },
+    {
+      key: 'probe_status',
+      header: '探测状态',
+      render: (site) => <StatusBadge domain="site" status={site.probe_status || 'unknown'} />,
+    },
+    {
+      key: 'enabled',
+      header: '启用',
+      render: (site) => (
+        <Badge variant={site.enabled ? 'success' : 'destructive'}>
+          {site.enabled ? '是' : '否'}
+        </Badge>
+      ),
+    },
+    {
+      key: 'actions',
+      header: '操作',
+      render: (site) => (
+        <div
+          className="flex items-center gap-1"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <Button
+            variant="secondary"
+            size="sm"
+            loading={probingId === site.id}
+            onClick={() => handleProbe(site.id)}
+          >
+            探测
+          </Button>
+          <Button
+            variant="danger"
+            size="sm"
+            onClick={() => setDeleteTarget(site)}
+          >
+            删除
+          </Button>
+        </div>
+      ),
+    },
+  ]
+
   return (
     <div>
       <PageHeader
@@ -364,7 +405,7 @@ export default function SitesPage() {
         </form>
       )}
 
-      {sites.isLoading && <LoadingSkeleton variant="table" rows={5} />}
+      {sites.isLoading && <LoadingSkeleton variant="table" rows={5} columns={5} />}
 
       {sites.isError && (
         <div className="flex flex-col items-center justify-center py-6 gap-3">
@@ -387,81 +428,12 @@ export default function SitesPage() {
       )}
 
       {!sites.isLoading && !sites.isError && list.length > 0 && (
-        <div className="overflow-x-auto border border-border rounded-lg">
-          <table className="w-full border-collapse text-sm">
-            <thead>
-              <tr className="bg-muted border-b border-border">
-                {['名称', 'URL', '适配器', '凭据类型', '探测状态', '启用', '操作'].map((header) => (
-                  <th
-                    key={header}
-                    className="text-left px-4 h-7 text-xs font-medium text-foreground/70 whitespace-nowrap"
-                  >
-                    {header}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {list.map((site) => {
-                const probe = probeStatusLabel(site.probe_status)
-                return (
-                  <tr
-                    key={site.id}
-                    className="border-b border-border last:border-b-0 hover:bg-muted transition-colors duration-150 cursor-pointer"
-                    onClick={() => navigate(`/sites/${site.id}`)}
-                  >
-                    <td className="px-4 h-7 text-foreground whitespace-nowrap">
-                      {site.name}
-                    </td>
-                    <td className="px-4 h-7 text-foreground whitespace-nowrap max-w-[200px] truncate">
-                      {site.url}
-                    </td>
-                    <td className="px-4 h-7 text-foreground whitespace-nowrap">
-                      {site.adapter_type}
-                    </td>
-                    <td className="px-4 h-7 text-foreground whitespace-nowrap">
-                      {site.auth_type}
-                    </td>
-                    <td className={`px-4 h-7 whitespace-nowrap ${probe.className}`}>
-                      {probe.text}
-                    </td>
-                    <td
-                      className={`px-4 h-7 whitespace-nowrap ${
-                        site.enabled
-                          ? 'text-success'
-                          : 'text-destructive'
-                      }`}
-                    >
-                      {site.enabled ? '是' : '否'}
-                    </td>
-                    <td className="px-4 py-1">
-                      <div
-                        className="flex items-center gap-1"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          loading={probingId === site.id}
-                          onClick={() => handleProbe(site.id)}
-                        >
-                          探测
-                        </Button>
-                        <Button
-                          variant="danger"
-                          size="sm"
-                          onClick={() => setDeleteTarget(site)}
-                        >
-                          删除
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
+        <DataTable
+          columns={siteColumns}
+          data={list as unknown as Record<string, unknown>[]}
+          caption="站点列表"
+          onRowClick={(row) => navigate(`/sites/${(row as unknown as SiteInfo).id}`)}
+        />
       )}
 
       <ConfirmDialog

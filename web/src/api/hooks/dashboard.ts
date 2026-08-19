@@ -7,5 +7,6 @@ export function useDashboard(days?: number) {
   return useQuery({
     queryKey: ['dashboard', days],
     queryFn: () => api.get<DashboardData>(`/api/dashboard${qs}`),
+    staleTime: 10_000,
   })
 }

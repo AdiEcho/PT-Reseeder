@@ -14,8 +14,8 @@ import { useFolders } from '../../api/hooks/folders'
 import { useSites } from '../../api/hooks/sites'
 import { api } from '../../api/client'
 import type { CreateTaskInput, TaskInfo } from '../../api/types'
-import { ConfirmDialog, EmptyState, LoadingSkeleton, PageHeader } from '../../components/shared'
-import { Button, Input, Select } from '../../components/ui'
+import { ConfirmDialog, EmptyState, LoadingSkeleton, PageHeader, StatusBadge } from '../../components/shared'
+import { Button, Checkbox, Input, Select } from '../../components/ui'
 import { formatBytes, formatDurationMs, formatShortTime } from '../../lib/time'
 
 // --- Constants ---
@@ -67,19 +67,6 @@ function formatApiError(err: unknown, fallback: string): string {
   return err.message
 }
 
-function statusLabel(status: string): { text: string; className: string } {
-  switch (status) {
-    case 'running':
-      return { text: '运行中', className: 'text-accent' }
-    case 'paused':
-      return { text: '已暂停', className: 'text-warning' }
-    case 'error':
-      return { text: '错误', className: 'text-destructive' }
-    default:
-      return { text: '空闲', className: 'text-muted-foreground' }
-  }
-}
-
 function triggerTypeLabel(type: string): string {
   switch (type) {
     case 'cron':
@@ -97,38 +84,6 @@ function taskTypeLabel(type: string): string {
       return '辅种'
     default:
       return type
-  }
-}
-
-function logStatusLabel(status: string): { text: string; className: string } {
-  switch (status) {
-    case 'success':
-      return { text: '成功', className: 'text-success' }
-    case 'dry_run':
-      return { text: '试运行', className: 'text-accent' }
-    case 'failed':
-      return { text: '失败', className: 'text-destructive' }
-    case 'running':
-      return { text: '运行中', className: 'text-accent' }
-    case 'partial':
-      return { text: '部分成功', className: 'text-warning' }
-    default:
-      return { text: status, className: 'text-muted-foreground' }
-  }
-}
-
-function outcomeLabel(outcome?: string | null): { text: string; className: string } {
-  switch (outcome) {
-    case 'added':
-      return { text: '已添加', className: 'text-success' }
-    case 'skipped':
-      return { text: '已跳过', className: 'text-muted-foreground' }
-    case 'failed':
-      return { text: '失败', className: 'text-destructive' }
-    case 'matched':
-      return { text: '已识别', className: 'text-accent' }
-    default:
-      return { text: outcome ?? '—', className: 'text-muted-foreground' }
   }
 }
 
@@ -165,11 +120,13 @@ function TaskLogsPanel({ taskId }: { taskId: number }) {
   return (
     <div className="overflow-x-auto border border-border rounded-lg mt-1">
       <table className="w-full border-collapse text-xs">
+        <caption className="sr-only">任务运行日志</caption>
         <thead>
           <tr className="bg-muted border-b border-border">
             {['状态', '匹配', '成功', '失败', '耗时', '时间'].map((h) => (
               <th
                 key={h}
+                scope="col"
                 className="text-left px-2 h-6 text-xs font-medium text-foreground/70 whitespace-nowrap"
               >
                 {h}
@@ -179,14 +136,13 @@ function TaskLogsPanel({ taskId }: { taskId: number }) {
         </thead>
         <tbody>
           {list.map((log) => {
-            const st = logStatusLabel(log.status)
             return (
               <tr
                 key={log.id}
                 className="border-b border-border last:border-b-0"
               >
-                <td className={`px-2 h-6 whitespace-nowrap ${st.className}`}>
-                  {st.text}
+                <td className="px-2 h-6 whitespace-nowrap">
+                  <StatusBadge domain="log" status={log.status} />
                 </td>
                 <td className="px-2 h-6 text-foreground whitespace-nowrap">
                   {log.matched_count}
@@ -237,11 +193,13 @@ function DryRunPreviewPanel({ taskId }: { taskId: number }) {
       {data.items.length > 0 && (
         <div className="overflow-x-auto border border-border rounded-lg">
           <table className="w-full border-collapse text-xs">
+            <caption className="sr-only">试运行预览</caption>
             <thead>
               <tr className="bg-muted border-b border-border">
                 {['站点', '标题', '保存路径', '大小', '结果'].map((h) => (
                   <th
                     key={h}
+                    scope="col"
                     className="text-left px-2 h-6 text-xs font-medium text-foreground/70 whitespace-nowrap"
                   >
                     {h}
@@ -251,7 +209,6 @@ function DryRunPreviewPanel({ taskId }: { taskId: number }) {
             </thead>
             <tbody>
               {data.items.map((item, idx) => {
-                const oc = outcomeLabel(item.outcome)
                 return (
                   <tr
                     key={`${item.pieces_hash}-${idx}`}
@@ -269,8 +226,8 @@ function DryRunPreviewPanel({ taskId }: { taskId: number }) {
                     <td className="px-2 h-6 text-foreground whitespace-nowrap">
                       {item.total_size != null ? formatBytes(item.total_size) : '—'}
                     </td>
-                    <td className={`px-2 h-6 whitespace-nowrap ${oc.className}`}>
-                      {oc.text}
+                    <td className="px-2 h-6 whitespace-nowrap">
+                      <StatusBadge domain="reseed" status={item.outcome ?? 'unknown'} />
                     </td>
                   </tr>
                 )
@@ -362,12 +319,11 @@ function TaskForm({
             {siteList.map((site) => (
               <label
                 key={site.id}
-                className="inline-flex items-center gap-0.5 text-sm text-foreground cursor-pointer"
+                className="inline-flex items-center gap-1.5 text-sm text-foreground cursor-pointer"
               >
-                <input
-                  type="checkbox"
+                <Checkbox
                   checked={form.site_ids.includes(site.id)}
-                  onChange={() => onToggleArrayItem('site_ids', site.id)}
+                  onCheckedChange={() => onToggleArrayItem('site_ids', site.id)}
                 />
                 {site.name}
               </label>
@@ -388,12 +344,11 @@ function TaskForm({
             {folderList.map((folder) => (
               <label
                 key={folder.id}
-                className="inline-flex items-center gap-0.5 text-sm text-foreground cursor-pointer"
+                className="inline-flex items-center gap-1.5 text-sm text-foreground cursor-pointer"
               >
-                <input
-                  type="checkbox"
+                <Checkbox
                   checked={form.folder_ids.includes(folder.id)}
-                  onChange={() => onToggleArrayItem('folder_ids', folder.id)}
+                  onCheckedChange={() => onToggleArrayItem('folder_ids', folder.id)}
                 />
                 {folder.path}
               </label>
@@ -414,12 +369,11 @@ function TaskForm({
             {sourceDownloaders.map((dl) => (
               <label
                 key={dl.id}
-                className="inline-flex items-center gap-0.5 text-sm text-foreground cursor-pointer"
+                className="inline-flex items-center gap-1.5 text-sm text-foreground cursor-pointer"
               >
-                <input
-                  type="checkbox"
+                <Checkbox
                   checked={form.source_downloader_ids.includes(dl.id)}
-                  onChange={() => onToggleArrayItem('source_downloader_ids', dl.id)}
+                  onCheckedChange={() => onToggleArrayItem('source_downloader_ids', dl.id)}
                 />
                 {dl.name}
               </label>
@@ -680,7 +634,7 @@ export default function TasksPage() {
         />
       )}
 
-      {tasks.isLoading && <LoadingSkeleton variant="table" rows={5} />}
+      {tasks.isLoading && <LoadingSkeleton variant="table" rows={5} columns={7} />}
 
       {tasks.isError && (
         <div className="flex flex-col items-center justify-center py-6 gap-3">
@@ -705,13 +659,18 @@ export default function TasksPage() {
       {!tasks.isLoading && !tasks.isError && list.length > 0 && (
         <div className="overflow-x-auto border border-border rounded-lg">
           <table className="w-full border-collapse text-sm">
+            <caption className="sr-only">任务列表</caption>
             <thead>
               <tr className="bg-muted border-b border-border">
                 {['名称', '类型', '触发方式', '状态', '关联', '上次运行', '下次运行', '操作'].map(
                   (header) => (
                     <th
                       key={header}
-                      className="text-left px-4 h-7 text-xs font-medium text-foreground/70 whitespace-nowrap"
+                      scope="col"
+                      className={[
+                        'text-left px-4 h-7 text-xs font-medium text-foreground/70 whitespace-nowrap',
+                        header === '触发方式' || header === '关联' || header === '下次运行' ? 'hidden md:table-cell' : '',
+                      ].join(' ')}
                     >
                       {header}
                     </th>
@@ -721,7 +680,6 @@ export default function TasksPage() {
             </thead>
             <tbody>
               {list.map((task) => {
-                const st = statusLabel(task.status)
                 const isExpLogs = expandedLogs === task.id
                 const isExpPreview = expandedPreview === task.id
                 return (
@@ -735,7 +693,7 @@ export default function TasksPage() {
                     <td className="px-4 h-7 text-foreground whitespace-nowrap">
                       {taskTypeLabel(task.task_type)}
                     </td>
-                    <td className="px-4 h-7 text-foreground whitespace-nowrap">
+                    <td className="px-4 h-7 text-foreground whitespace-nowrap hidden md:table-cell">
                       {triggerTypeLabel(task.trigger_type)}
                       {task.cron_expression && (
                         <span className="ml-0.5 text-xs text-muted-foreground">
@@ -743,16 +701,16 @@ export default function TasksPage() {
                         </span>
                       )}
                     </td>
-                    <td className={`px-4 h-7 whitespace-nowrap ${st.className}`}>
-                      {st.text}
+                    <td className="px-4 h-7 whitespace-nowrap">
+                      <StatusBadge domain="task" status={task.status} />
                     </td>
-                    <td className="px-4 h-7 text-foreground/70 whitespace-nowrap text-xs">
+                    <td className="px-4 h-7 text-foreground/70 whitespace-nowrap text-xs hidden md:table-cell">
                       {associationSummary(task)}
                     </td>
                     <td className="px-4 h-7 text-foreground whitespace-nowrap text-xs">
                       {formatShortTime(task.last_run_at)}
                     </td>
-                    <td className="px-4 h-7 text-foreground whitespace-nowrap text-xs">
+                    <td className="px-4 h-7 text-foreground whitespace-nowrap text-xs hidden md:table-cell">
                       {formatShortTime(task.next_run_at)}
                     </td>
                     <td className="px-4 py-1">
@@ -782,20 +740,20 @@ export default function TasksPage() {
                           </Button>
                         </div>
                         <div className="flex items-center gap-2 text-xs">
-                          <button
-                            type="button"
-                            className="text-foreground/70 hover:text-foreground underline cursor-pointer bg-transparent border-none p-0"
+                          <Button
+                            variant="ghost"
+                            size="sm"
                             onClick={() => setExpandedLogs(isExpLogs ? null : task.id)}
                           >
                             {isExpLogs ? '收起日志' : '查看日志'}
-                          </button>
-                          <button
-                            type="button"
-                            className="text-foreground/70 hover:text-foreground underline cursor-pointer bg-transparent border-none p-0"
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
                             onClick={() => setExpandedPreview(isExpPreview ? null : task.id)}
                           >
                             {isExpPreview ? '收起预览' : '试运行预览'}
-                          </button>
+                          </Button>
                         </div>
                         {isExpLogs && <TaskLogsPanel taskId={task.id} />}
                         {isExpPreview && <DryRunPreviewPanel taskId={task.id} />}

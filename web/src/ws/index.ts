@@ -1,3 +1,5 @@
 export { useDashboardWs } from './useDashboardWs'
 export { useLogsWs } from './useLogsWs'
+export { useWebSocket, getWsUrl } from './useWebSocket'
 export type { ParsedLogLine } from './useLogsWs'
+export type { WsConnectionState, UseWebSocketOptions } from './useWebSocket'

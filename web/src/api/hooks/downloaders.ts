@@ -6,6 +6,7 @@ export function useDownloaders() {
   return useQuery({
     queryKey: ['downloaders'],
     queryFn: () => api.get<DownloaderInfo[]>('/api/downloaders'),
+    staleTime: 60_000,
   })
 }
 

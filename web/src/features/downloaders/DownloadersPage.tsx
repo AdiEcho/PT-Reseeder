@@ -9,7 +9,8 @@ import {
 } from '../../api/hooks/downloaders'
 import type { DownloaderInfo } from '../../api/types'
 import { ConfirmDialog, EmptyState, LoadingSkeleton, PageHeader } from '../../components/shared'
-import { Button, Input, Select } from '../../components/ui'
+import { DataTable, type Column } from '../../components/shared/DataTable'
+import { Badge, Button, Checkbox, Input, Select, Switch } from '../../components/ui'
 
 type DownloaderType = 'qbittorrent' | 'transmission'
 type DownloaderRole = 'source' | 'destination' | 'both'
@@ -245,6 +246,90 @@ export default function DownloadersPage() {
   const testingId = testDownloader.isPending ? testDownloader.variables : undefined
   const togglingId = toggleAutoStart.isPending ? toggleAutoStart.variables?.id : undefined
 
+  const dlColumns: Column<DownloaderInfo>[] = [
+    { key: 'name', header: '名称' },
+    {
+      key: 'dl_type',
+      header: '类型',
+      render: (dl) => <>{typeLabel(dl.dl_type)}</>,
+    },
+    {
+      key: 'host',
+      header: '主机:端口',
+      render: (dl) => <>{dl.host}:{dl.port}</>,
+    },
+    {
+      key: 'role',
+      header: '用途',
+      render: (dl) => <>{roleLabel(dl.role)}</>,
+    },
+    {
+      key: 'auto_start',
+      header: '自动开始',
+      render: (dl) => {
+        const autoStartOn = togglingId === dl.id
+          ? Boolean(toggleAutoStart.variables?.auto_start)
+          : dl.auto_start
+        return (
+          <div className="inline-flex items-center gap-1.5">
+            <Switch
+              checked={autoStartOn}
+              disabled={togglingId === dl.id}
+              onCheckedChange={(checked) => handleToggleAutoStart(dl, checked)}
+            />
+            <span className={autoStartOn ? 'text-success text-xs' : 'text-muted-foreground text-xs'}>
+              {autoStartOn ? '开' : '关'}
+            </span>
+          </div>
+        )
+      },
+    },
+    {
+      key: 'enabled',
+      header: '启用',
+      render: (dl) => (
+        <Badge variant={dl.enabled ? 'success' : 'destructive'}>
+          {dl.enabled ? '是' : '否'}
+        </Badge>
+      ),
+    },
+    {
+      key: 'actions',
+      header: '操作',
+      render: (dl) => {
+        const result = testResults[dl.id]
+        return (
+          <div>
+            <div className="flex items-center gap-1">
+              <Button
+                variant="secondary"
+                size="sm"
+                loading={testingId === dl.id}
+                onClick={() => handleTest(dl.id)}
+              >
+                测试连接
+              </Button>
+              <Button
+                variant="danger"
+                size="sm"
+                onClick={() => setDeleteTarget(dl)}
+              >
+                删除
+              </Button>
+            </div>
+            {result && (
+              <p
+                className={`mt-0.5 mb-0 text-xs ${result.ok ? 'text-success' : 'text-destructive'}`}
+              >
+                {result.message}
+              </p>
+            )}
+          </div>
+        )
+      },
+    },
+  ]
+
   return (
     <div>
       <PageHeader
@@ -327,11 +412,10 @@ export default function DownloadersPage() {
               onChange={(event) => updateField('role', event.target.value as DownloaderRole)}
             />
             <div className="flex flex-col justify-end gap-0.5">
-              <label className="inline-flex items-center gap-1 text-sm text-foreground cursor-pointer">
-                <input
-                  type="checkbox"
+              <label className="inline-flex items-center gap-1.5 text-sm text-foreground cursor-pointer">
+                <Checkbox
                   checked={form.auto_start}
-                  onChange={(event) => updateField('auto_start', event.target.checked)}
+                  onCheckedChange={(checked) => updateField('auto_start', checked === true)}
                 />
                 添加后自动开始
               </label>
@@ -349,7 +433,7 @@ export default function DownloadersPage() {
         </form>
       )}
 
-      {downloaders.isLoading && <LoadingSkeleton variant="table" rows={5} />}
+      {downloaders.isLoading && <LoadingSkeleton variant="table" rows={5} columns={6} />}
 
       {downloaders.isError && (
         <div className="flex flex-col items-center justify-center py-6 gap-3">
@@ -372,107 +456,11 @@ export default function DownloadersPage() {
       )}
 
       {!downloaders.isLoading && !downloaders.isError && list.length > 0 && (
-        <div className="overflow-x-auto border border-border rounded-lg">
-          <table className="w-full border-collapse text-sm">
-            <thead>
-              <tr className="bg-muted border-b border-border">
-                {['名称', '类型', '主机:端口', '用途', '自动开始', '启用', '操作'].map((header) => (
-                  <th
-                    key={header}
-                    className="text-left px-4 h-7 text-xs font-medium text-foreground/70 whitespace-nowrap"
-                  >
-                    {header}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {list.map((dl) => {
-                const result = testResults[dl.id]
-                const autoStartOn = togglingId === dl.id
-                  ? Boolean(toggleAutoStart.variables?.auto_start)
-                  : dl.auto_start
-                return (
-                  <tr
-                    key={dl.id}
-                    className="border-b border-border last:border-b-0 hover:bg-muted transition-colors duration-150"
-                  >
-                    <td className="px-4 h-7 text-foreground whitespace-nowrap">
-                      {dl.name}
-                    </td>
-                    <td className="px-4 h-7 text-foreground whitespace-nowrap">
-                      {typeLabel(dl.dl_type)}
-                    </td>
-                    <td className="px-4 h-7 text-foreground whitespace-nowrap">
-                      {dl.host}:{dl.port}
-                    </td>
-                    <td className="px-4 h-7 text-foreground whitespace-nowrap">
-                      {roleLabel(dl.role)}
-                    </td>
-                    <td className="px-4 h-7 whitespace-nowrap">
-                      <label className="inline-flex items-center gap-1 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={autoStartOn}
-                          disabled={togglingId === dl.id}
-                          onChange={(event) => handleToggleAutoStart(dl, event.target.checked)}
-                        />
-                        <span
-                          className={
-                            autoStartOn
-                              ? 'text-success'
-                              : 'text-muted-foreground'
-                          }
-                        >
-                          {autoStartOn ? '开' : '关'}
-                        </span>
-                      </label>
-                    </td>
-                    <td
-                      className={`px-4 h-7 whitespace-nowrap ${
-                        dl.enabled
-                          ? 'text-success'
-                          : 'text-destructive'
-                      }`}
-                    >
-                      {dl.enabled ? '是' : '否'}
-                    </td>
-                    <td className="px-4 py-1">
-                      <div className="flex items-center gap-1">
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          loading={testingId === dl.id}
-                          onClick={() => handleTest(dl.id)}
-                        >
-                          测试连接
-                        </Button>
-                        <Button
-                          variant="danger"
-                          size="sm"
-                          onClick={() => setDeleteTarget(dl)}
-                        >
-                          删除
-                        </Button>
-                      </div>
-                      {result && (
-                        <p
-                          className={`mt-0.5 mb-0 text-xs ${
-                            result.ok
-                              ? 'text-success'
-                              : 'text-destructive'
-                          }`}
-                        >
-                          {result.message}
-                        </p>
-                      )}
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
+        <DataTable
+          columns={dlColumns}
+          data={list as unknown as Record<string, unknown>[]}
+          caption="下载器列表"
+        />
       )}
 
       <ConfirmDialog

@@ -1,4 +1,11 @@
-import { LegacyDialog as Dialog } from '../ui/LegacyDialog'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '../ui/Dialog'
 import { Button } from '../ui/Button'
 
 interface ConfirmDialogProps {
@@ -25,12 +32,13 @@ export function ConfirmDialog({
   onCancel,
 }: ConfirmDialogProps) {
   return (
-    <Dialog
-      open={open}
-      onClose={onCancel}
-      title={title}
-      footer={
-        <>
+    <Dialog open={open} onOpenChange={(isOpen) => { if (!isOpen) onCancel() }}>
+      <DialogContent hideClose>
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>{message}</DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
           <Button variant="ghost" size="sm" onClick={onCancel} disabled={loading}>
             {cancelLabel}
           </Button>
@@ -42,12 +50,8 @@ export function ConfirmDialog({
           >
             {confirmLabel}
           </Button>
-        </>
-      }
-    >
-      <p className="text-sm text-muted-foreground">
-        {message}
-      </p>
+        </DialogFooter>
+      </DialogContent>
     </Dialog>
   )
 }

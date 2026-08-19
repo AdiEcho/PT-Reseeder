@@ -6,6 +6,7 @@ export function useLogFiles() {
   return useQuery({
     queryKey: ['logs', 'files'],
     queryFn: () => api.get<LogFileInfo[]>('/api/logs/files'),
+    staleTime: Infinity,
   })
 }
 
@@ -22,5 +23,6 @@ export function useLogs(params: LogQueryParams) {
   return useQuery({
     queryKey: ['logs', params],
     queryFn: () => api.get<LogPage>(`/api/logs${qs ? `?${qs}` : ''}`),
+    staleTime: Infinity,
   })
 }

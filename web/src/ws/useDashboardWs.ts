@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useCallback } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import type {
   DashboardData,
@@ -6,17 +6,13 @@ import type {
   SiteReseedStats,
   UserInfoAggregate,
 } from '../api/types'
+import { useWebSocket } from './useWebSocket'
 
 interface DashboardWsUpdate {
   type?: string
   overview?: DashboardOverview | null
   site_stats?: SiteReseedStats[] | null
   user_info?: UserInfoAggregate | null
-}
-
-function getWsUrl(path: string): string {
-  const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-  return `${proto}//${window.location.host}${path}`
 }
 
 function mergeDashboardData(
@@ -45,64 +41,25 @@ function mergeDashboardData(
 
 export function useDashboardWs() {
   const queryClient = useQueryClient()
-  const [connected, setConnected] = useState(false)
-  const wsRef = useRef<WebSocket | null>(null)
-  const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const backoffRef = useRef(1000)
-  const unmountedRef = useRef(false)
 
-  const connect = useCallback(() => {
-    if (unmountedRef.current) return
+  const onMessage = useCallback((event: MessageEvent) => {
+    try {
+      const update = JSON.parse(event.data) as DashboardWsUpdate
+      if (update.type && update.type !== 'dashboard_update') return
 
-    const ws = new WebSocket(getWsUrl('/ws/dashboard'))
-    wsRef.current = ws
-
-    ws.onopen = () => {
-      setConnected(true)
-      backoffRef.current = 1000
-    }
-
-    ws.onmessage = (event) => {
-      try {
-        const update = JSON.parse(event.data) as DashboardWsUpdate
-        if (update.type && update.type !== 'dashboard_update') return
-
-        queryClient.setQueriesData<DashboardData>(
-          { queryKey: ['dashboard'] },
-          (prev) => mergeDashboardData(prev, update),
-        )
-      } catch {
-        // ignore malformed messages
-      }
-    }
-
-    ws.onclose = () => {
-      setConnected(false)
-      if (!unmountedRef.current) {
-        reconnectTimer.current = setTimeout(() => {
-          backoffRef.current = Math.min(backoffRef.current * 2, 30000)
-          connect()
-        }, backoffRef.current)
-      }
-    }
-
-    ws.onerror = () => {
-      ws.close()
+      queryClient.setQueriesData<DashboardData>(
+        { queryKey: ['dashboard'] },
+        (prev) => mergeDashboardData(prev, update),
+      )
+    } catch {
+      // ignore malformed messages
     }
   }, [queryClient])
 
-  useEffect(() => {
-    unmountedRef.current = false
-    connect()
+  const { connected, reconnect } = useWebSocket({
+    path: '/ws/dashboard',
+    onMessage,
+  })
 
-    return () => {
-      unmountedRef.current = true
-      if (reconnectTimer.current) {
-        clearTimeout(reconnectTimer.current)
-      }
-      wsRef.current?.close()
-    }
-  }, [connect])
-
-  return { connected }
+  return { connected, reconnect }
 }
